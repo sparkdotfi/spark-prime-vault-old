@@ -37,7 +37,7 @@ library TransactionQueue {
 
     function front(
         DoubleEndedQueue.Bytes32Deque storage queue
-    ) internal returns (address beneficiary, uint256 amount) {
+    ) internal view returns (address beneficiary, uint256 amount) {
         (bool success, bytes32 value) = queue.tryFront();
         if (!success) revert QueueEmpty();
 
