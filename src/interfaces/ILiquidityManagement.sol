@@ -23,5 +23,5 @@ interface ILiquidityManagement {
 
     /// @notice Total amount of Spark Prime Shares available instantly for NEW deposit request
     /// @dev balanceOf(address(this) + savings.convertToShares(claimableWithdrawTotal()) - claimableDepositTotal()
-    function availableLiquidShares() external view returns (uint256);
+    function availableLiquidShares() external view returns (int256);
 }

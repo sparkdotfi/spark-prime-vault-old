@@ -1,13 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {
-    IAccessControl
-} from "@openzeppelin/contracts/access/IAccessControl.sol";
-
-import {
-    IERC7540
-} from "@openzeppelin/community-contracts/interfaces/IERC7540.sol";
 import {IVaultManagement} from "./IVaultManagement.sol";
 import {IRebalancer} from "./IRebalancer.sol";
 import {ILiquidityManagement} from "./ILiquidityManagement.sol";
@@ -41,11 +34,9 @@ import {ILiquidityManagement} from "./ILiquidityManagement.sol";
  */
 
 interface ISparkPrimeVault is
-    IERC7540,
     IVaultManagement,
     ILiquidityManagement,
-    IRebalancer,
-    IAccessControl
+    IRebalancer
 {
     enum State {
         Pending,
@@ -59,41 +50,15 @@ interface ISparkPrimeVault is
     /// @notice Emitted when the user claims their assetsIn
     event DepositClaimed(address beneficary, uint256 shares);
 
+    /// @notice Emitted when the user performs deposit with a referral code
+    event ReferralCode(address beneficary, uint256 code);
+
     /// @notice Overload of ERC4626 deposit to allow Spark Referal Program support
     function deposit(
         uint256 assets,
         address receiver,
         uint256 referralCode
     ) external returns (uint256 shares);
-
-    /// @notice Sets interest rate and capacity. Initially Spark Automated System (SAS)
-    function VAULT_MANAGER_ROLE() external view returns (bytes32);
-
-    /// @notice Rebalances between USDC and Savings Vault. Initially SAS
-    function REBALANCER_ROLE() external view returns (bytes32);
-
-    /// @notice Push and Pull USDC funds to the vault. Initially PAU diamond address (invoked by SAS)
-    function LIQUIDITY_MANAGER_ROLE() external view returns (bytes32);
-
-    /// @notice Amount of deposited base assets that can be claimed for shares
-    function claimableDepositAmount(
-        address controller
-    ) external view returns (uint256);
-
-    /// @notice Amount of deposited base assets that are not yet claimable for shares
-    function pendingDepositAmount(
-        address controller
-    ) external view returns (uint256);
-
-    /// @notice Amount of deposited base assets that can be claimed for shares
-    function claimableWithdrawAmount(
-        address controller
-    ) external view returns (uint256);
-
-    /// @notice All pending deposit request IDs for a user that can be claimed
-    function pendingWithdrawAmount(
-        address controller
-    ) external view returns (uint256);
 
     /// @notice Current per second rate set by the VAULT_MANAGER.
     /// @dev based in 1e27 (RAY math), 1e27 = 0% APR

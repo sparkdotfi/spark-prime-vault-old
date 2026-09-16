@@ -30,13 +30,13 @@ interface IRebalancer {
     /* These are optional convenience functions for the Rebalancer calculations, if not needed will remove */
 
     /// @notice Total number of base asset in vault balance waiting to be converted/exchanged to Spark Prime Shares
-    function pendingDepositTotal() external view returns (uint256);
+    function totalPendingDeposits() external view returns (uint256 assets);
 
     /// @notice Total Spark Prime Shares of vault balance that is LOCKED and promised to claimers
     function claimableDepositTotal() external view returns (uint256);
 
     /// @notice Total number of Spark Prime Shares waiting to converted to base asset
-    function pendingWithdrawTotalShares() external view returns (uint256);
+    function totalPendingWithdraws() external view returns (uint256 shares);
 
     /// @notice Total base asset of vault balance that is LOCKED and promised to claimers
     function claimableWithdrawTotal() external view returns (uint256);
