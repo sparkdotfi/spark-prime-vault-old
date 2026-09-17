@@ -8,6 +8,14 @@ interface IVault is IERC7540 {
     /// @notice Lazy accrual of continuous interest
     event AccruedInterest(uint256 newIndex, uint256 timestamp);
 
+    error UnauthorizedCaller(address caller);
+
+    error OperatorMaliciousAction(address reciever, address victim);
+
+    error InsufficientClaimableBalance(uint256 requested, uint256 available);
+
+    error ShareConversionFailure(uint256 assets);
+
     /// @notice Current per second rate set by the VAULT_MANAGER.
     /// @dev based in 1e27 (RAY math), 1e27 = 0% APR
     function interestRate() external view returns (uint256);
