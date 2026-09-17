@@ -1,0 +1,34 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+import {IVaultManagement} from "../interfaces/IVaultManagement.sol";
+import {VaultBase} from "./VaultBase.sol";
+import {
+    AccessControlUpgradeable
+} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+
+abstract contract VaultManagement is
+    VaultBase,
+    AccessControlUpgradeable,
+    IVaultManagement
+{
+    function setInterestRate(
+        uint256 newRate
+    ) public onlyRole(VAULT_MANAGER_ROLE) {
+        Storage storage $ = getStorage();
+        uint256 oldRate = $.ratePerSecond;
+        $.ratePerSecond = newRate;
+        emit RateUpdated(oldRate, newRate);
+    }
+
+    function updateWithdrawFee(
+        uint256 bps
+    ) public onlyRole(VAULT_MANAGER_ROLE) {}
+
+    function setCapacity(
+        uint256 newCapacity
+    ) public onlyRole(VAULT_MANAGER_ROLE) {
+        Storage storage $ = getStorage();
+        $.maximumCapacity = newCapacity;
+    }
+}
