@@ -14,10 +14,10 @@ abstract contract Queue is VaultBase, IQueue {
     function withdrawQueueHead()
         public
         view
-        returns (address controller, uint256 assets)
+        returns (Transaction memory transaction)
     {
         Storage storage $ = getStorage();
-        (controller, assets) = TransactionQueue.front($.withdrawQueue);
+        transaction = TransactionQueue.front($, $.withdrawQueue);
     }
 
     function depositQueueLength() public view returns (uint256) {
@@ -28,9 +28,9 @@ abstract contract Queue is VaultBase, IQueue {
     function depositQueueHead()
         public
         view
-        returns (address controller, uint256 assets)
+        returns (Transaction memory transaction)
     {
         Storage storage $ = getStorage();
-        (controller, assets) = TransactionQueue.front($.withdrawQueue);
+        transaction = TransactionQueue.front($, $.withdrawQueue);
     }
 }

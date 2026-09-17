@@ -13,8 +13,8 @@ import {
 
 abstract contract LiquidityManagement is
     VaultBase,
-    ILiquidityManagement,
-    AccessControlUpgradeable
+    AccessControlUpgradeable,
+    ILiquidityManagement
 {
     using SafeERC20 for IERC20;
     function take(uint256 baseAmount) public onlyRole(LIQUIDITY_MANAGER_ROLE) {

@@ -25,7 +25,7 @@ interface IRebalancer {
 
     /// @notice Fulfill any pending withdraw queue entries
     /// @dev Should be called after LIQUIDITY_MANAGER transfers funds back to vault via PAU Transfer Facet
-    function processQueue() external;
+    //function processQueue() external;
 
     /* These are optional convenience functions for the Rebalancer calculations, if not needed will remove */
 
