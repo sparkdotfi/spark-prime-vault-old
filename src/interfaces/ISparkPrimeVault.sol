@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {IVaultManagement} from "./IVaultManagement.sol";
-import {IRebalancer} from "./IRebalancer.sol";
-import {ILiquidityManagement} from "./ILiquidityManagement.sol";
-
 /**
  * @title ISparkPrimeVault
  * @notice Asynchronous ERC-7540 Vault with Admin set continuous rate
@@ -33,22 +29,15 @@ import {ILiquidityManagement} from "./ILiquidityManagement.sol";
  *
  */
 
-interface ISparkPrimeVault is
-    IVaultManagement,
-    ILiquidityManagement,
-    IRebalancer
-{
-    enum State {
-        Pending,
-        Claimable,
-        Claimed
-    }
-
+interface ISparkPrimeVault {
     /// @notice Lazy accrual of continuous interest
     event AccruedInterest(uint256 newIndex, uint256 timestamp);
 
-    /// @notice Emitted when the user claims their assetsIn
-    event DepositClaimed(address beneficary, uint256 shares);
+    /// @notice Emitted when the user claims their deposit
+    event DepositClaimed(address beneficary, uint256 amount, uint256 shares);
+
+    /// @notice Emitted when the user claims their withdraw
+    event WithdrawClaimed(address beneficary, uint256 amount, uint256 shares);
 
     /// @notice Emitted when the user performs deposit with a referral code
     event ReferralCode(address beneficary, uint256 code);
@@ -57,6 +46,7 @@ interface ISparkPrimeVault is
     function deposit(
         uint256 assets,
         address receiver,
+        address controller,
         uint256 referralCode
     ) external returns (uint256 shares);
 
@@ -69,20 +59,6 @@ interface ISparkPrimeVault is
 
     /// @notice Total baseAsset amount available before maximum capacity is reached
     function availableCapacity() external view returns (uint256);
-
-    function depositQueueLength() external view returns (uint256);
-
-    function withdrawQueueLength() external view returns (uint256);
-
-    function depositQueueHead()
-        external
-        view
-        returns (address controller, uint256 assets);
-
-    function withdrawQueueHead()
-        external
-        view
-        returns (address controller, uint256 assets);
 
     /// @notice Current interest rate index based off last accrual timestamp
     function index() external view returns (uint256);

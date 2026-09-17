@@ -18,7 +18,7 @@ library TransactionQueue {
         uint96 amount;
     }
 
-    function encodeTX(
+    function encodeTransaction(
         address beneficiary,
         uint256 amount
     ) private pure returns (bytes32 element) {
@@ -27,12 +27,12 @@ library TransactionQueue {
         );
     }
 
-    function decodeTX(
+    function decodeTransaction(
         bytes32 element
     ) private pure returns (address beneficiary, uint256 amount) {
         uint256 e = uint256(element);
-        beneficiary = address(uint160(e));
-        amount = uint256(uint96(e >> 160));
+        beneficiary = address(e.toUint160());
+        amount = uint256((e >> 160).toUint96());
     }
 
     function front(
@@ -41,7 +41,7 @@ library TransactionQueue {
         (bool success, bytes32 value) = queue.tryFront();
         if (!success) revert QueueEmpty();
 
-        (beneficiary, amount) = decodeTX(value);
+        (beneficiary, amount) = decodeTransaction(value);
     }
 
     function length(
@@ -56,7 +56,7 @@ library TransactionQueue {
         (bool success, bytes32 value) = queue.tryPopFront();
         if (!success) revert QueueEmpty();
 
-        (beneficiary, amount) = decodeTX(value);
+        (beneficiary, amount) = decodeTransaction(value);
     }
 
     function push(
@@ -64,7 +64,7 @@ library TransactionQueue {
         address beneficiary,
         uint256 amount
     ) internal {
-        bytes32 element = encodeTX(beneficiary, amount);
+        bytes32 element = encodeTransaction(beneficiary, amount);
 
         bool success = queue.tryPushBack(element);
         if (!success) revert QueueFull();

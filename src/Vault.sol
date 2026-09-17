@@ -5,31 +5,24 @@ import {ISparkPrimeVault} from "./interfaces/ISparkPrimeVault.sol";
 import {
     PausableUpgradeable
 } from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
-import {
-    AccessControlUpgradeable
-} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 
-import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
-//import {ERC7540} from "./ERC7540.sol";
-import {
-    IERC7540
-} from "@openzeppelin/community-contracts/interfaces/IERC7540.sol";
 import {
     DoubleEndedQueue
 } from "@openzeppelin/contracts/utils/structs/DoubleEndedQueue.sol";
 import {TransactionQueue} from "./libraries/TransactionQueue.sol";
 import {
-    SafeERC20
-} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
+    AccessControlUpgradeable
+} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import {
     ERC20Upgradeable
 } from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
+import {InterestLib} from "./libraries/InterestLib.sol";
+import {VaultBase} from "./abstract/VaultBase.sol";
 
 contract Vault is
-    ERC20Upgradeable,
-    IERC7540,
+    VaultBase,
     ISparkPrimeVault,
+    ERC20Upgradeable,
     PausableUpgradeable,
     AccessControlUpgradeable
 {
@@ -72,138 +65,14 @@ contract Vault is
     //Fuzz Test: Encoding and Decoding should be a strict bi-directional match, for any input
 
     using TransactionQueue for DoubleEndedQueue.Bytes32Deque;
-    using SafeERC20 for IERC20;
 
-    struct Settlement {
-        address beneficiary;
-        uint256 assetsIn;
-        uint256 pendingAssetsIn;
-        uint256 sharesOut;
-        uint256 pendingSharesOut;
-    }
-
-    struct Transaction {
-        address beneficiary;
-        uint256 amount;
-    }
-
-    bytes32 constant LIQUIDITY_MANAGER_ROLE =
-        0x77e60b99a50d27fb027f6912a507d956105b4148adab27a86d235c8bcca8fa2f; /// keccak256("LIQUIDITY_MANAGER_ROLE")
-    bytes32 constant REBALANCER_ROLER =
-        0xccc64574297998b6c3edf6078cc5e01268465ff116954e3af02ff3a70a730f46; /// keccak256("REBALANCER_ROLER")
-    bytes32 constant VAULT_MANAGER_ROLE =
-        0xd1473398bb66596de5d1ea1fc8e303ff2ac23265adc9144b1b52065dc4f0934b; /// keccak256("VAULT_MANAGER_ROLE")
-
-    /// @custom:storage-location erc7201:sparkprime.vault.v1
-    struct Storage {
-        mapping(address => Settlement) ledger;
-        mapping(address => uint256) lockedShares;
-        mapping(address => address) operators;
-        DoubleEndedQueue.Bytes32Deque withdrawQueue;
-        DoubleEndedQueue.Bytes32Deque depositQueue;
-        IERC20 baseAsset;
-        IERC4626 savingsVault;
-        uint256 totalAssets;
-        uint256 maximumCapacity;
-        // Interest Rate
-        uint256 ratePerSecond;
-        uint256 lastAccrualTimestamp;
-        uint256 indexRate;
-        uint256 totalDepositQueueAssets;
-        uint256 totalWithdrawQueueShares;
-        uint256 totalClaimableDeposits; //in base asset
-        uint256 totalClaimableWithdraws; //in shares
-    }
-
-    bytes32 constant STORAGE_SLOT =
-        0x4faf50102ef2be52bfa2d60ecf6f23274b1323fa1b201fbdd5281067b242f900; // cast index-erc7201 erc7201:sparkprime.vault.v1
-
-    function getStorage() private returns (Storage storage $) {
-        assembly {
-            $.slot := sload(STORAGE_SLOT)
-        }
-    }
-
-    function previewDeposit(
-        uint256 assets
-    ) public view returns (uint256 shares) {
-        revert();
-    }
-
-    function previewMint(uint256 shares) public view returns (uint256 assets) {
-        revert();
-    }
-
-    function previewWithdraw(
-        uint256 assets
-    ) public view returns (uint256 shares) {
-        revert();
-    }
-
-    function previewRedeem(
-        uint256 shares
-    ) public view returns (uint256 assets) {
-        revert();
-    }
-
-    function withdrawQueueLength() public view returns (uint256) {
-        Storage storage $ = getStorage();
-        return TransactionQueue.length($.withdrawQueue);
-    }
-
-    function withdrawQueueHead()
-        public
-        view
-        returns (address controller, uint256 assets)
-    {
-        Storage storage $ = getStorage();
-        (controller, assets) = TransactionQueue.front($.withdrawQueue);
-    }
-
-    function depositQueueLength() public view returns (uint256) {
-        Storage storage $ = getStorage();
-        return TransactionQueue.length($.depositQueue);
-    }
-
-    function depositQueueHead()
-        public
-        view
-        returns (address controller, uint256 assets)
-    {
-        Storage storage $ = getStorage();
-        (controller, assets) = TransactionQueue.front($.withdrawQueue);
-    }
-
-    function take(uint256 baseAmount) public onlyRole(LIQUIDITY_MANAGER_ROLE) {
-        Storage storage $ = getStorage();
-        $.baseAsset.safeTransfer(msg.sender, baseAmount);
-    }
-
-    /// @dev Trusts the planner/rebalancer for a reasonable `baseAssets` amount
-    function withdrawFromSavings(
-        uint256 baseAssets
-    ) public onlyRole(REBALANCER_ROLER) {
-        Storage storage $ = getStorage();
-        $.savingsVault.withdraw(baseAssets, msg.sender, address(this));
-    }
-
-    /// @dev Trusts the planner/rebalancer for a reasonable `baseAssets` amount
-    function depositToSavings(
-        uint256 baseAmount
-    ) public onlyRole(REBALANCER_ROLER) {
-        Storage storage $ = getStorage();
-        $.savingsVault.deposit(baseAmount, address(this));
-    }
-
-    function setCapacity(
-        uint256 newCapacity
-    ) public onlyRole(LIQUIDITY_MANAGER_ROLE) {
-        Storage storage $ = getStorage();
-        $.maximumCapacity = newCapacity;
+    modifier accrueInterest(Storage storage $) {
+        InterestLib.accrueInterest($);
+        _;
     }
 
     function pendingDepositRequest(
-        uint256 requestId,
+        uint256,
         address controller
     ) public view returns (uint256 pendingAssets) {
         Storage storage $ = getStorage();
@@ -211,7 +80,7 @@ contract Vault is
     }
 
     function pendingRedeemRequest(
-        uint256 requestId,
+        uint256,
         address controller
     ) public view returns (uint256 pendingShares) {
         Storage storage $ = getStorage();
@@ -225,38 +94,6 @@ contract Vault is
         return $.ledger[controller].pendingSharesOut;
     }
 
-    /** ERC4626 overrides **/
-
-    /// @dev Overriden to provide the maximum claimable share amount for a user. Return amount in shares
-    function maxRedeem(
-        address owner
-    ) public view returns (uint256 claimableShares) {
-        Storage storage $ = getStorage();
-        claimableShares = $.ledger[owner].sharesOut;
-    }
-
-    /// @dev Overriden to provide the value of maximum claim in base asset
-    function maxWithdraw(
-        address owner
-    ) public view returns (uint256 claimValue) {
-        claimValue = convertToAssets(maxRedeem(owner));
-    }
-
-    /// @dev Overridenn to provide maximum amount of claimable assets
-    function maxDeposit(
-        address receiver
-    ) public view returns (uint256 claimableAssets) {
-        Storage storage $ = getStorage();
-        claimableAssets = $.ledger[receiver].assetsIn;
-    }
-
-    /// @dev Overridden to return the maximum claimable amount, converted to shares
-    function maxMint(
-        address receiver
-    ) public view returns (uint256 claimableShares) {
-        claimableShares = convertToShares(maxDeposit(receiver));
-    }
-
     /// @dev Synchronous 4626 deposits are converted to async. The caller is assigned to controller
     function deposit(
         uint256 assets,
@@ -268,7 +105,7 @@ contract Vault is
 
     /// @dev We have no concept of requestIDs, therefore this is just a `maxDeposit`
     function claimableDepositRequest(
-        uint256 requestId,
+        uint256,
         address controller
     ) public view returns (uint256 claimableAssets) {
         claimableAssets = maxDeposit(controller);
@@ -276,11 +113,12 @@ contract Vault is
 
     /// @dev We have no concept of requestIDs, therefore just a `maxRedeem`
     function claimableRedeemRequest(
-        uint256 requestId,
+        uint256,
         address controller
-    ) public view returns (uint256 claimableShares) {
+    ) public view override returns (uint256 claimableShares) {
         claimableShares = maxRedeem(controller);
     }
+
     function deposit(
         uint256 assets,
         address receiver,
@@ -345,6 +183,7 @@ contract Vault is
     ) external returns (bool) {
         Storage storage $ = getStorage();
         $.operators[msg.sender] = approved ? operator : address(0);
+        return true;
     }
 
     function isOperator(
@@ -355,65 +194,38 @@ contract Vault is
         status = $.operators[controller] == operator;
     }
 
-    function totalPendingWithdraws() public view returns (uint256 shares) {
-        Storage storage $ = getStorage();
-        shares = $.totalWithdrawQueueShares;
-    }
-
-    function totalPendingDeposits() public view returns (uint256 assets) {
-        Storage storage $ = getStorage();
-        assets = $.totalDepositQueueAssets;
-    }
-
-    function convertToShares(
-        uint256 assets
-    ) public view virtual returns (uint256) {}
-
-    function convertToAssets(
-        uint256 shares
-    ) public view virtual returns (uint256) {}
-
-    function totalAssets() public view override returns (uint256) {
-        Storage storage $ = getStorage();
-        return $.totalAssets;
-    }
-
-    function setInterestRate(
-        uint256 newRate
-    ) public onlyRole(LIQUIDITY_MANAGER_ROLE) {
-        Storage storage $ = getStorage();
-        uint256 oldRate = $.ratePerSecond;
-        $.ratePerSecond = newRate;
-        emit RateUpdated(oldRate, newRate);
-    }
-    function claimableWithdrawTotal() public view returns (uint256) {
-        Storage storage $ = getStorage();
-        return $.totalClaimableWithdraws;
-    }
-    function claimableDepositTotal() public view returns (uint256) {
-        Storage storage $ = getStorage();
-        return $.totalClaimableDeposits;
-    }
     function lastAccrual() public view returns (uint256) {
         Storage storage $ = getStorage();
         return $.lastAccrualTimestamp;
     }
+
     function share() public view returns (address shareTokenAddress) {
         shareTokenAddress = address(this);
     }
-
-    function updateWithdrawFee(
-        uint256 bps
-    ) public onlyRole(LIQUIDITY_MANAGER_ROLE) {}
 
     function interestRate() public view returns (uint256) {
         Storage storage $ = getStorage();
         return $.ratePerSecond;
     }
 
+    function previewIndex() external view returns (uint256 newIndexRate) {
+        Storage storage $ = getStorage();
+        return InterestLib.simulateAccrue($);
+    }
+
+    function index() external view returns (uint256) {
+        Storage storage $ = getStorage();
+        return $.indexRate;
+    }
+
     function asset() public view returns (address assetTokenAddress) {
         Storage storage $ = getStorage();
         return address($.baseAsset);
+    }
+
+    function totalAssets() external view returns (uint256 totalManagedAssets) {
+        Storage storage $ = getStorage();
+        totalManagedAssets = $.totalAssets;
     }
 
     function maxCapacity() public view returns (uint256) {
@@ -423,32 +235,5 @@ contract Vault is
     function availableCapacity() public view returns (uint256) {
         Storage storage $ = getStorage();
         return $.maximumCapacity - $.totalAssets;
-    }
-    function availableLiquidShares()
-        public
-        view
-        returns (int256 totalSPPrimeTokens)
-    {
-        Storage storage $ = getStorage();
-        totalSPPrimeTokens = int256(
-            this.balanceOf(address(this)) -
-                convertToShares($.totalClaimableDeposits)
-        );
-    }
-
-    function availableLiquidAssets()
-        public
-        view
-        returns (int256 totalBaseAssets)
-    {
-        Storage storage $ = getStorage();
-        IERC4626 savingsVault = $.savingsVault;
-        totalBaseAssets = int256(
-            $.baseAsset.balanceOf(address(this)) +
-                savingsVault.convertToAssets(
-                    savingsVault.balanceOf(address(this))
-                ) -
-                convertToAssets($.totalClaimableWithdraws)
-        );
     }
 }

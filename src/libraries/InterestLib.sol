@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
-import {Vault} from "../Vault.sol";
+import {VaultBase} from "../abstract/VaultBase.sol";
 /** Continiously Compounding Interest Rate System */
-library Interest {
+library InterestLib {
     uint256 constant RAY = 1e27;
 
     function accrueInterest(
-        Vault.Storage storage $
+        VaultBase.Storage storage $
     ) internal returns (uint256 newIndexRate) {
         uint256 timeDelta = block.timestamp - $.lastAccrualTimestamp;
         if (timeDelta == 0) return $.indexRate;
@@ -18,8 +18,8 @@ library Interest {
     }
 
     function simulateAccrue(
-        Vault.Storage storage $
-    ) internal returns (uint256 newIndexRate) {
+        VaultBase.Storage storage $
+    ) internal view returns (uint256 newIndexRate) {
         uint256 timeDelta = block.timestamp - $.lastAccrualTimestamp;
         if (timeDelta == 0) return $.indexRate;
 
