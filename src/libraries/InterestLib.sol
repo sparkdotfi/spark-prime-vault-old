@@ -5,15 +5,13 @@ import {VaultBase} from "../abstract/VaultBase.sol";
 library InterestLib {
     uint256 constant RAY = 1e27;
 
-    function accrueInterest(
-        VaultBase.Storage storage $
-    ) internal returns (uint256 newIndexRate) {
+    function accrueInterest(VaultBase.Storage storage $) internal {
         uint256 timeDelta = block.timestamp - $.lastAccrualTimestamp;
-        if (timeDelta == 0) return $.indexRate;
+        if (timeDelta == 0) return;
 
         $.lastAccrualTimestamp = block.timestamp;
 
-        uint256 compoundingFactor = rpow($.ratePerSecond, timeDelta, RAY);
+        uint256 compoundingFactor = rpow($.ratePerSecond, timeDelta, RAY) / RAY;
         $.indexRate *= compoundingFactor;
     }
 

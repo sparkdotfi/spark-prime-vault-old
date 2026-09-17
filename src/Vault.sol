@@ -19,16 +19,19 @@ import {VaultBase} from "./abstract/VaultBase.sol";
 import {Rebalancer} from "./abstract/Rebalancer.sol";
 import {LiquidityManagement} from "./abstract/LiquidityManagement.sol";
 import {VaultManagement} from "./abstract/VaultManagement.sol";
+import {Queue} from "./abstract/Queue.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {
     SafeERC20
 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
-
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {console} from "forge-std/console.sol";
 contract Vault is
     Rebalancer,
     LiquidityManagement,
     VaultManagement,
+    Queue,
     ISparkPrimeVault,
     PausableUpgradeable
 {
@@ -125,30 +128,36 @@ contract Vault is
             );
 
         InterestLib.accrueInterest($);
+
         shares = convertToShares(assets);
         if (shares == 0) revert ShareConversionFailure(assets);
 
         $.ledger[controller].assetsIn -= assets;
 
-        uint256 totalMintableShares = convertToShares(availableCapacity());
+        // We can only mint shares if we're below capacity and transfer shares we own
+        // How much of that can we mint, and how much of that can we get from our idle balance
+
         uint256 totalLiquidShares = this.balanceOf(address(this));
-
-        if (shares > totalLiquidShares + totalMintableShares) revert(); //insolvency
-
-        if (shares > totalLiquidShares) {
-            transfer(receiver, totalLiquidShares);
+        uint256 transferAmount;
+        if (totalAssets() >= $.maximumCapacity) {
+            // we cant mint
+            if (totalLiquidShares < assets) revert Insolvency(); // Not enough withdraws have claimed to fill liquidity
+            transfer(receiver, assets);
         } else {
-            transfer(receiver, shares);
-            $.totalClaimableDeposits -= assets;
-            emit TotalClaimableDeposits($.totalClaimableDeposits);
-            return shares;
+            // we can mint $.maximumCapacity - totalAssets()
+            uint256 mintableShares = $.maximumCapacity - totalAssets();
+            if (totalLiquidShares + mintableShares < shares)
+                revert Insolvency(); // Both vault owned shares and minting couldn't fulfill this request
+
+            uint256 fromLiquid = Math.min(shares, totalLiquidShares);
+            if (fromLiquid > 0) transfer(receiver, fromLiquid);
+
+            uint256 toMint = shares - fromLiquid;
+            if (toMint > 0) super._mint(receiver, toMint);
         }
 
-        uint256 remainderToMint = shares - totalLiquidShares;
-        $.totalAssets += remainderToMint; // totalAssets only increases when NEW assets enter circulation
-        super._mint(receiver, remainderToMint);
-
         $.totalClaimableDeposits -= assets;
+        $.totalAssets += assets;
         emit TotalClaimableDeposits($.totalClaimableDeposits);
         return shares;
     }
@@ -161,8 +170,13 @@ contract Vault is
         Storage storage $ = getStorage();
         if (msg.sender != owner) revert UnauthorizedCaller(msg.sender);
 
-        $.baseAsset.safeTransferFrom(owner, address(this), assets);
         uint256 capacity = availableCapacity();
+        IERC20 baseAsset = IERC20(asset());
+
+        console.log("Available capacity for this deposit: %e", capacity);
+        console.log("Deposit size: %e", assets);
+
+        baseAsset.safeTransferFrom(owner, address(this), assets);
 
         emit DepositRequest(controller, owner, 0, msg.sender, assets);
 
@@ -179,10 +193,12 @@ contract Vault is
         }
 
         if (assets > capacity) {
+            console.log("Assets greater than capacity");
             _markClaimableDeposit($, owner, capacity);
             transaction.amount -= capacity;
             _pushToDepositQueue($, transaction);
         } else {
+            console.log("Assets less than or equal to capacity");
             _markClaimableDeposit($, owner, assets);
         }
 
@@ -193,6 +209,7 @@ contract Vault is
         VaultBase.Storage storage $,
         VaultBase.Transaction memory data
     ) private {
+        console.log("Pushing to deposit queue amount: %e", data.amount);
         bytes32 element = $.depositQueue.push(data);
         $.transactionRegistry[element] = data;
         $.totalDepositQueueAssets += data.amount;
@@ -204,6 +221,7 @@ contract Vault is
         address owner,
         uint256 amount
     ) private {
+        console.log("Marking claimable assetsIn += %e", amount);
         $.ledger[owner].assetsIn += amount;
         $.totalClaimableDeposits += amount;
         emit TotalClaimableDeposits($.totalClaimableDeposits);
@@ -327,16 +345,18 @@ contract Vault is
 
         InterestLib.accrueInterest($);
         assets = convertToAssets(shares);
-        uint256 liquidAssets = $.baseAsset.balanceOf(address(this));
+        IERC20 baseAsset = IERC20(asset());
+        uint256 liquidAssets = baseAsset.balanceOf(address(this));
 
         if (assets > liquidAssets) revert();
-        $.baseAsset.safeTransfer(receiver, assets);
+        baseAsset.safeTransfer(receiver, assets);
 
         $.lockedShares[owner] -= shares;
         emit WithdrawClaimed(receiver, assets, shares);
     }
 
     /// @dev Prevent a Withdrawer from transferring their commited shares
+    /// @dev Exclude mints
     function _update(
         address from,
         address to,
@@ -344,9 +364,10 @@ contract Vault is
     ) internal override {
         Storage storage $ = getStorage();
 
-        uint256 balanceRemaining = balanceOf(from) - value;
-
-        if ($.lockedShares[from] > balanceRemaining) revert();
+        if (from != address(0)) {
+            uint256 balanceRemaining = balanceOf(from) - value;
+            if ($.lockedShares[from] > balanceRemaining) revert();
+        }
 
         super._update(from, to, value);
     }

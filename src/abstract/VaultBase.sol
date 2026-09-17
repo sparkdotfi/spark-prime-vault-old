@@ -13,6 +13,7 @@ import {
     ERC4626Upgradeable
 } from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
 import {InterestLib} from "../libraries/InterestLib.sol";
+import {console} from "forge-std/console.sol";
 
 abstract contract VaultBase is ERC4626Upgradeable, IVault {
     using TransactionQueue for DoubleEndedQueue.Bytes32Deque;
@@ -50,8 +51,8 @@ abstract contract VaultBase is ERC4626Upgradeable, IVault {
         DoubleEndedQueue.Bytes32Deque depositQueue;
         IERC20 baseAsset;
         IERC4626 savingsVault;
-        uint256 totalAssets;
         uint256 maximumCapacity;
+        uint256 totalAssets;
         // Interest Rate
         uint256 ratePerSecond;
         uint256 lastAccrualTimestamp;
@@ -199,9 +200,12 @@ abstract contract VaultBase is ERC4626Upgradeable, IVault {
         Storage storage $ = getStorage();
         return $.maximumCapacity;
     }
-    function availableCapacity() public view returns (uint256) {
+    function availableCapacity() public view returns (uint256 available) {
         Storage storage $ = getStorage();
-        return $.maximumCapacity - $.totalAssets;
+        available = $.maximumCapacity - totalAssets();
+        console.log("maximumCap - totalAssets = %e", available);
+        if ($.totalClaimableDeposits >= available) available = 0;
+        else available -= $.totalClaimableDeposits;
     }
     function previewDeposit(
         uint256

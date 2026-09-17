@@ -37,6 +37,6 @@ abstract contract Queue is VaultBase, IQueue {
         returns (Transaction memory transaction)
     {
         Storage storage $ = getStorage();
-        transaction = TransactionQueue.front($, $.withdrawQueue);
+        transaction = TransactionQueue.front($, $.depositQueue);
     }
 }

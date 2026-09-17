@@ -24,6 +24,7 @@ interface IVault is IERC7540 {
     function maxCapacity() external view returns (uint256);
 
     /// @notice Total baseAsset amount available before maximum capacity is reached
+    /// @dev Can be negative
     function availableCapacity() external view returns (uint256);
 
     /// @notice Current interest rate index based off last accrual timestamp
