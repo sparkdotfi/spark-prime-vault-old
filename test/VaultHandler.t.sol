@@ -11,13 +11,13 @@ contract VaultHandler is Test {
         vault = new Vault();
     }
 
-    function test_Increment() public {
+    function test_Increment() public pure {
         // vault.increment();
         // assertEq(counter.number(), 1);
         assertTrue(true);
     }
 
-    function testFuzz_SetNumber(uint256 x) public {
+    function testFuzz_SetNumber(uint256) public pure {
         // counter.setNumber(x);
         // assertEq(counter.number(), x);
         assertTrue(true);

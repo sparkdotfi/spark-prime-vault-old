@@ -8,11 +8,11 @@ import {TransactionQueue} from "../libraries/TransactionQueue.sol";
 
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
-import {
-    IERC7540
-} from "@openzeppelin/community-contracts/interfaces/IERC7540.sol";
+import {IVault} from "../interfaces/IVault.sol";
 
-abstract contract VaultBase is IERC7540 {
+import {InterestLib} from "../libraries/InterestLib.sol";
+
+abstract contract VaultBase is IVault {
     using TransactionQueue for DoubleEndedQueue.Bytes32Deque;
 
     bytes32 constant LIQUIDITY_MANAGER_ROLE =
@@ -69,16 +69,9 @@ abstract contract VaultBase is IERC7540 {
         }
     }
 
-    function convertToShares(
-        uint256 assets
-    ) public view override returns (uint256) {}
-
-    function convertToAssets(
-        uint256 shares
-    ) public view override returns (uint256) {}
-
     /** ERC 7540 overrides */
     /// @dev We have no concept of requestIDs, therefore this is just a `maxDeposit`
+    /// @notice Wraps `maxDeposit` of ERC4626 to support ERC7540 spec
     function claimableDepositRequest(
         uint256,
         address controller
@@ -87,6 +80,7 @@ abstract contract VaultBase is IERC7540 {
     }
 
     /// @dev We have no concept of requestIDs, therefore just a `maxRedeem`
+    /// @notice Wraps `maxRedeem` of ERC4626 to support ERC7540 spec
     function claimableRedeemRequest(
         uint256,
         address controller
@@ -104,13 +98,6 @@ abstract contract VaultBase is IERC7540 {
         claimableShares = $.ledger[owner].sharesOut;
     }
 
-    /// @dev Overriden to provide the value of maximum claim in base asset
-    function maxWithdraw(
-        address owner
-    ) public view override returns (uint256 claimValue) {
-        claimValue = convertToAssets(maxRedeem(owner));
-    }
-
     /// @dev Overridenn to provide maximum amount of claimable assets
     function maxDeposit(
         address receiver
@@ -118,12 +105,69 @@ abstract contract VaultBase is IERC7540 {
         Storage storage $ = getStorage();
         claimableAssets = $.ledger[receiver].assetsIn;
     }
+    function interestRate() public view returns (uint256) {
+        Storage storage $ = getStorage();
+        return $.ratePerSecond;
+    }
+
+    function previewIndex() external view returns (uint256 newIndexRate) {
+        Storage storage $ = getStorage();
+        return InterestLib.simulateAccrue($);
+    }
+
+    function index() external view returns (uint256) {
+        Storage storage $ = getStorage();
+        return $.indexRate;
+    }
+    function convertToShares(
+        uint256 assets
+    ) public view override returns (uint256 shares) {
+        Storage storage $ = getStorage();
+        shares = (assets * InterestLib.RAY) / $.indexRate;
+    }
+
+    function convertToAssets(
+        uint256 shares
+    ) public view override returns (uint256 assets) {
+        Storage storage $ = getStorage();
+        assets = (shares * $.indexRate) / InterestLib.RAY;
+    }
 
     /// @dev Overridden to return the maximum claimable amount, converted to shares
     function maxMint(
         address receiver
     ) public view override returns (uint256 claimableShares) {
         claimableShares = convertToShares(maxDeposit(receiver));
+    }
+
+    /// @dev Overriden to provide the value of maximum claim in base asset
+    function maxWithdraw(
+        address owner
+    ) public view override returns (uint256 claimValue) {
+        claimValue = convertToAssets(maxRedeem(owner));
+    }
+
+    function lastAccrual() public view returns (uint256) {
+        Storage storage $ = getStorage();
+        return $.lastAccrualTimestamp;
+    }
+
+    function share() public view returns (address shareTokenAddress) {
+        shareTokenAddress = address(this);
+    }
+
+    function asset() public view returns (address assetTokenAddress) {
+        Storage storage $ = getStorage();
+        return address($.baseAsset);
+    }
+
+    function maxCapacity() public view returns (uint256) {
+        Storage storage $ = getStorage();
+        return $.maximumCapacity;
+    }
+    function availableCapacity() public view returns (uint256) {
+        Storage storage $ = getStorage();
+        return $.maximumCapacity - $.totalAssets;
     }
     function previewDeposit(uint256) public pure override returns (uint256) {
         revert();
