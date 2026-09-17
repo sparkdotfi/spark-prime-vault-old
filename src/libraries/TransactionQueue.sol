@@ -5,11 +5,13 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {
     DoubleEndedQueue
 } from "@openzeppelin/contracts/utils/structs/DoubleEndedQueue.sol";
+import {VaultBase} from "../abstract/VaultBase.sol";
 
 library TransactionQueue {
     using SafeCast for uint256;
     using DoubleEndedQueue for DoubleEndedQueue.Bytes32Deque;
 
+    error DecodeFailed(bytes32 element);
     error QueueEmpty();
     error QueueFull(); // only when more than uint128 entries exceeded
 
@@ -19,29 +21,27 @@ library TransactionQueue {
     }
 
     function encodeTransaction(
-        address beneficiary,
-        uint256 amount
+        VaultBase.Transaction memory transaction
     ) private pure returns (bytes32 element) {
-        element = bytes32(
-            uint256(uint160(beneficiary) | uint256(amount.toUint96() << 160))
-        );
+        element = keccak256(abi.encode(transaction));
     }
 
     function decodeTransaction(
+        VaultBase.Storage storage $,
         bytes32 element
-    ) private pure returns (address beneficiary, uint256 amount) {
-        uint256 e = uint256(element);
-        beneficiary = address(e.toUint160());
-        amount = uint256((e >> 160).toUint96());
+    ) private view returns (VaultBase.Transaction memory transaction) {
+        transaction = $.transactionRegistry[element];
+        if (transaction.beneficiary == address(0)) revert DecodeFailed(element);
     }
 
     function front(
+        VaultBase.Storage storage $,
         DoubleEndedQueue.Bytes32Deque storage queue
-    ) internal view returns (address beneficiary, uint256 amount) {
+    ) internal view returns (VaultBase.Transaction memory) {
         (bool success, bytes32 value) = queue.tryFront();
         if (!success) revert QueueEmpty();
 
-        (beneficiary, amount) = decodeTransaction(value);
+        return decodeTransaction($, value);
     }
 
     function length(
@@ -50,21 +50,27 @@ library TransactionQueue {
         return queue.length();
     }
 
-    function pop(
+    function isEmpty(
         DoubleEndedQueue.Bytes32Deque storage queue
-    ) internal returns (address beneficiary, uint256 amount) {
+    ) internal view returns (bool) {
+        return queue.empty();
+    }
+
+    function pop(
+        DoubleEndedQueue.Bytes32Deque storage queue,
+        VaultBase.Storage storage $
+    ) internal returns (VaultBase.Transaction memory) {
         (bool success, bytes32 value) = queue.tryPopFront();
         if (!success) revert QueueEmpty();
 
-        (beneficiary, amount) = decodeTransaction(value);
+        return decodeTransaction($, value);
     }
 
     function push(
         DoubleEndedQueue.Bytes32Deque storage queue,
-        address beneficiary,
-        uint256 amount
-    ) internal {
-        bytes32 element = encodeTransaction(beneficiary, amount);
+        VaultBase.Transaction memory transaction
+    ) internal returns (bytes32 element) {
+        element = encodeTransaction(transaction);
 
         bool success = queue.tryPushBack(element);
         if (!success) revert QueueFull();

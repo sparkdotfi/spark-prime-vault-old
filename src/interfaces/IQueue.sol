@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
+
+import {VaultBase} from "../abstract/VaultBase.sol";
 interface IQueue {
     function depositQueueLength() external view returns (uint256);
 
@@ -8,10 +10,10 @@ interface IQueue {
     function depositQueueHead()
         external
         view
-        returns (address controller, uint256 assets);
+        returns (VaultBase.Transaction memory transaction);
 
     function withdrawQueueHead()
         external
         view
-        returns (address controller, uint256 assets);
+        returns (VaultBase.Transaction memory transaction);
 }

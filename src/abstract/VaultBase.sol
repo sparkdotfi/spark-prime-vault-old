@@ -33,6 +33,8 @@ abstract contract VaultBase is IERC7540 {
     struct Transaction {
         address beneficiary;
         uint256 amount;
+        address controller;
+        uint256 nonce;
     }
 
     /// @custom:storage-location erc7201:sparkprime.vault.v1
@@ -40,6 +42,8 @@ abstract contract VaultBase is IERC7540 {
         mapping(address => Settlement) ledger;
         mapping(address => uint256) lockedShares;
         mapping(address => address) operators;
+        mapping(address => uint256) nonces;
+        mapping(bytes32 => Transaction) transactionRegistry;
         DoubleEndedQueue.Bytes32Deque withdrawQueue;
         DoubleEndedQueue.Bytes32Deque depositQueue;
         IERC20 baseAsset;
@@ -73,12 +77,29 @@ abstract contract VaultBase is IERC7540 {
         uint256 shares
     ) public view override returns (uint256) {}
 
+    /** ERC 7540 overrides */
+    /// @dev We have no concept of requestIDs, therefore this is just a `maxDeposit`
+    function claimableDepositRequest(
+        uint256,
+        address controller
+    ) public view override returns (uint256 claimableAssets) {
+        claimableAssets = maxDeposit(controller);
+    }
+
+    /// @dev We have no concept of requestIDs, therefore just a `maxRedeem`
+    function claimableRedeemRequest(
+        uint256,
+        address controller
+    ) public view override returns (uint256 claimableShares) {
+        claimableShares = maxRedeem(controller);
+    }
+
     /** ERC4626 overrides **/
 
     /// @dev Overriden to provide the maximum claimable share amount for a user. Return amount in shares
     function maxRedeem(
         address owner
-    ) public view returns (uint256 claimableShares) {
+    ) public view override returns (uint256 claimableShares) {
         Storage storage $ = getStorage();
         claimableShares = $.ledger[owner].sharesOut;
     }
@@ -86,14 +107,14 @@ abstract contract VaultBase is IERC7540 {
     /// @dev Overriden to provide the value of maximum claim in base asset
     function maxWithdraw(
         address owner
-    ) public view returns (uint256 claimValue) {
+    ) public view override returns (uint256 claimValue) {
         claimValue = convertToAssets(maxRedeem(owner));
     }
 
     /// @dev Overridenn to provide maximum amount of claimable assets
     function maxDeposit(
         address receiver
-    ) public view returns (uint256 claimableAssets) {
+    ) public view override returns (uint256 claimableAssets) {
         Storage storage $ = getStorage();
         claimableAssets = $.ledger[receiver].assetsIn;
     }
@@ -101,7 +122,7 @@ abstract contract VaultBase is IERC7540 {
     /// @dev Overridden to return the maximum claimable amount, converted to shares
     function maxMint(
         address receiver
-    ) public view returns (uint256 claimableShares) {
+    ) public view override returns (uint256 claimableShares) {
         claimableShares = convertToShares(maxDeposit(receiver));
     }
     function previewDeposit(uint256) public pure override returns (uint256) {

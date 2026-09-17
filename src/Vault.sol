@@ -10,21 +10,26 @@ import {
     DoubleEndedQueue
 } from "@openzeppelin/contracts/utils/structs/DoubleEndedQueue.sol";
 import {TransactionQueue} from "./libraries/TransactionQueue.sol";
-import {
-    AccessControlUpgradeable
-} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+
 import {
     ERC20Upgradeable
 } from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import {InterestLib} from "./libraries/InterestLib.sol";
 import {VaultBase} from "./abstract/VaultBase.sol";
-
+import {Rebalancer} from "./abstract/Rebalancer.sol";
+import {LiquidityManagement} from "./abstract/LiquidityManagement.sol";
+import {VaultManagement} from "./abstract/VaultManagement.sol";
+import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
+import {
+    SafeERC20
+} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 contract Vault is
-    VaultBase,
+    Rebalancer,
+    LiquidityManagement,
+    VaultManagement,
     ISparkPrimeVault,
     ERC20Upgradeable,
-    PausableUpgradeable,
-    AccessControlUpgradeable
+    PausableUpgradeable
 {
     //Withdraw Queue: Withdraw Requests that couldn't be fulfilled with availableLiquidAssets()
     //Deposit Queue: Requests that couldn't be fulfilled with availableLiquidShares()
@@ -65,7 +70,7 @@ contract Vault is
     //Fuzz Test: Encoding and Decoding should be a strict bi-directional match, for any input
 
     using TransactionQueue for DoubleEndedQueue.Bytes32Deque;
-
+    using SafeERC20 for IERC20;
     modifier accrueInterest(Storage storage $) {
         InterestLib.accrueInterest($);
         _;
@@ -103,33 +108,101 @@ contract Vault is
     }
     /** ERC7540 overrides **/
 
-    /// @dev We have no concept of requestIDs, therefore this is just a `maxDeposit`
-    function claimableDepositRequest(
-        uint256,
-        address controller
-    ) public view returns (uint256 claimableAssets) {
-        claimableAssets = maxDeposit(controller);
-    }
-
-    /// @dev We have no concept of requestIDs, therefore just a `maxRedeem`
-    function claimableRedeemRequest(
-        uint256,
-        address controller
-    ) public view override returns (uint256 claimableShares) {
-        claimableShares = maxRedeem(controller);
-    }
-
+    /// @dev Should always revert if entire claimable amount cannot be fulfilled
+    /// @notice Only user themselves or their approved operator can call
+    /// @dev Always uses liquid shares, mints the excess (if capacity allows)
     function deposit(
         uint256 assets,
         address receiver,
         address controller
-    ) public returns (uint256 shares) {}
+    ) public returns (uint256 shares) {
+        Storage storage $ = getStorage();
+        // require controller == receiver or isOperator(controller, msg.sender)
+        require(controller == msg.sender || isOperator(controller, msg.sender));
+        if (assets > $.ledger[controller].assetsIn) revert();
+
+        shares = convertToShares(assets);
+        if (shares == 0) revert();
+
+        $.ledger[controller].assetsIn -= assets;
+
+        uint256 totalMintableShares = convertToShares(availableCapacity());
+        uint256 totalLiquidShares = this.balanceOf(address(this));
+
+        if (shares > totalLiquidShares + totalMintableShares) revert(); //insolvency
+
+        if (shares > totalLiquidShares) {
+            transfer(receiver, totalLiquidShares);
+        } else {
+            transfer(receiver, shares);
+            $.totalClaimableDeposits -= assets;
+            emit TotalClaimableDeposits($.totalClaimableDeposits);
+            return shares;
+        }
+
+        $.totalAssets += assets;
+        super._mint(receiver, shares - totalLiquidShares);
+
+        $.totalClaimableDeposits -= assets;
+        emit TotalClaimableDeposits($.totalClaimableDeposits);
+        return shares;
+    }
 
     function requestDeposit(
         uint256 assets,
         address controller,
         address owner
-    ) public returns (uint256 requestId) {}
+    ) public returns (uint256) {
+        Storage storage $ = getStorage();
+        require(msg.sender == owner);
+
+        $.baseAsset.safeTransferFrom(owner, address(this), assets);
+        uint256 capacity = availableCapacity();
+
+        emit DepositRequest(controller, owner, 0, msg.sender, assets);
+
+        VaultBase.Transaction memory transaction = VaultBase.Transaction(
+            owner,
+            assets,
+            controller,
+            $.nonces[owner]++
+        );
+
+        if (!$.depositQueue.isEmpty() || capacity == 0) {
+            _pushToDepositQueue($, transaction);
+            return 0;
+        }
+
+        if (assets > capacity) {
+            _markClaimableDeposit($, owner, capacity);
+            transaction.amount -= capacity;
+            _pushToDepositQueue($, transaction);
+        } else {
+            _markClaimableDeposit($, owner, assets);
+        }
+
+        return 0;
+    }
+
+    function _pushToDepositQueue(
+        VaultBase.Storage storage $,
+        VaultBase.Transaction memory data
+    ) private {
+        bytes32 element = $.depositQueue.push(data);
+        $.transactionRegistry[element] = data;
+        $.totalDepositQueueAssets += data.amount;
+        emit DepositQueueValuation($.totalDepositQueueAssets);
+    }
+
+    function _markClaimableDeposit(
+        VaultBase.Storage storage $,
+        address owner,
+        uint256 amount
+    ) private {
+        $.ledger[owner].assetsIn += amount;
+        $.totalClaimableDeposits += amount;
+        emit TotalClaimableDeposits($.totalClaimableDeposits);
+    }
 
     function deposit(
         uint256 assets,
@@ -221,11 +294,6 @@ contract Vault is
     function asset() public view returns (address assetTokenAddress) {
         Storage storage $ = getStorage();
         return address($.baseAsset);
-    }
-
-    function totalAssets() external view returns (uint256 totalManagedAssets) {
-        Storage storage $ = getStorage();
-        totalManagedAssets = $.totalAssets;
     }
 
     function maxCapacity() public view returns (uint256) {
