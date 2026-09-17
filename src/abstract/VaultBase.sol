@@ -9,10 +9,12 @@ import {TransactionQueue} from "../libraries/TransactionQueue.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {IVault} from "../interfaces/IVault.sol";
-
+import {
+    ERC4626Upgradeable
+} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
 import {InterestLib} from "../libraries/InterestLib.sol";
 
-abstract contract VaultBase is IVault {
+abstract contract VaultBase is ERC4626Upgradeable, IVault {
     using TransactionQueue for DoubleEndedQueue.Bytes32Deque;
 
     bytes32 constant LIQUIDITY_MANAGER_ROLE =
@@ -93,7 +95,12 @@ abstract contract VaultBase is IVault {
     /// @dev Overriden to provide the maximum claimable share amount for a user. Return amount in shares
     function maxRedeem(
         address owner
-    ) public view override returns (uint256 claimableShares) {
+    )
+        public
+        view
+        override(ERC4626Upgradeable, IERC4626)
+        returns (uint256 claimableShares)
+    {
         Storage storage $ = getStorage();
         claimableShares = $.ledger[owner].sharesOut;
     }
@@ -101,7 +108,12 @@ abstract contract VaultBase is IVault {
     /// @dev Overridenn to provide maximum amount of claimable assets
     function maxDeposit(
         address receiver
-    ) public view override returns (uint256 claimableAssets) {
+    )
+        public
+        view
+        override(ERC4626Upgradeable, IERC4626)
+        returns (uint256 claimableAssets)
+    {
         Storage storage $ = getStorage();
         claimableAssets = $.ledger[receiver].assetsIn;
     }
@@ -121,14 +133,24 @@ abstract contract VaultBase is IVault {
     }
     function convertToShares(
         uint256 assets
-    ) public view override returns (uint256 shares) {
+    )
+        public
+        view
+        override(ERC4626Upgradeable, IERC4626)
+        returns (uint256 shares)
+    {
         Storage storage $ = getStorage();
         shares = (assets * InterestLib.RAY) / $.indexRate;
     }
 
     function convertToAssets(
         uint256 shares
-    ) public view override returns (uint256 assets) {
+    )
+        public
+        view
+        override(ERC4626Upgradeable, IERC4626)
+        returns (uint256 assets)
+    {
         Storage storage $ = getStorage();
         assets = (shares * $.indexRate) / InterestLib.RAY;
     }
@@ -136,31 +158,43 @@ abstract contract VaultBase is IVault {
     /// @dev Overridden to return the maximum claimable amount, converted to shares
     function maxMint(
         address receiver
-    ) public view override returns (uint256 claimableShares) {
+    )
+        public
+        view
+        override(ERC4626Upgradeable, IERC4626)
+        returns (uint256 claimableShares)
+    {
         claimableShares = convertToShares(maxDeposit(receiver));
     }
 
     /// @dev Overriden to provide the value of maximum claim in base asset
     function maxWithdraw(
         address owner
-    ) public view override returns (uint256 claimValue) {
+    )
+        public
+        view
+        override(ERC4626Upgradeable, IERC4626)
+        returns (uint256 claimValue)
+    {
         claimValue = convertToAssets(maxRedeem(owner));
     }
-
+    function totalAssets()
+        public
+        view
+        override(ERC4626Upgradeable, IERC4626)
+        returns (uint256)
+    {
+        Storage storage $ = getStorage();
+        return $.totalAssets;
+    }
     function lastAccrual() public view returns (uint256) {
         Storage storage $ = getStorage();
         return $.lastAccrualTimestamp;
     }
 
-    function share() public view returns (address shareTokenAddress) {
+    function share() public view override returns (address shareTokenAddress) {
         shareTokenAddress = address(this);
     }
-
-    function asset() public view returns (address assetTokenAddress) {
-        Storage storage $ = getStorage();
-        return address($.baseAsset);
-    }
-
     function maxCapacity() public view returns (uint256) {
         Storage storage $ = getStorage();
         return $.maximumCapacity;
@@ -169,19 +203,27 @@ abstract contract VaultBase is IVault {
         Storage storage $ = getStorage();
         return $.maximumCapacity - $.totalAssets;
     }
-    function previewDeposit(uint256) public pure override returns (uint256) {
+    function previewDeposit(
+        uint256
+    ) public pure override(ERC4626Upgradeable, IERC4626) returns (uint256) {
         revert();
     }
 
-    function previewMint(uint256) public pure override returns (uint256) {
+    function previewMint(
+        uint256
+    ) public pure override(ERC4626Upgradeable, IERC4626) returns (uint256) {
         revert();
     }
 
-    function previewWithdraw(uint256) public pure override returns (uint256) {
+    function previewWithdraw(
+        uint256
+    ) public pure override(ERC4626Upgradeable, IERC4626) returns (uint256) {
         revert();
     }
 
-    function previewRedeem(uint256) public pure override returns (uint256) {
+    function previewRedeem(
+        uint256
+    ) public pure override(ERC4626Upgradeable, IERC4626) returns (uint256) {
         revert();
     }
 }

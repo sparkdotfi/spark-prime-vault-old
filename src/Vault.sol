@@ -5,15 +5,15 @@ import {ISparkPrimeVault} from "./interfaces/ISparkPrimeVault.sol";
 import {
     PausableUpgradeable
 } from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import {
+    ERC4626Upgradeable
+} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
 
+import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {
     DoubleEndedQueue
 } from "@openzeppelin/contracts/utils/structs/DoubleEndedQueue.sol";
 import {TransactionQueue} from "./libraries/TransactionQueue.sol";
-
-import {
-    ERC20Upgradeable
-} from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import {InterestLib} from "./libraries/InterestLib.sol";
 import {VaultBase} from "./abstract/VaultBase.sol";
 import {Rebalancer} from "./abstract/Rebalancer.sol";
@@ -30,7 +30,6 @@ contract Vault is
     LiquidityManagement,
     VaultManagement,
     ISparkPrimeVault,
-    ERC20Upgradeable,
     PausableUpgradeable
 {
     //Withdraw Queue: Withdraw Requests that couldn't be fulfilled with availableLiquidAssets()
@@ -65,20 +64,12 @@ contract Vault is
     //Deposit Queue Rules
     //Test:
 
-    // Deposit Claim Rules
-    //Test: Always consume claimableDepositTotal(), any remainder is minted (if below capacity). Always revert if total amount cannot be claimed (Insolvency)
-
     // TransactionQueue Library
     //Fuzz Test: Encoding and Decoding should be a strict bi-directional match, for any input
 
     using TransactionQueue for DoubleEndedQueue.Bytes32Deque;
     using SafeERC20 for IERC20;
     using SafeCast for int256;
-
-    modifier accrueInterest(Storage storage $) {
-        InterestLib.accrueInterest($);
-        _;
-    }
 
     function pendingDepositRequest(
         uint256,
@@ -107,7 +98,7 @@ contract Vault is
     function deposit(
         uint256 assets,
         address receiver
-    ) public returns (uint256 shares) {
+    ) public override(ERC4626Upgradeable, IERC4626) returns (uint256 shares) {
         return deposit(assets, receiver, msg.sender);
     }
     /** ERC7540 overrides **/
@@ -121,11 +112,21 @@ contract Vault is
         address controller
     ) public returns (uint256 shares) {
         Storage storage $ = getStorage();
-        require(controller == msg.sender || isOperator(controller, msg.sender));
-        if (assets > $.ledger[controller].assetsIn) revert();
 
+        if (controller != msg.sender && !isOperator(controller, msg.sender))
+            revert UnauthorizedCaller(msg.sender);
+        if (msg.sender != controller && receiver != controller)
+            revert OperatorMaliciousAction(receiver, controller);
+
+        if (assets > $.ledger[controller].assetsIn)
+            revert InsufficientClaimableBalance(
+                assets,
+                $.ledger[controller].assetsIn
+            );
+
+        InterestLib.accrueInterest($);
         shares = convertToShares(assets);
-        if (shares == 0) revert();
+        if (shares == 0) revert ShareConversionFailure(assets);
 
         $.ledger[controller].assetsIn -= assets;
 
@@ -158,7 +159,7 @@ contract Vault is
         address owner
     ) public returns (uint256) {
         Storage storage $ = getStorage();
-        require(msg.sender == owner);
+        if (msg.sender != owner) revert UnauthorizedCaller(msg.sender);
 
         $.baseAsset.safeTransferFrom(owner, address(this), assets);
         uint256 capacity = availableCapacity();
@@ -222,7 +223,7 @@ contract Vault is
         uint256 assets,
         address receiver,
         address owner
-    ) public returns (uint256 shares) {}
+    ) public override(ERC4626Upgradeable, IERC4626) returns (uint256 shares) {}
 
     function mint(
         uint256 shares,
@@ -240,7 +241,7 @@ contract Vault is
     function mint(
         uint256 shares,
         address receiver
-    ) public returns (uint256 assets) {
+    ) public override(ERC4626Upgradeable, IERC4626) returns (uint256 assets) {
         return mint(shares, receiver, msg.sender); /// @dev When user calls 4626 sync functions, we transform to async assuming they are their own controller
     }
 
@@ -250,7 +251,6 @@ contract Vault is
         address owner
     ) public returns (uint256) {
         Storage storage $ = getStorage();
-
         VaultBase.Transaction memory transaction = VaultBase.Transaction(
             owner,
             shares,
@@ -259,6 +259,8 @@ contract Vault is
         );
 
         $.lockedShares[owner] += shares;
+
+        InterestLib.accrueInterest($);
 
         int256 availableLiquidAssets = availableLiquidAssets();
 
@@ -304,7 +306,7 @@ contract Vault is
         uint256 shares,
         address receiver,
         address owner
-    ) public override returns (uint256 assets) {
+    ) public override(ERC4626Upgradeable, IERC4626) returns (uint256 assets) {
         require(msg.sender == owner || isOperator(owner, msg.sender));
 
         Storage storage $ = getStorage();
@@ -323,6 +325,7 @@ contract Vault is
             shares
         );
 
+        InterestLib.accrueInterest($);
         assets = convertToAssets(shares);
         uint256 liquidAssets = $.baseAsset.balanceOf(address(this));
 

@@ -41,11 +41,6 @@ abstract contract Rebalancer is
         assets = $.totalDepositQueueAssets;
     }
 
-    function totalAssets() public view override returns (uint256) {
-        Storage storage $ = getStorage();
-        return $.totalAssets;
-    }
-
     function claimableWithdrawTotal() public view returns (uint256) {
         Storage storage $ = getStorage();
         return $.totalClaimableWithdraws;
