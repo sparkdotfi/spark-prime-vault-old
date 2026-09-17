@@ -11,6 +11,7 @@ abstract contract Rebalancer is
     AccessControlUpgradeable,
     IRebalancer
 {
+    /// @notice Allows Spark Planner to increase baseAsset position by unwinding Savings Vault deposits
     /// @dev Trusts the planner/rebalancer for a reasonable `baseAssets` amount
     function withdrawFromSavings(
         uint256 baseAssets
@@ -19,6 +20,7 @@ abstract contract Rebalancer is
         $.savingsVault.withdraw(baseAssets, msg.sender, address(this));
     }
 
+    /// @notice Allows Spark Planner to increase Savings Vault position by depositing vault baseAsset balance
     /// @dev Trusts the planner/rebalancer for a reasonable `baseAssets` amount
     function depositToSavings(
         uint256 baseAmount
@@ -27,11 +29,13 @@ abstract contract Rebalancer is
         $.savingsVault.deposit(baseAmount, address(this));
     }
 
+    /// @notice The total share amount in the Withdraw Queue
     function totalPendingWithdraws() public view returns (uint256 shares) {
         Storage storage $ = getStorage();
         shares = $.totalWithdrawQueueShares;
     }
 
+    /// @notice The total deposit amount in the Deposit Queue
     function totalPendingDeposits() public view returns (uint256 assets) {
         Storage storage $ = getStorage();
         assets = $.totalDepositQueueAssets;

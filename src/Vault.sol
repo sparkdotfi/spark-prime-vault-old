@@ -23,6 +23,8 @@ import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {
     SafeERC20
 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+
 contract Vault is
     Rebalancer,
     LiquidityManagement,
@@ -71,6 +73,8 @@ contract Vault is
 
     using TransactionQueue for DoubleEndedQueue.Bytes32Deque;
     using SafeERC20 for IERC20;
+    using SafeCast for int256;
+
     modifier accrueInterest(Storage storage $) {
         InterestLib.accrueInterest($);
         _;
@@ -117,7 +121,6 @@ contract Vault is
         address controller
     ) public returns (uint256 shares) {
         Storage storage $ = getStorage();
-        // require controller == receiver or isOperator(controller, msg.sender)
         require(controller == msg.sender || isOperator(controller, msg.sender));
         if (assets > $.ledger[controller].assetsIn) revert();
 
@@ -140,8 +143,9 @@ contract Vault is
             return shares;
         }
 
-        $.totalAssets += assets;
-        super._mint(receiver, shares - totalLiquidShares);
+        uint256 remainderToMint = shares - totalLiquidShares;
+        $.totalAssets += remainderToMint; // totalAssets only increases when NEW assets enter circulation
+        super._mint(receiver, remainderToMint);
 
         $.totalClaimableDeposits -= assets;
         emit TotalClaimableDeposits($.totalClaimableDeposits);
@@ -165,7 +169,7 @@ contract Vault is
             owner,
             assets,
             controller,
-            $.nonces[owner]++
+            ++$.nonces[owner]
         );
 
         if (!$.depositQueue.isEmpty() || capacity == 0) {
@@ -224,7 +228,14 @@ contract Vault is
         uint256 shares,
         address receiver,
         address controller
-    ) public returns (uint256 assets) {}
+    ) public returns (uint256 assets) {
+        uint256 sharesReceived = deposit(
+            convertToAssets(shares),
+            receiver,
+            controller
+        );
+        assets = convertToAssets(sharesReceived);
+    }
 
     function mint(
         uint256 shares,
@@ -237,17 +248,104 @@ contract Vault is
         uint256 shares,
         address controller,
         address owner
-    ) public returns (uint256 requestId) {}
+    ) public returns (uint256) {
+        Storage storage $ = getStorage();
+
+        VaultBase.Transaction memory transaction = VaultBase.Transaction(
+            owner,
+            shares,
+            controller,
+            ++$.nonces[owner]
+        );
+
+        $.lockedShares[owner] += shares;
+
+        int256 availableLiquidAssets = availableLiquidAssets();
+
+        if (availableLiquidAssets <= 0 || !$.withdrawQueue.isEmpty()) {
+            _pushToWithdrawQueue($, transaction);
+        } else {
+            uint256 requestedAmount = convertToAssets(shares);
+            uint256 liquidAssets = availableLiquidAssets.toUint256();
+
+            if (liquidAssets >= requestedAmount) {
+                _markClaimableWithdraw($, owner, requestedAmount);
+            } else {
+                _markClaimableWithdraw($, owner, liquidAssets);
+                transaction.amount -= liquidAssets;
+                _pushToWithdrawQueue($, transaction);
+            }
+        }
+        return 0;
+    }
+
+    function _pushToWithdrawQueue(
+        VaultBase.Storage storage $,
+        VaultBase.Transaction memory data
+    ) private {
+        bytes32 element = $.withdrawQueue.push(data);
+        $.transactionRegistry[element] = data;
+        $.totalWithdrawQueueShares += data.amount;
+        emit WithdrawQueueValuation($.totalWithdrawQueueShares);
+    }
+
+    function _markClaimableWithdraw(
+        VaultBase.Storage storage $,
+        address owner,
+        uint256 amount
+    ) private {
+        $.ledger[owner].sharesOut += amount;
+        $.totalClaimableWithdraws += amount;
+
+        emit TotalClaimableWithdraws($.totalClaimableWithdraws);
+    }
 
     function redeem(
         uint256 shares,
         address receiver,
         address owner
-    ) public returns (uint256 assets) {
-        /**
-         * Insert redeem queue order whilst abiding by FIFO principles listed above
-         *
-         */
+    ) public override returns (uint256 assets) {
+        require(msg.sender == owner || isOperator(owner, msg.sender));
+
+        Storage storage $ = getStorage();
+
+        if ($.ledger[owner].sharesOut < shares) revert();
+
+        $.ledger[owner].sharesOut -= shares;
+        $.totalClaimableWithdraws -= shares;
+
+        emit TotalClaimableWithdraws($.totalClaimableWithdraws);
+
+        SafeERC20.safeTransferFrom(
+            IERC20(address(this)),
+            owner,
+            address(this),
+            shares
+        );
+
+        assets = convertToAssets(shares);
+        uint256 liquidAssets = $.baseAsset.balanceOf(address(this));
+
+        if (assets > liquidAssets) revert();
+        $.baseAsset.safeTransfer(receiver, assets);
+
+        $.lockedShares[owner] -= shares;
+        emit WithdrawClaimed(receiver, assets, shares);
+    }
+
+    /// @dev Prevent a Withdrawer from transferring their commited shares
+    function _update(
+        address from,
+        address to,
+        uint256 value
+    ) internal override {
+        Storage storage $ = getStorage();
+
+        uint256 balanceRemaining = balanceOf(from) - value;
+
+        if ($.lockedShares[from] > balanceRemaining) revert();
+
+        super._update(from, to, value);
     }
 
     function setOperator(
@@ -265,43 +363,5 @@ contract Vault is
     ) public view returns (bool status) {
         Storage storage $ = getStorage();
         status = $.operators[controller] == operator;
-    }
-
-    function lastAccrual() public view returns (uint256) {
-        Storage storage $ = getStorage();
-        return $.lastAccrualTimestamp;
-    }
-
-    function share() public view returns (address shareTokenAddress) {
-        shareTokenAddress = address(this);
-    }
-
-    function interestRate() public view returns (uint256) {
-        Storage storage $ = getStorage();
-        return $.ratePerSecond;
-    }
-
-    function previewIndex() external view returns (uint256 newIndexRate) {
-        Storage storage $ = getStorage();
-        return InterestLib.simulateAccrue($);
-    }
-
-    function index() external view returns (uint256) {
-        Storage storage $ = getStorage();
-        return $.indexRate;
-    }
-
-    function asset() public view returns (address assetTokenAddress) {
-        Storage storage $ = getStorage();
-        return address($.baseAsset);
-    }
-
-    function maxCapacity() public view returns (uint256) {
-        Storage storage $ = getStorage();
-        return $.maximumCapacity;
-    }
-    function availableCapacity() public view returns (uint256) {
-        Storage storage $ = getStorage();
-        return $.maximumCapacity - $.totalAssets;
     }
 }
