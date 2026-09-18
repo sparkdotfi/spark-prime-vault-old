@@ -138,7 +138,7 @@ contract Vault is
         // How much of that can we mint, and how much of that can we get from our idle balance
 
         uint256 totalLiquidShares = this.balanceOf(address(this));
-        uint256 transferAmount;
+
         if (totalAssets() >= $.maximumCapacity) {
             // we cant mint
             if (totalLiquidShares < assets) revert Insolvency(); // Not enough withdraws have claimed to fill liquidity

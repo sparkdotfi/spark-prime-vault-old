@@ -30,6 +30,33 @@ contract ClaimDepositUnitTests is DepositHelper {
         );
     }
 
+    /// @dev If older deposit claims consume the available liquidity, a new requestor shoudn't be able to request and claim instant liquidty
+    function test_cannot_claimDeposit_WhenOlderClaimsNotSettled() public {
+        address userTwo = makeAddr("UserTwO");
+        uint256 userDepositSize = vault.availableCapacity();
+
+        _fundAndDeposit(vault, user, baseAsset, userDepositSize); // user gets instant claim, but they never settle it
+        _fundAndDeposit(vault, userTwo, baseAsset, userDepositSize); // should go directly to queue, nothing instant claimable
+
+        vm.prank(userTwo);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IVault.InsufficientClaimableBalance.selector,
+                userDepositSize,
+                0
+            )
+        );
+        vault.deposit(userDepositSize, userTwo);
+    }
+
+    function test_claimDeposit() public {
+        uint256 userDepositSize = vault.availableCapacity();
+        _fundAndDeposit(vault, user, baseAsset, userDepositSize);
+        // The user claims all the funds this time
+        vm.startPrank(user);
+        vault.deposit(userDepositSize, user);
+        vm.stopPrank();
+    }
     function test_cannot_claimDeposit_whenNoClaimableBalance() public {
         deal(address(baseAsset), user, 10 ether);
         vm.prank(user);
