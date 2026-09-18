@@ -115,6 +115,7 @@ contract Vault is
         address controller
     ) public returns (uint256 shares) {
         Storage storage $ = getStorage();
+        if (assets == 0) revert ZeroValueProvided();
 
         if (controller != msg.sender && !isOperator(controller, msg.sender))
             revert UnauthorizedCaller(msg.sender);

@@ -135,4 +135,31 @@ contract RequestWithdrawUnitTests is DepositHelper {
 
         vm.stopPrank();
     }
+    function generateWithdrawQueue() internal {
+        uint256 userDeposit = 50 ether;
+        uint256 userTwoDeposit = 50 ether;
+
+        _fundAndDeposit(vault, user, baseAsset, userDeposit);
+        _claimDeposit(vault, user, vault.maxDeposit(user));
+        _fundAndDeposit(vault, userTwo, baseAsset, userTwoDeposit);
+        _claimDeposit(vault, userTwo, vault.maxDeposit(userTwo));
+
+        // Force Withdraw Queue by removing liqudity
+        vm.prank(liquidityManager);
+        vault.take(userDeposit + userTwoDeposit);
+
+        vm.prank(user);
+        vault.requestRedeem(vault.convertToShares(50), user, user);
+        assertEq(vault.withdrawQueueLength(), 1);
+    }
+
+    /// @dev If a withdraw queue exists, we enter the queue always.
+    function test_requestWithdraw_alwaysFIFO() public {
+        generateWithdrawQueue();
+        vm.prank(userTwo);
+        vault.requestRedeem(vault.convertToShares(5 ether), userTwo, userTwo);
+
+        assertEq(vault.maxRedeem(userTwo), 0);
+        assertEq(vault.withdrawQueueLength(), 2);
+    }
 }

@@ -55,6 +55,8 @@ interface ISparkPrimeVault {
     /// @notice Returned when the vault fails cannot pay out owed shares/assets to a claimer
     error Insolvency();
 
+    error ZeroValueProvided();
+
     /// @notice Overload of ERC4626 deposit to allow Spark Referal Program support
     function deposit(
         uint256 assets,
