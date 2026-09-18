@@ -36,7 +36,7 @@ contract Vault is
     PausableUpgradeable
 {
     //Withdraw Queue: Withdraw Requests that couldn't be fulfilled with availableLiquidAssets()
-    //Deposit Queue: Requests that couldn't be fulfilled with availableLiquidShares()
+    //Deposit Queue: Requests that couldn't be fulfilled with availableCapacity()
 
     //Spark Principles
     //Invariant: If availableLiquidAssets > 0, Withdraw Queue must be empty.
@@ -180,7 +180,7 @@ contract Vault is
 
         emit DepositRequest(controller, owner, 0, msg.sender, assets);
 
-        VaultBase.Transaction memory transaction = VaultBase.Transaction(
+        Transaction memory transaction = Transaction(
             owner,
             assets,
             controller,
@@ -269,7 +269,7 @@ contract Vault is
         address owner
     ) public returns (uint256) {
         Storage storage $ = getStorage();
-        VaultBase.Transaction memory transaction = VaultBase.Transaction(
+        Transaction memory transaction = Transaction(
             owner,
             shares,
             controller,

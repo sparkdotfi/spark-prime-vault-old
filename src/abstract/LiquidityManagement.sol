@@ -21,7 +21,7 @@ abstract contract LiquidityManagement is
     /// @notice Provides Spark PAU ability to withdraw the vaults baseAsset balance
     function take(uint256 baseAmount) public onlyRole(LIQUIDITY_MANAGER_ROLE) {
         Storage storage $ = getStorage();
-        $.baseAsset.safeTransfer(msg.sender, baseAmount);
+        IERC20(asset()).safeTransfer(msg.sender, baseAmount);
     }
 
     /// @notice Calculates how many shares the vault can allocate for instant deposits
@@ -58,7 +58,7 @@ abstract contract LiquidityManagement is
     {
         Storage storage $ = getStorage();
         totalBaseAssets = int256(
-            $.baseAsset.balanceOf(address(this)) -
+            IERC20(asset()).balanceOf(address(this)) -
                 convertToAssets($.totalClaimableWithdraws)
         );
     }

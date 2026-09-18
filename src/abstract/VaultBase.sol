@@ -25,21 +25,6 @@ abstract contract VaultBase is ERC4626Upgradeable, IVault {
     bytes32 constant VAULT_MANAGER_ROLE =
         0xd1473398bb66596de5d1ea1fc8e303ff2ac23265adc9144b1b52065dc4f0934b; /// keccak256("VAULT_MANAGER_ROLE")
 
-    struct Settlement {
-        address beneficiary;
-        uint256 assetsIn;
-        uint256 pendingAssetsIn;
-        uint256 sharesOut;
-        uint256 pendingSharesOut;
-    }
-
-    struct Transaction {
-        address beneficiary;
-        uint256 amount;
-        address controller;
-        uint256 nonce;
-    }
-
     /// @custom:storage-location erc7201:sparkprime.vault.v1
     struct Storage {
         mapping(address => Settlement) ledger;
