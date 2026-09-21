@@ -133,6 +133,9 @@ contract Vault is
         shares = convertToShares(assets);
         if (shares == 0) revert ShareConversionFailure(assets);
 
+        console.log("USer assetsIn: %e", $.ledger[controller].assetsIn);
+        console.log("assets minused: %e", assets);
+
         $.ledger[controller].assetsIn -= assets;
 
         // We can only mint shares if we're below capacity and transfer shares we own
@@ -146,13 +149,18 @@ contract Vault is
             transfer(receiver, assets);
         } else {
             // we can mint $.maximumCapacity - totalAssets()
-            uint256 mintableShares = $.maximumCapacity - totalAssets();
+            uint256 mintableShares = convertToShares(
+                $.maximumCapacity - totalAssets()
+            );
+            console.log("Mintable Shares: %e", mintableShares);
+            console.log("Total Liquid Shares: %e", totalLiquidShares);
             if (totalLiquidShares + mintableShares < shares)
                 revert Insolvency(); // Both vault owned shares and minting couldn't fulfill this request
 
             uint256 fromLiquid = Math.min(shares, totalLiquidShares);
             if (fromLiquid > 0) transfer(receiver, fromLiquid);
 
+            console.log("toMint = %e - %e", shares, fromLiquid);
             uint256 toMint = shares - fromLiquid;
             if (toMint > 0) super._mint(receiver, toMint);
         }
@@ -337,12 +345,9 @@ contract Vault is
 
         emit TotalClaimableWithdraws($.totalClaimableWithdraws);
 
-        SafeERC20.safeTransferFrom(
-            IERC20(address(this)),
-            owner,
-            address(this),
-            shares
-        );
+        _transfer(owner, address(this), shares);
+
+        //(IERC20(address(this)), owner, address(this), shares);
 
         InterestLib.accrueInterest($);
         assets = convertToAssets(shares);
@@ -365,7 +370,7 @@ contract Vault is
     ) internal override {
         Storage storage $ = getStorage();
 
-        if (from != address(0)) {
+        if (from != address(0) && to != address(this)) {
             uint256 balanceRemaining = balanceOf(from) - value;
             if ($.lockedShares[from] > balanceRemaining) revert();
         }

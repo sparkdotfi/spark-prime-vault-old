@@ -14,7 +14,7 @@ import {
 } from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
 import {InterestLib} from "../libraries/InterestLib.sol";
 import {console} from "forge-std/console.sol";
-
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 abstract contract VaultBase is ERC4626Upgradeable, IVault {
     using TransactionQueue for DoubleEndedQueue.Bytes32Deque;
 
@@ -117,28 +117,47 @@ abstract contract VaultBase is ERC4626Upgradeable, IVault {
         Storage storage $ = getStorage();
         return $.indexRate;
     }
+    /// @inheritdoc IERC4626
     function convertToShares(
         uint256 assets
     )
         public
         view
-        override(ERC4626Upgradeable, IERC4626)
-        returns (uint256 shares)
+        virtual
+        override(IERC4626, ERC4626Upgradeable)
+        returns (uint256)
     {
-        Storage storage $ = getStorage();
-        shares = (assets * InterestLib.RAY) / $.indexRate;
+        return _convertToShares(assets, Math.Rounding.Floor);
     }
 
+    /// @inheritdoc IERC4626
     function convertToAssets(
         uint256 shares
-    )
-        public
-        view
-        override(ERC4626Upgradeable, IERC4626)
-        returns (uint256 assets)
-    {
+    ) public view override(IERC4626, ERC4626Upgradeable) returns (uint256) {
+        return _convertToAssets(shares, Math.Rounding.Floor);
+    }
+
+    function _convertToShares(
+        uint256 assets,
+        Math.Rounding rounding
+    ) internal view override(ERC4626Upgradeable) returns (uint256) {
         Storage storage $ = getStorage();
-        assets = (shares * $.indexRate) / InterestLib.RAY;
+        console.log("Converting to shares..");
+        uint256 shares = Math.mulDiv(assets, InterestLib.RAY, $.indexRate);
+        console.log("shares = %e", shares);
+        return shares;
+    }
+
+    function _convertToAssets(
+        uint256 shares,
+        Math.Rounding rounding
+    ) internal view override(ERC4626Upgradeable) returns (uint256) {
+        Storage storage $ = getStorage();
+
+        console.log("Converting to assets..");
+        uint256 assets = Math.mulDiv(shares, $.indexRate, InterestLib.RAY);
+        console.log("assets = %e", assets);
+        return assets;
     }
 
     /// @dev Overridden to return the maximum claimable amount, converted to shares
@@ -171,6 +190,7 @@ abstract contract VaultBase is ERC4626Upgradeable, IVault {
         returns (uint256)
     {
         Storage storage $ = getStorage();
+        console.log("Total assets: %e", $.totalAssets);
         return $.totalAssets;
     }
     function lastAccrual() public view returns (uint256) {

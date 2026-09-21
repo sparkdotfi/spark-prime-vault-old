@@ -88,12 +88,21 @@ contract RequestWithdrawUnitTests is DepositHelper {
 
         _fundAndDeposit(vault, user, baseAsset, assets);
         _claimDeposit(vault, user, assets);
+        // assertEq(vault.balanceOf(user), vault.convertToShares(assets));
 
         vm.startPrank(user);
         uint256 shares = vault.convertToShares(assets);
+
         vault.requestRedeem(shares, user, user);
 
         assertEq(vault.maxRedeem(user), shares); // All shares instant claimab;e
+        uint256 balanceBefore = baseAsset.balanceOf(user);
+
+        vault.redeem(shares, user, user);
+        assertEq(
+            baseAsset.balanceOf(user),
+            balanceBefore + vault.convertToAssets(shares)
+        );
         vm.stopPrank();
     }
 
@@ -126,13 +135,20 @@ contract RequestWithdrawUnitTests is DepositHelper {
         uint256 shares = vault.convertToShares(userDeposit);
 
         vault.requestRedeem(shares, user, user); // Request 10 ether of baseAsset
-
-        assertEq(vault.maxRedeem(user), 5 ether); // 5 ether is instantly claimable
+        uint256 instantClaimableValue = vault.maxWithdraw(user);
+        assertEq(instantClaimableValue, 5 ether); // 5 ether is instantly claimable
 
         IVault.Transaction memory data = vault.withdrawQueueHead();
         assertEq(data.amount, 5 ether); // The remaining 5 ether is queued
         assertEq(data.beneficiary, user);
 
+        uint256 balanceBefore = baseAsset.balanceOf(user);
+
+        vault.redeem(vault.convertToShares(instantClaimableValue), user, user);
+        assertEq(
+            baseAsset.balanceOf(user),
+            balanceBefore + instantClaimableValue
+        );
         vm.stopPrank();
     }
     function generateWithdrawQueue() internal {
