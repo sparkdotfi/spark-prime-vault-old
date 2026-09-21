@@ -13,7 +13,8 @@ import {
     ERC4626Upgradeable
 } from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
 import {InterestLib} from "../libraries/InterestLib.sol";
-
+import {console} from "forge-std/console.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 abstract contract VaultBase is ERC4626Upgradeable, IVault {
     using TransactionQueue for DoubleEndedQueue.Bytes32Deque;
 
@@ -23,21 +24,6 @@ abstract contract VaultBase is ERC4626Upgradeable, IVault {
         0xccc64574297998b6c3edf6078cc5e01268465ff116954e3af02ff3a70a730f46; /// keccak256("REBALANCER_ROLER")
     bytes32 constant VAULT_MANAGER_ROLE =
         0xd1473398bb66596de5d1ea1fc8e303ff2ac23265adc9144b1b52065dc4f0934b; /// keccak256("VAULT_MANAGER_ROLE")
-
-    struct Settlement {
-        address beneficiary;
-        uint256 assetsIn;
-        uint256 pendingAssetsIn;
-        uint256 sharesOut;
-        uint256 pendingSharesOut;
-    }
-
-    struct Transaction {
-        address beneficiary;
-        uint256 amount;
-        address controller;
-        uint256 nonce;
-    }
 
     /// @custom:storage-location erc7201:sparkprime.vault.v1
     struct Storage {
@@ -50,8 +36,8 @@ abstract contract VaultBase is ERC4626Upgradeable, IVault {
         DoubleEndedQueue.Bytes32Deque depositQueue;
         IERC20 baseAsset;
         IERC4626 savingsVault;
-        uint256 totalAssets;
         uint256 maximumCapacity;
+        uint256 totalAssets;
         // Interest Rate
         uint256 ratePerSecond;
         uint256 lastAccrualTimestamp;
@@ -131,28 +117,47 @@ abstract contract VaultBase is ERC4626Upgradeable, IVault {
         Storage storage $ = getStorage();
         return $.indexRate;
     }
+    /// @inheritdoc IERC4626
     function convertToShares(
         uint256 assets
     )
         public
         view
-        override(ERC4626Upgradeable, IERC4626)
-        returns (uint256 shares)
+        virtual
+        override(IERC4626, ERC4626Upgradeable)
+        returns (uint256)
     {
-        Storage storage $ = getStorage();
-        shares = (assets * InterestLib.RAY) / $.indexRate;
+        return _convertToShares(assets, Math.Rounding.Floor);
     }
 
+    /// @inheritdoc IERC4626
     function convertToAssets(
         uint256 shares
-    )
-        public
-        view
-        override(ERC4626Upgradeable, IERC4626)
-        returns (uint256 assets)
-    {
+    ) public view override(IERC4626, ERC4626Upgradeable) returns (uint256) {
+        return _convertToAssets(shares, Math.Rounding.Floor);
+    }
+
+    function _convertToShares(
+        uint256 assets,
+        Math.Rounding rounding
+    ) internal view override(ERC4626Upgradeable) returns (uint256) {
         Storage storage $ = getStorage();
-        assets = (shares * $.indexRate) / InterestLib.RAY;
+        console.log("Converting to shares..");
+        uint256 shares = Math.mulDiv(assets, InterestLib.RAY, $.indexRate);
+        console.log("shares = %e", shares);
+        return shares;
+    }
+
+    function _convertToAssets(
+        uint256 shares,
+        Math.Rounding rounding
+    ) internal view override(ERC4626Upgradeable) returns (uint256) {
+        Storage storage $ = getStorage();
+
+        console.log("Converting to assets..");
+        uint256 assets = Math.mulDiv(shares, $.indexRate, InterestLib.RAY);
+        console.log("assets = %e", assets);
+        return assets;
     }
 
     /// @dev Overridden to return the maximum claimable amount, converted to shares
@@ -185,6 +190,7 @@ abstract contract VaultBase is ERC4626Upgradeable, IVault {
         returns (uint256)
     {
         Storage storage $ = getStorage();
+        console.log("Total assets: %e", $.totalAssets);
         return $.totalAssets;
     }
     function lastAccrual() public view returns (uint256) {
@@ -199,9 +205,12 @@ abstract contract VaultBase is ERC4626Upgradeable, IVault {
         Storage storage $ = getStorage();
         return $.maximumCapacity;
     }
-    function availableCapacity() public view returns (uint256) {
+    function availableCapacity() public view returns (uint256 available) {
         Storage storage $ = getStorage();
-        return $.maximumCapacity - $.totalAssets;
+        available = $.maximumCapacity - totalAssets();
+        console.log("maximumCap - totalAssets = %e", available);
+        if ($.totalClaimableDeposits >= available) available = 0;
+        else available -= $.totalClaimableDeposits;
     }
     function previewDeposit(
         uint256
