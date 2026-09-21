@@ -167,7 +167,7 @@ contract Vault is
 
         $.totalClaimableDeposits -= assets;
         $.totalAssets += assets;
-        emit TotalClaimableDeposits($.totalClaimableDeposits);
+        emit DepositClaimed(receiver, assets, shares);
         return shares;
     }
 
@@ -203,37 +203,15 @@ contract Vault is
 
         if (assets > capacity) {
             console.log("Assets greater than capacity");
-            _markClaimableDeposit($, owner, capacity);
+            _markClaimableDeposit($, owner, capacity, true);
             transaction.amount -= capacity;
             _pushToDepositQueue($, transaction);
         } else {
             console.log("Assets less than or equal to capacity");
-            _markClaimableDeposit($, owner, assets);
+            _markClaimableDeposit($, owner, assets, true);
         }
 
         return 0;
-    }
-
-    function _pushToDepositQueue(
-        VaultBase.Storage storage $,
-        VaultBase.Transaction memory data
-    ) private {
-        console.log("Pushing to deposit queue amount: %e", data.amount);
-        bytes32 element = $.depositQueue.push(data);
-        $.transactionRegistry[element] = data;
-        $.totalDepositQueueAssets += data.amount;
-        emit DepositQueueValuation($.totalDepositQueueAssets);
-    }
-
-    function _markClaimableDeposit(
-        VaultBase.Storage storage $,
-        address owner,
-        uint256 amount
-    ) private {
-        console.log("Marking claimable assetsIn += %e", amount);
-        $.ledger[owner].assetsIn += amount;
-        $.totalClaimableDeposits += amount;
-        emit TotalClaimableDeposits($.totalClaimableDeposits);
     }
 
     function deposit(
@@ -250,7 +228,10 @@ contract Vault is
         uint256 assets,
         address receiver,
         address owner
-    ) public override(ERC4626Upgradeable, IERC4626) returns (uint256 shares) {}
+    ) public override(ERC4626Upgradeable, IERC4626) returns (uint256 shares) {
+        return
+            convertToAssets(redeem(convertToShares(assets), receiver, owner));
+    }
 
     function mint(
         uint256 shares,
@@ -298,35 +279,14 @@ contract Vault is
             uint256 liquidAssets = availableLiquidAssets.toUint256();
 
             if (liquidAssets >= requestedAmount) {
-                _markClaimableWithdraw($, owner, requestedAmount);
+                _markClaimableWithdraw($, owner, requestedAmount, true);
             } else {
-                _markClaimableWithdraw($, owner, liquidAssets);
-                transaction.amount -= liquidAssets;
+                _markClaimableWithdraw($, owner, liquidAssets, true);
+                transaction.amount -= convertToShares(liquidAssets);
                 _pushToWithdrawQueue($, transaction);
             }
         }
         return 0;
-    }
-
-    function _pushToWithdrawQueue(
-        VaultBase.Storage storage $,
-        VaultBase.Transaction memory data
-    ) private {
-        bytes32 element = $.withdrawQueue.push(data);
-        $.transactionRegistry[element] = data;
-        $.totalWithdrawQueueShares += data.amount;
-        emit WithdrawQueueValuation($.totalWithdrawQueueShares);
-    }
-
-    function _markClaimableWithdraw(
-        VaultBase.Storage storage $,
-        address owner,
-        uint256 amount
-    ) private {
-        $.ledger[owner].sharesOut += amount;
-        $.totalClaimableWithdraws += amount;
-
-        emit TotalClaimableWithdraws($.totalClaimableWithdraws);
     }
 
     function redeem(
@@ -342,8 +302,6 @@ contract Vault is
 
         $.ledger[owner].sharesOut -= shares;
         $.totalClaimableWithdraws -= shares;
-
-        emit TotalClaimableWithdraws($.totalClaimableWithdraws);
 
         _transfer(owner, address(this), shares);
 
