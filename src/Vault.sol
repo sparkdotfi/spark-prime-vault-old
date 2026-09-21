@@ -203,12 +203,12 @@ contract Vault is
 
         if (assets > capacity) {
             console.log("Assets greater than capacity");
-            _markClaimableDeposit($, owner, capacity);
+            _markClaimableDeposit($, owner, capacity, true);
             transaction.amount -= capacity;
             _pushToDepositQueue($, transaction);
         } else {
             console.log("Assets less than or equal to capacity");
-            _markClaimableDeposit($, owner, assets);
+            _markClaimableDeposit($, owner, assets, true);
         }
 
         return 0;
@@ -228,7 +228,10 @@ contract Vault is
         uint256 assets,
         address receiver,
         address owner
-    ) public override(ERC4626Upgradeable, IERC4626) returns (uint256 shares) {}
+    ) public override(ERC4626Upgradeable, IERC4626) returns (uint256 shares) {
+        return
+            convertToAssets(redeem(convertToShares(assets), receiver, owner));
+    }
 
     function mint(
         uint256 shares,
@@ -276,10 +279,10 @@ contract Vault is
             uint256 liquidAssets = availableLiquidAssets.toUint256();
 
             if (liquidAssets >= requestedAmount) {
-                _markClaimableWithdraw($, owner, requestedAmount);
+                _markClaimableWithdraw($, owner, requestedAmount, true);
             } else {
-                _markClaimableWithdraw($, owner, liquidAssets);
-                transaction.amount -= liquidAssets;
+                _markClaimableWithdraw($, owner, liquidAssets, true);
+                transaction.amount -= convertToShares(liquidAssets);
                 _pushToWithdrawQueue($, transaction);
             }
         }

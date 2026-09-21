@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {VaultBase} from "./VaultBase.sol";
+import {IVault} from "../interfaces/IVault.sol";
 import {IQueue} from "../interfaces/IQueue.sol";
 import {
     DoubleEndedQueue
@@ -12,6 +13,7 @@ import {
 } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 
 import {console} from "forge-std/console.sol";
+
 abstract contract Queue is VaultBase, AccessControlUpgradeable, IQueue {
     using TransactionQueue for DoubleEndedQueue.Bytes32Deque;
 
@@ -76,14 +78,19 @@ abstract contract Queue is VaultBase, AccessControlUpgradeable, IQueue {
     function processQueue(uint256 capacity) public onlyRole(REBALANCER_ROLER) {
         Storage storage $ = getStorage();
 
-        uint256 totalWithdrawValue = totalPendingWithdraws();
+        uint256 totalWithdrawValue = convertToAssets(totalPendingWithdraws());
         uint256 totalDepositValue = totalPendingDeposits();
         if (capacity > totalWithdrawValue || capacity > totalDepositValue)
             revert CapacityOutOfBounds();
 
         capacity == totalWithdrawValue
             ? fillUnbounded($, $.withdrawQueue, _markClaimableWithdraw)
-            : fillUntil($, $.withdrawQueue, _markClaimableWithdraw, capacity);
+            : fillUntil(
+                $,
+                $.withdrawQueue,
+                _markClaimableWithdraw,
+                convertToShares(capacity)
+            );
 
         capacity == totalDepositValue
             ? fillUnbounded($, $.depositQueue, _markClaimableDeposit)
@@ -94,22 +101,22 @@ abstract contract Queue is VaultBase, AccessControlUpgradeable, IQueue {
     function fillUnbounded(
         Storage storage $,
         DoubleEndedQueue.Bytes32Deque storage queue,
-        function(Storage storage, address, uint256) claim
-    ) private {
+        function(Storage storage, address, uint256, bool) claim
+    ) internal {
         uint256 n = queue.length();
 
-        for (n; n > 0; n++) {
-            Transaction memory data = queue.pop($); /// @dev gas refund keeps it sustainable
-            claim($, data.beneficiary, data.amount);
+        for (n; n > 0; --n) {
+            Transaction memory data = queue.pop($);
+            claim($, data.beneficiary, data.amount, false);
         }
     }
     /// @dev Iterate queue and accumulate claims until we hit required capacity. Reverts on pre-mature EOF
     function fillUntil(
         Storage storage $,
         DoubleEndedQueue.Bytes32Deque storage queue,
-        function(Storage storage, address, uint256) claim,
+        function(Storage storage, address, uint256, bool) claim,
         uint256 remainder
-    ) private {
+    ) internal {
         uint256 length = queue.length();
 
         while (remainder > 0) {
@@ -118,7 +125,7 @@ abstract contract Queue is VaultBase, AccessControlUpgradeable, IQueue {
             Transaction memory data = queue.pop($);
             if (data.amount >= remainder) {
                 /// @dev Base case, occurs exactly once at the last processed element
-                claim($, data.beneficiary, remainder);
+                claim($, data.beneficiary, remainder, false);
 
                 _insertHeadWithNewAmount(
                     $,
@@ -129,7 +136,7 @@ abstract contract Queue is VaultBase, AccessControlUpgradeable, IQueue {
                 break;
             } else {
                 /// @dev Recursive case
-                claim($, data.beneficiary, data.amount);
+                claim($, data.beneficiary, data.amount, false);
                 remainder -= data.amount;
             }
             length--;
@@ -139,23 +146,38 @@ abstract contract Queue is VaultBase, AccessControlUpgradeable, IQueue {
     function _markClaimableDeposit(
         VaultBase.Storage storage $,
         address owner,
-        uint256 amount
+        uint256 amount,
+        bool instantClaim
     ) internal {
         console.log("Marking claimable assetsIn += %e", amount);
         $.ledger[owner].assetsIn += amount;
         $.totalClaimableDeposits += amount;
+        console.log(
+            "Total deposit queue assets: %e",
+            $.totalDepositQueueAssets
+        );
+
+        console.log("Reducing by amount: %e", amount);
+        if (!instantClaim) $.totalDepositQueueAssets -= amount;
         emit ClaimableDeposit(owner, $.ledger[owner].assetsIn);
     }
 
     function _markClaimableWithdraw(
         VaultBase.Storage storage $,
         address owner,
-        uint256 amount
+        uint256 amount,
+        bool instantClaim
     ) internal {
         $.ledger[owner].sharesOut += amount;
         $.totalClaimableWithdraws += amount;
+        console.log(
+            "Total withdraw queue assets: %e",
+            $.totalWithdrawQueueShares
+        );
 
-        emit TotalClaimableWithdraws($.totalClaimableWithdraws);
+        console.log("Reducing by amount: %e", amount);
+        if (!instantClaim) $.totalWithdrawQueueShares -= amount;
+        emit ClaimableWithdraw(owner, $.ledger[owner].sharesOut);
     }
 
     /// @notice Cleans up void registry entries and links new data
@@ -175,8 +197,8 @@ abstract contract Queue is VaultBase, AccessControlUpgradeable, IQueue {
     }
 
     function _pushToWithdrawQueue(
-        VaultBase.Storage storage $,
-        VaultBase.Transaction memory data
+        Storage storage $,
+        IVault.Transaction memory data
     ) internal {
         bytes32 element = $.withdrawQueue.push(data);
         $.transactionRegistry[element] = data;

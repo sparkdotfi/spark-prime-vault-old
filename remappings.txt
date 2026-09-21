@@ -19,3 +19,4 @@ openzeppelin-contracts/=lib/openzeppelin-contracts/
 wormhole-sdk/=lib/openzeppelin-community-contracts/lib/wormhole-solidity-sdk/src/
 wormhole-solidity-sdk/=lib/openzeppelin-community-contracts/lib/wormhole-solidity-sdk/src/
 zk-email-verify/=lib/openzeppelin-community-contracts/lib/zk-email-verify/
+src/=src/
