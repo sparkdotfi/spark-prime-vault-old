@@ -214,28 +214,6 @@ contract Vault is
         return 0;
     }
 
-    function _pushToDepositQueue(
-        VaultBase.Storage storage $,
-        VaultBase.Transaction memory data
-    ) private {
-        console.log("Pushing to deposit queue amount: %e", data.amount);
-        bytes32 element = $.depositQueue.push(data);
-        $.transactionRegistry[element] = data;
-        $.totalDepositQueueAssets += data.amount;
-        emit DepositQueueValuation($.totalDepositQueueAssets);
-    }
-
-    function _markClaimableDeposit(
-        VaultBase.Storage storage $,
-        address owner,
-        uint256 amount
-    ) private {
-        console.log("Marking claimable assetsIn += %e", amount);
-        $.ledger[owner].assetsIn += amount;
-        $.totalClaimableDeposits += amount;
-        emit TotalClaimableDeposits($.totalClaimableDeposits);
-    }
-
     function deposit(
         uint256 assets,
         address receiver,
@@ -306,27 +284,6 @@ contract Vault is
             }
         }
         return 0;
-    }
-
-    function _pushToWithdrawQueue(
-        VaultBase.Storage storage $,
-        VaultBase.Transaction memory data
-    ) private {
-        bytes32 element = $.withdrawQueue.push(data);
-        $.transactionRegistry[element] = data;
-        $.totalWithdrawQueueShares += data.amount;
-        emit WithdrawQueueValuation($.totalWithdrawQueueShares);
-    }
-
-    function _markClaimableWithdraw(
-        VaultBase.Storage storage $,
-        address owner,
-        uint256 amount
-    ) private {
-        $.ledger[owner].sharesOut += amount;
-        $.totalClaimableWithdraws += amount;
-
-        emit TotalClaimableWithdraws($.totalClaimableWithdraws);
     }
 
     function redeem(

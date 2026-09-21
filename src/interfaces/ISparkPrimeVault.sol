@@ -31,23 +31,11 @@ pragma solidity ^0.8.20;
  */
 
 interface ISparkPrimeVault {
-    /// @notice Emitted whenever Total Claimable Deposits changes
-    event TotalClaimableDeposits(uint256 newAmount);
-
     /// @notice Emitted when the user claims their deposit
     event DepositClaimed(address beneficary, uint256 amount, uint256 shares);
 
-    /// @notice Emitted whenever Deposit Queue value changes
-    event DepositQueueValuation(uint256 newAmount);
-
-    /// @notice Emitted whenever Total Claimable Withdraw changes
-    event TotalClaimableWithdraws(uint256 newAmount);
-
     /// @notice Emitted when the user claims their withdraw
     event WithdrawClaimed(address beneficary, uint256 amount, uint256 shares);
-
-    /// @notice Emitted whenever Withdraw Queue value changes
-    event WithdrawQueueValuation(uint256 newAmount);
 
     /// @notice Emitted when the user performs deposit with a referral code
     event ReferralCode(address beneficary, uint256 code);

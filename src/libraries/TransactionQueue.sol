@@ -6,7 +6,7 @@ import {
     DoubleEndedQueue
 } from "@openzeppelin/contracts/utils/structs/DoubleEndedQueue.sol";
 import {VaultBase} from "../abstract/VaultBase.sol";
-
+import {IVault} from "../interfaces/IVault.sol";
 library TransactionQueue {
     using SafeCast for uint256;
     using DoubleEndedQueue for DoubleEndedQueue.Bytes32Deque;
@@ -15,21 +15,16 @@ library TransactionQueue {
     error QueueEmpty();
     error QueueFull(); // only when more than uint128 entries exceeded
 
-    struct Transaction {
-        address beneficiary;
-        uint96 amount;
-    }
-
     function encodeTransaction(
-        VaultBase.Transaction memory transaction
-    ) private pure returns (bytes32 element) {
+        IVault.Transaction memory transaction
+    ) internal pure returns (bytes32 element) {
         element = keccak256(abi.encode(transaction));
     }
 
     function decodeTransaction(
         VaultBase.Storage storage $,
         bytes32 element
-    ) private view returns (VaultBase.Transaction memory transaction) {
+    ) internal view returns (IVault.Transaction memory transaction) {
         transaction = $.transactionRegistry[element];
         if (transaction.beneficiary == address(0)) revert DecodeFailed(element);
     }
@@ -37,7 +32,7 @@ library TransactionQueue {
     function front(
         VaultBase.Storage storage $,
         DoubleEndedQueue.Bytes32Deque storage queue
-    ) internal view returns (VaultBase.Transaction memory) {
+    ) internal view returns (IVault.Transaction memory) {
         (bool success, bytes32 value) = queue.tryFront();
         if (!success) revert QueueEmpty();
 
@@ -73,6 +68,16 @@ library TransactionQueue {
         element = encodeTransaction(transaction);
 
         bool success = queue.tryPushBack(element);
+        if (!success) revert QueueFull();
+    }
+
+    function pushFront(
+        DoubleEndedQueue.Bytes32Deque storage queue,
+        VaultBase.Transaction memory transaction
+    ) internal returns (bytes32 element) {
+        element = encodeTransaction(transaction);
+
+        bool success = queue.tryPushFront(element);
         if (!success) revert QueueFull();
     }
 }
