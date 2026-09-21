@@ -3,8 +3,11 @@ pragma solidity ^0.8.20;
 
 import {VaultBase} from "../abstract/VaultBase.sol";
 interface IQueue {
-    /// @notice Emitted whenever Total Claimable Deposits changes
-    event TotalClaimableDeposits(uint256 newAmount);
+    /// @notice Emitted when a users claimable deposit amount changes
+    event ClaimableDeposit(address beneficiary, uint256 amount);
+
+    /// @notice Emitted when a users claimable withdraw amount changes
+    event ClaimableWithdraw(address beneficiary, uint256 newAmount);
 
     /// @notice Emitted whenever Deposit Queue value changes
     event DepositQueueValuation(uint256 newAmount);
@@ -14,10 +17,12 @@ interface IQueue {
 
     /// @notice Emitted whenever Withdraw Queue value changes
     event WithdrawQueueValuation(uint256 newAmount);
+
     function depositQueueLength() external view returns (uint256);
 
     function withdrawQueueLength() external view returns (uint256);
 
+    error CapacityOutOfBounds();
     error PartialFillFailure();
 
     function depositQueueHead()

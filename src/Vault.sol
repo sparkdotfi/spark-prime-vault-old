@@ -167,7 +167,7 @@ contract Vault is
 
         $.totalClaimableDeposits -= assets;
         $.totalAssets += assets;
-        emit TotalClaimableDeposits($.totalClaimableDeposits);
+        emit DepositClaimed(receiver, assets, shares);
         return shares;
     }
 
@@ -299,8 +299,6 @@ contract Vault is
 
         $.ledger[owner].sharesOut -= shares;
         $.totalClaimableWithdraws -= shares;
-
-        emit TotalClaimableWithdraws($.totalClaimableWithdraws);
 
         _transfer(owner, address(this), shares);
 

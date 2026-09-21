@@ -78,37 +78,19 @@ abstract contract Queue is VaultBase, AccessControlUpgradeable, IQueue {
 
         uint256 totalWithdrawValue = totalPendingWithdraws();
         uint256 totalDepositValue = totalPendingDeposits();
+        if (capacity > totalWithdrawValue || capacity > totalDepositValue)
+            revert CapacityOutOfBounds();
 
-        if (totalWithdrawValue >= totalDepositValue) {
-            // deposit is smaller queue
+        capacity == totalWithdrawValue
+            ? fillUnbounded($, $.withdrawQueue, _markClaimableWithdraw)
+            : fillUntil($, $.withdrawQueue, _markClaimableWithdraw, capacity);
 
-            if (capacity < totalDepositValue) {
-                // capacity can be entirely filled (capacity < smallerqueues total value)
-                // iterate and accumulate claims until we hit capacity
-                fillUntil($, $.depositQueue, _markClaimableDeposit, capacity);
-            } else {
-                // capacity cannot be entirely filled (capacity >= smallerqueue's total value)
-                // iterate over entire smallerQueue and eat until EOF
-                fillUnbounded($, $.depositQueue, _markClaimableDeposit);
-            }
-        } else {
-            // withdraw is smaller queue
-            if (capacity < totalWithdrawValue) {
-                // capacity can be entirely filled (capacity < smallerqueues total value)
-                // iterate and accumulate claims until we hit capacity
-                fillUntil($, $.withdrawQueue, _markClaimableWithdraw, capacity);
-            } else {
-                // capacity cannot be entirely filled (capacity >= smallerqueue's total value)
-                // iterate over entire smallerQueue and eat until EOF
-                fillUnbounded($, $.withdrawQueue, _markClaimableWithdraw);
-            }
-        }
-
-        //   bool useDepositQueue = totalDepositValue >= totalWithdrawValue;
-        //  uint256 queueLength = useDepositQueue ? $.depositQueue.length() : ;
-        // for(uint256 )
+        capacity == totalDepositValue
+            ? fillUnbounded($, $.depositQueue, _markClaimableDeposit)
+            : fillUntil($, $.depositQueue, _markClaimableDeposit, capacity);
     }
 
+    /// @dev Iterate over entire queue and eat until EOF
     function fillUnbounded(
         Storage storage $,
         DoubleEndedQueue.Bytes32Deque storage queue,
@@ -121,7 +103,7 @@ abstract contract Queue is VaultBase, AccessControlUpgradeable, IQueue {
             claim($, data.beneficiary, data.amount);
         }
     }
-
+    /// @dev Iterate queue and accumulate claims until we hit required capacity. Reverts on pre-mature EOF
     function fillUntil(
         Storage storage $,
         DoubleEndedQueue.Bytes32Deque storage queue,
@@ -153,6 +135,7 @@ abstract contract Queue is VaultBase, AccessControlUpgradeable, IQueue {
             length--;
         }
     }
+
     function _markClaimableDeposit(
         VaultBase.Storage storage $,
         address owner,
@@ -161,7 +144,7 @@ abstract contract Queue is VaultBase, AccessControlUpgradeable, IQueue {
         console.log("Marking claimable assetsIn += %e", amount);
         $.ledger[owner].assetsIn += amount;
         $.totalClaimableDeposits += amount;
-        emit TotalClaimableDeposits($.totalClaimableDeposits);
+        emit ClaimableDeposit(owner, $.ledger[owner].assetsIn);
     }
 
     function _markClaimableWithdraw(
