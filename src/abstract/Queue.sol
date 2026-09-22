@@ -151,7 +151,7 @@ abstract contract Queue is VaultBase, AccessControlUpgradeable, IQueue {
     ) internal {
         console.log("Marking claimable assetsIn += %e", amount);
         $.ledger[owner].assetsIn += amount;
-        $.ledger[owner].pendingAssetsIn -= amount;
+        if (!instantClaim) $.ledger[owner].pendingAssetsIn -= amount;
         $.totalClaimableDeposits += amount;
 
         console.log(
@@ -171,7 +171,7 @@ abstract contract Queue is VaultBase, AccessControlUpgradeable, IQueue {
         bool instantClaim
     ) internal {
         $.ledger[owner].sharesOut += amount;
-        $.ledger[owner].pendingSharesOut -= amount;
+        if (!instantClaim) $.ledger[owner].pendingSharesOut -= amount;
 
         $.totalClaimableWithdraws += amount;
         console.log(
