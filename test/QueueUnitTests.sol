@@ -8,9 +8,9 @@ import {IQueue} from "src/interfaces/IQueue.sol";
 import {USDC} from "./mocks/USDC.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {console} from "forge-std/console.sol";
-import {DepositHelper} from "./utils/DepositHelper.sol";
+import {QueueHelper} from "./utils/QueueHelper.sol";
 
-contract QueueUnitTests is DepositHelper {
+contract QueueUnitTests is QueueHelper {
     VaultHandler public vault;
     address user = makeAddr("User");
     address userTwo = makeAddr("UserTwo");

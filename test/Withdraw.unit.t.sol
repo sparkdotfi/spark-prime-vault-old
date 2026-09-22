@@ -7,9 +7,9 @@ import {IVault} from "src/interfaces/IVault.sol";
 import {USDC} from "./mocks/USDC.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {console} from "forge-std/console.sol";
-import {DepositHelper} from "./utils/DepositHelper.sol";
+import {QueueHelper} from "./utils/QueueHelper.sol";
 
-contract RequestWithdrawUnitTests is DepositHelper {
+contract RequestWithdrawUnitTests is QueueHelper {
     VaultHandler public vault;
     address user = makeAddr("User");
     address userTwo = makeAddr("UserTwo");

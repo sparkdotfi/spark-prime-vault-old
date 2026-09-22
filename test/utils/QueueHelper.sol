@@ -10,7 +10,7 @@ import {
     IERC7540Redeem
 } from "@openzeppelin/community-contracts/interfaces/IERC7540.sol";
 import {IVault} from "src/interfaces/IVault.sol";
-abstract contract DepositHelper is Test {
+abstract contract QueueHelper is Test {
     function _fundAndDeposit(
         VaultHandler vault,
         address _user,

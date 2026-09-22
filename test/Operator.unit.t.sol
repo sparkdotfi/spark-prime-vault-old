@@ -6,9 +6,9 @@ import {VaultHandler} from "./VaultHandler.t.sol";
 import {IVault} from "src/interfaces/IVault.sol";
 import {USDC} from "./mocks/USDC.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
-import {DepositHelper} from "./utils/DepositHelper.sol";
+import {QueueHelper} from "./utils/QueueHelper.sol";
 
-contract OperatorUnitTests is DepositHelper {
+contract OperatorUnitTests is QueueHelper {
     VaultHandler public vault;
     address user = makeAddr("User");
     address rebalancer = makeAddr("rebalancer");
@@ -29,11 +29,11 @@ contract OperatorUnitTests is DepositHelper {
     }
     //Operator Rules
     //Test: Operator cannot claim for a controller that hasn't assigned him
-    //Test: Operator cannot claim deposit to any address other than the controller
     //Test: Operator cannot claim withdraw to any address other than the controller
     //Test: Operator cannot create a deposit request
     //Test: Operator cannot create a withdraw request
 
+    /// @dev Operator cannot claim deposit to any address other than the controller
     function test_claimDeposit_ToNonUserWallet_asOperator() public {
         deal(address(baseAsset), user, 10 ether);
         vault.setOperatorForUser(user, operator, true);
