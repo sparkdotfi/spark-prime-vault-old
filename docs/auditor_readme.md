@@ -5,7 +5,7 @@ We never burn LP tokens on redeem, or reduce totalAssets. Instead the vault itse
 ### `take()` has no solvency guard
 `take` transfers any amount up to the full base-asset balance, with no check against `claimableWithdrawTotal()`. These assets are already promised to users, and will result in revert with `Insolvency` at claim time. 
 
-The `take()` function is access controlled to the PAU, I'd still suggest adding some insolvency measures by preventing to dip into the claimable amounts 
+The `take()` function is access controlled to the PAU, I'd still suggest adding some insolvency measures by preventing to dip into the claimable amounts. see `test_takeAfterMatching_makesVaultInsolvent`
 
 ### `setOperator` stores a single operator
 To simplify the model and allow Spark to rotate keys via the `AdministeredAgent`, a single Operator entry is permitted per user. This is set once by the user before they begin their Vault Journey, and Spark rotates it's keys that interact with the address in question.

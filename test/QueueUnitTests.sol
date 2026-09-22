@@ -9,73 +9,67 @@ import {USDC} from "./mocks/USDC.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {console} from "forge-std/console.sol";
 import {QueueHelper} from "./utils/QueueHelper.sol";
-
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 contract QueueUnitTests is QueueHelper {
-    VaultHandler public vault;
-    address user = makeAddr("User");
-    address userTwo = makeAddr("UserTwo");
-    address userThree = makeAddr("userThree");
-    address userFour = makeAddr("userFour");
-    address rebalancer = makeAddr("rebalancer");
-    address vaultManager = makeAddr("vault_manager");
-    address liquidityManager = makeAddr("liquidity_manager");
-    address operator = makeAddr("operator");
-
-    IERC20 baseAsset;
-
     function setUp() public {
-        baseAsset = new USDC();
-        vault = new VaultHandler(
-            baseAsset,
-            rebalancer,
-            vaultManager,
-            liquidityManager
-        );
+        _deployVault();
     }
 
     //  function test_cannot_processWhenCapacityOutOfBounds() public {}
     function test_orderMatching_sameValue_SameLengths() public {
-        address[] memory users = new address[](4);
-        users[0] = user;
-        users[1] = userTwo;
-        users[2] = userThree;
-        users[3] = userFour;
+        address[] memory users = defaultUsers();
 
-        createDepositQueue(vault, 10, 100 ether, users);
+        _ensureCapacity(vault.totalAssets() + 100 ether);
+        _mintShares(10, 100 ether, users);
+        _drainLiquidity();
 
-        createWithdrawQueue(vault, 10, 100 ether, users);
+        uint256 shares = createWithdrawQueue(
+            10,
+            vault.convertToShares(100 ether),
+            users
+        );
+
+        _closeCapacity();
+        uint256 deposits = createDepositQueue(10, 100 ether, users);
+
+        uint256 volume = Math.min(vault.convertToAssets(shares), deposits);
 
         vm.prank(rebalancer);
-        vault.processQueue(100 ether);
+        vault.processQueue(volume);
 
-        assertEq(vault.totalPendingDeposits(), 0);
-        assertEq(vault.totalPendingWithdraws(), 0);
-        assertEq(vault.depositQueueLength(), 0);
-        assertEq(vault.withdrawQueueLength(), 0);
+        assertApproxEqAbs(vault.totalPendingDeposits(), 0, ROUNDING_DUST);
+        assertApproxEqAbs(vault.totalPendingWithdraws(), 0, ROUNDING_DUST);
+        assertSolvent();
     }
 
     function test_orderMatching_sameValue_DifferentLengths() public {
-        address[] memory users = new address[](4);
-        users[0] = user;
-        users[1] = userTwo;
-        users[2] = userThree;
-        users[3] = userFour;
+        address[] memory users = defaultUsers();
+        _ensureCapacity(vault.totalAssets() + 100 ether);
+        _mintShares(5, 100 ether, users);
+        _drainLiquidity();
+        uint256 shares = createWithdrawQueue(
+            5,
+            vault.convertToShares(100 ether),
+            users
+        );
 
-        createDepositQueue(vault, 10, 100 ether, users);
-        createWithdrawQueue(vault, 5, 100 ether, users);
+        _closeCapacity();
+        uint256 deposits = createDepositQueue(10, 100 ether, users);
+
+        uint256 volume = Math.min(vault.convertToAssets(shares), deposits);
 
         vm.prank(rebalancer);
-        vault.processQueue(100 ether);
+        vault.processQueue(volume);
 
-        assertEq(vault.totalPendingDeposits(), 0);
-        assertEq(vault.totalPendingWithdraws(), 0);
-        assertEq(vault.claimableDepositTotal(), 100 ether);
-        assertEq(
+        assertApproxEqAbs(vault.totalPendingDeposits(), 0, ROUNDING_DUST);
+        assertApproxEqAbs(vault.totalPendingWithdraws(), 0, ROUNDING_DUST);
+        assertApproxEqAbs(vault.claimableDepositTotal(), volume, ROUNDING_DUST);
+        assertApproxEqAbs(
             vault.claimableWithdrawTotal(),
-            vault.convertToShares(100 ether)
+            vault.convertToShares(volume),
+            ROUNDING_DUST
         );
-        assertEq(vault.depositQueueLength(), 0);
-        assertEq(vault.withdrawQueueLength(), 0);
+        assertSolvent();
     }
 
     /// @dev 10 depositors, 100 ether total. 50 withdrawers, 200 ether total. Curator wants only 50 ether of volume exchanged
@@ -86,31 +80,42 @@ contract QueueUnitTests is QueueHelper {
         uint256 totalDepositValue = 100 ether;
         uint256 totalWithdrawValue = 200 ether;
 
-        address[] memory users = new address[](4);
-        users[0] = user;
-        users[1] = userTwo;
-        users[2] = userThree;
-        users[3] = userFour;
-
-        createDepositQueue(vault, 10, totalDepositValue, users);
-        createWithdrawQueue(vault, 50, totalWithdrawValue, users);
+        address[] memory users = defaultUsers();
+        _ensureCapacity(vault.totalAssets() + totalWithdrawValue);
+        _mintShares(50, totalWithdrawValue, users);
+        _drainLiquidity();
+        createWithdrawQueue(
+            50,
+            vault.convertToShares(totalWithdrawValue),
+            users
+        );
+        _closeCapacity();
+        createDepositQueue(10, totalDepositValue, users);
 
         vm.prank(rebalancer);
         vault.processQueue(curatorCapacity);
 
-        assertEq(
+        assertApproxEqAbs(
             vault.totalPendingDeposits(),
-            totalDepositValue - curatorCapacity
+            totalDepositValue - curatorCapacity,
+            ROUNDING_DUST
         );
-        assertEq(
+        assertApproxEqAbs(
             vault.totalPendingWithdraws(),
-            totalWithdrawValue - curatorCapacity
+            vault.convertToShares(totalWithdrawValue - curatorCapacity),
+            ROUNDING_DUST
         );
-        assertEq(vault.claimableDepositTotal(), curatorCapacity);
-        assertEq(
+        assertApproxEqAbs(
+            vault.claimableDepositTotal(),
+            curatorCapacity,
+            ROUNDING_DUST
+        );
+        assertApproxEqAbs(
             vault.claimableWithdrawTotal(),
-            vault.convertToShares(curatorCapacity)
+            vault.convertToShares(curatorCapacity),
+            ROUNDING_DUST
         );
+        assertSolvent();
         /// Neither queues are fully fulfilled
         assertGt(vault.depositQueueLength(), 0);
         assertGt(vault.withdrawQueueLength(), 0);
@@ -121,35 +126,46 @@ contract QueueUnitTests is QueueHelper {
     function test_orderMatching_symmetricCuratorRequest_fulfillDepositors_partiallyFulfillWithdrawers()
         public
     {
-        address[] memory users = new address[](4);
-        users[0] = user;
-        users[1] = userTwo;
-        users[2] = userThree;
-        users[3] = userFour;
-
+        address[] memory users = defaultUsers();
         uint256 totalDepositValue = 100 ether;
-        createDepositQueue(vault, 10, totalDepositValue, users);
         uint256 totalWithdrawValue = 200 ether;
         uint256 totalWithdrawers = 50;
-        createWithdrawQueue(vault, totalWithdrawers, totalWithdrawValue, users);
+        _ensureCapacity(vault.totalAssets() + totalWithdrawValue);
+        _mintShares(totalWithdrawers, totalWithdrawValue, users);
+        _drainLiquidity();
+        createWithdrawQueue(
+            totalWithdrawers,
+            vault.convertToShares(totalWithdrawValue),
+            users
+        );
+        _closeCapacity();
+        createDepositQueue(10, totalDepositValue, users);
 
         uint256 curatorCapacity = totalDepositValue;
         vm.prank(rebalancer);
         vault.processQueue(curatorCapacity);
 
-        assertEq(
+        assertApproxEqAbs(
             vault.totalPendingDeposits(),
-            totalDepositValue - curatorCapacity
+            totalDepositValue - curatorCapacity,
+            ROUNDING_DUST
         );
-        assertEq(
+        assertApproxEqAbs(
             vault.totalPendingWithdraws(),
-            totalWithdrawValue - curatorCapacity
+            vault.convertToShares(totalWithdrawValue - curatorCapacity),
+            ROUNDING_DUST
         );
-        assertEq(vault.claimableDepositTotal(), curatorCapacity);
-        assertEq(
+        assertApproxEqAbs(
+            vault.claimableDepositTotal(),
+            curatorCapacity,
+            ROUNDING_DUST
+        );
+        assertApproxEqAbs(
             vault.claimableWithdrawTotal(),
-            vault.convertToShares(curatorCapacity)
+            vault.convertToShares(curatorCapacity),
+            ROUNDING_DUST
         );
+        assertSolvent();
         assertEq(vault.depositQueueLength(), 0); // Deposits entirely fulfilled
         // Withdraws partially fulfilled
         assertLt(vault.withdrawQueueLength(), totalWithdrawers);
@@ -161,36 +177,47 @@ contract QueueUnitTests is QueueHelper {
     function test_orderMatching_symmetricCuratorRequest_fulfillWithdrawers_partiallyFulfillDepositors()
         public
     {
-        address[] memory users = new address[](4);
-        users[0] = user;
-        users[1] = userTwo;
-        users[2] = userThree;
-        users[3] = userFour;
-
+        address[] memory users = defaultUsers();
         uint256 totalDepositValue = 120 ether;
         uint256 totalDepositors = 15;
-        createDepositQueue(vault, totalDepositors, totalDepositValue, users);
         uint256 totalWithdrawValue = 75 ether;
         uint256 totalWithdrawers = 5;
-        createWithdrawQueue(vault, totalWithdrawers, totalWithdrawValue, users);
+        _ensureCapacity(vault.totalAssets() + totalWithdrawValue);
+        _mintShares(totalWithdrawers, totalWithdrawValue, users);
+        _drainLiquidity();
+        uint256 queuedShares = createWithdrawQueue(
+            totalWithdrawers,
+            vault.convertToShares(totalWithdrawValue),
+            users
+        );
+        _closeCapacity();
+        createDepositQueue(totalDepositors, totalDepositValue, users);
 
-        uint256 curatorCapacity = totalWithdrawValue;
+        uint256 curatorCapacity = vault.convertToAssets(queuedShares);
         vm.prank(rebalancer);
         vault.processQueue(curatorCapacity);
 
-        assertEq(
+        assertApproxEqAbs(
             vault.totalPendingDeposits(),
-            totalDepositValue - curatorCapacity
+            totalDepositValue - curatorCapacity,
+            ROUNDING_DUST
         );
-        assertEq(
+        assertApproxEqAbs(
             vault.totalPendingWithdraws(),
-            totalWithdrawValue - curatorCapacity
+            vault.convertToShares(totalWithdrawValue - curatorCapacity),
+            ROUNDING_DUST
         );
-        assertEq(vault.claimableDepositTotal(), curatorCapacity);
-        assertEq(
+        assertApproxEqAbs(
+            vault.claimableDepositTotal(),
+            curatorCapacity,
+            ROUNDING_DUST
+        );
+        assertApproxEqAbs(
             vault.claimableWithdrawTotal(),
-            vault.convertToShares(curatorCapacity)
+            vault.convertToShares(curatorCapacity),
+            ROUNDING_DUST
         );
+        assertSolvent();
         assertEq(vault.withdrawQueueLength(), 0); // Withdrawers entirely fulfilled
         // Depositors partially fulfilled
         assertLt(vault.depositQueueLength(), totalDepositors);
@@ -199,20 +226,19 @@ contract QueueUnitTests is QueueHelper {
 
     /// @dev 10 depositors, 100 ether total. 50 withdrawers, 200 ether total. There is no additional liquidity (mintable shares/idle base asset) Curator wants 200 ether in volume exchanged (non-symmetric)
     function test_cannot_orderMatching_nonSymmetricCuratorRequest() public {
-        address[] memory users = new address[](4);
-        users[0] = user;
-        users[1] = userTwo;
-        users[2] = userThree;
-        users[3] = userFour;
-
-        // By setting the capacity to 0, we restrict the deposit queues liquidity to solely the withdraw queue members
-        vm.prank(vaultManager);
-        vault.setCapacity(0);
-
+        address[] memory users = defaultUsers();
         uint256 totalDepositValue = 100 ether;
-        createDepositQueue(vault, 10, totalDepositValue, users);
         uint256 totalWithdrawValue = 200 ether;
-        createWithdrawQueue(vault, 50, totalWithdrawValue, users);
+        _ensureCapacity(vault.totalAssets() + totalWithdrawValue);
+        _mintShares(50, totalWithdrawValue, users);
+        _drainLiquidity();
+        createWithdrawQueue(
+            50,
+            vault.convertToShares(totalWithdrawValue),
+            users
+        );
+        _closeCapacity();
+        createDepositQueue(10, totalDepositValue, users);
 
         uint256 curatorCapacity = totalWithdrawValue; // I'm requesting an non-symmetric amount
         vm.prank(rebalancer);

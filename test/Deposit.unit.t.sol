@@ -11,28 +11,13 @@ import {console} from "forge-std/console.sol";
 import {QueueHelper} from "./utils/QueueHelper.sol";
 
 contract RequestDepositUnitTests is QueueHelper {
-    VaultHandler public vault;
-    address user = makeAddr("User");
-    address victim = makeAddr("victim");
-    address rebalancer = makeAddr("rebalancer");
-    address vaultManager = makeAddr("vault_manager");
-    address liquidityManager = makeAddr("liquidity_manager");
-    address operator = makeAddr("operator");
 
-    IERC20 baseAsset;
 
     function setUp() public {
-        baseAsset = new USDC();
-        vault = new VaultHandler(
-            baseAsset,
-            rebalancer,
-            vaultManager,
-            liquidityManager
-        );
+        _deployVault();
     }
     /// @dev If older deposit claims consume the available liquidity, a new requestor shoudn't be able to request and claim instant liquidty
     function test_cannot_claimDeposit_WhenOlderClaimsNotSettled() public {
-        address userTwo = makeAddr("UserTwO");
         uint256 userDepositSize = vault.availableCapacity();
 
         _fundAndDeposit(vault, user, baseAsset, userDepositSize); // user gets instant claim, but they never settle it

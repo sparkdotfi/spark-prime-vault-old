@@ -9,23 +9,10 @@ import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {QueueHelper} from "./utils/QueueHelper.sol";
 
 contract OperatorUnitTests is QueueHelper {
-    VaultHandler public vault;
-    address user = makeAddr("User");
-    address rebalancer = makeAddr("rebalancer");
-    address vaultManager = makeAddr("vault_manager");
-    address liquidityManager = makeAddr("liquidity_manager");
-    address operator = makeAddr("operator");
 
-    IERC20 baseAsset;
 
     function setUp() public {
-        baseAsset = new USDC();
-        vault = new VaultHandler(
-            baseAsset,
-            rebalancer,
-            vaultManager,
-            liquidityManager
-        );
+        _deployVault();
     }
 
     /// @dev Operator cannot claim deposit to any address other than the controller

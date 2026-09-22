@@ -10,25 +10,10 @@ import {console} from "forge-std/console.sol";
 import {QueueHelper} from "./utils/QueueHelper.sol";
 
 contract RequestWithdrawUnitTests is QueueHelper {
-    VaultHandler public vault;
-    address user = makeAddr("User");
-    address userTwo = makeAddr("UserTwo");
-    address victim = makeAddr("victim");
-    address rebalancer = makeAddr("rebalancer");
-    address vaultManager = makeAddr("vault_manager");
-    address liquidityManager = makeAddr("liquidity_manager");
-    address operator = makeAddr("operator");
 
-    IERC20 baseAsset;
 
     function setUp() public {
-        baseAsset = new USDC();
-        vault = new VaultHandler(
-            baseAsset,
-            rebalancer,
-            vaultManager,
-            liquidityManager
-        );
+        _deployVault();
     }
 
     /// @dev FIFO principles: If a withdraw queue already exists, immedetialy join it.

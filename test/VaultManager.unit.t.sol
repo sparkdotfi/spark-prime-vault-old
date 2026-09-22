@@ -11,24 +11,8 @@ import {console} from "forge-std/console.sol";
 import {QueueHelper} from "./utils/QueueHelper.sol";
 
 contract VaultManagerUnitTests is QueueHelper {
-    VaultHandler public vault;
-    address user = makeAddr("User");
-    address victim = makeAddr("victim");
-    address rebalancer = makeAddr("rebalancer");
-    address vaultManager = makeAddr("vault_manager");
-    address liquidityManager = makeAddr("liquidity_manager");
-    address operator = makeAddr("operator");
-
-    IERC20 baseAsset;
-
     function setUp() public {
-        baseAsset = new USDC();
-        vault = new VaultHandler(
-            baseAsset,
-            rebalancer,
-            vaultManager,
-            liquidityManager
-        );
+        _deployVault();
     }
 
     function test_cannot_setCapacity_overTotalAssets() public {
