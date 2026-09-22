@@ -27,7 +27,6 @@ contract OperatorUnitTests is QueueHelper {
             liquidityManager
         );
     }
-    //Operator Rules
 
     /// @dev Operator cannot claim deposit to any address other than the controller
     function test_claimDeposit_ToNonUserWallet_asOperator() public {
@@ -52,7 +51,7 @@ contract OperatorUnitTests is QueueHelper {
         vm.expectRevert(
             abi.encodeWithSelector(IVault.UnauthorizedCaller.selector, operator)
         );
-        vault.deposit(5 ether, user, user);
+        vault.redeem(5 ether, user, user);
         vm.stopPrank();
     }
 

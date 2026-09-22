@@ -167,7 +167,7 @@ contract Vault is
 
         $.totalClaimableDeposits -= assets;
         $.totalAssets += assets;
-        emit DepositClaimed(receiver, assets, shares);
+        emit Deposit(msg.sender, controller, assets, shares);
         return shares;
     }
 
@@ -177,6 +177,7 @@ contract Vault is
         address owner
     ) public returns (uint256) {
         Storage storage $ = getStorage();
+        if (assets == 0) revert ZeroValueProvided();
         if (msg.sender != owner) revert UnauthorizedCaller(msg.sender);
 
         uint256 capacity = availableCapacity();
@@ -260,6 +261,7 @@ contract Vault is
         address owner
     ) public returns (uint256) {
         Storage storage $ = getStorage();
+        if (shares == 0) revert ZeroValueProvided();
         if (owner != msg.sender) revert UnauthorizedCaller(msg.sender);
 
         Transaction memory transaction = Transaction(
@@ -267,6 +269,9 @@ contract Vault is
             shares,
             ++$.nonces[controller]
         );
+
+        emit RedeemRequest(controller, owner, 0, msg.sender, shares);
+
         if (owner != controller) {
             /// @dev If owner != controller: A user has put blind trust in their controller to claim and manage requests on their behalf.
             /// We want to accrue yield and allow cancellations while in the withdraw queue but redeem has no concept of the owner.
@@ -288,10 +293,11 @@ contract Vault is
             uint256 liquidAssets = availableLiquidAssets.toUint256();
 
             if (liquidAssets >= requestedAmount) {
-                _markClaimableWithdraw($, owner, requestedAmount, true);
+                _markClaimableWithdraw($, owner, shares, true);
             } else {
-                _markClaimableWithdraw($, owner, liquidAssets, true);
-                transaction.amount -= convertToShares(liquidAssets);
+                uint256 instantShares = convertToShares(liquidAssets);
+                _markClaimableWithdraw($, owner, instantShares, true);
+                transaction.amount -= instantShares;
                 _pushToWithdrawQueue($, transaction);
             }
         }
@@ -303,12 +309,18 @@ contract Vault is
         address receiver,
         address controller
     ) public override(ERC4626Upgradeable, IERC4626) returns (uint256 assets) {
-        if (msg.sender != controller && !isOperator(controller, msg.sender))
+        if (controller != msg.sender && !isOperator(controller, msg.sender))
             revert UnauthorizedCaller(msg.sender);
+        if (msg.sender != controller && receiver != controller)
+            revert OperatorMaliciousAction(receiver, controller);
 
         Storage storage $ = getStorage();
 
-        if ($.ledger[controller].sharesOut < shares) revert();
+        if ($.ledger[controller].sharesOut < shares)
+            revert InsufficientClaimableAmount(
+                shares,
+                $.ledger[controller].sharesOut
+            );
 
         $.ledger[controller].sharesOut -= shares;
         $.totalClaimableWithdraws -= shares;
@@ -322,7 +334,7 @@ contract Vault is
         IERC20 baseAsset = IERC20(asset());
         uint256 liquidAssets = baseAsset.balanceOf(address(this));
 
-        if (assets > liquidAssets) revert();
+        if (assets > liquidAssets) revert Insolvency();
         baseAsset.safeTransfer(receiver, assets);
 
         $.lockedShares[controller] -= shares;
@@ -352,6 +364,7 @@ contract Vault is
     ) external returns (bool) {
         Storage storage $ = getStorage();
         $.operators[msg.sender] = approved ? operator : address(0);
+        emit OperatorSet(msg.sender, operator, approved);
         return true;
     }
 

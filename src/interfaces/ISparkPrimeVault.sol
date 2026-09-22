@@ -31,9 +31,6 @@ pragma solidity ^0.8.20;
  */
 
 interface ISparkPrimeVault {
-    /// @notice Emitted when the user claims their deposit
-    event DepositClaimed(address beneficary, uint256 amount, uint256 shares);
-
     /// @notice Emitted when the user claims their withdraw
     event WithdrawClaimed(address beneficary, uint256 amount, uint256 shares);
 
@@ -44,6 +41,8 @@ interface ISparkPrimeVault {
     error Insolvency();
 
     error ZeroValueProvided();
+
+    error InsufficientClaimableAmount(uint256 requested, uint256 actual);
 
     /// @notice Overload of ERC4626 deposit to allow Spark Referal Program support
     function deposit(

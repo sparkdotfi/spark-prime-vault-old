@@ -29,6 +29,8 @@ abstract contract VaultManagement is
         uint256 newCapacity
     ) public onlyRole(VAULT_MANAGER_ROLE) {
         Storage storage $ = getStorage();
+        if (newCapacity < $.totalAssets)
+            revert MaximumCapacityCannotExceedCurrentTotal();
         $.maximumCapacity = newCapacity;
     }
 }

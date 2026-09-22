@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import {Test} from "forge-std/Test.sol";
 import {VaultHandler} from "./VaultHandler.t.sol";
 import {IVault} from "src/interfaces/IVault.sol";
+import {IVaultManagement} from "src/interfaces/IVaultManagement.sol";
 import {USDC} from "./mocks/USDC.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {console} from "forge-std/console.sol";
@@ -244,4 +245,5 @@ contract RequestDepositUnitTests is QueueHelper {
         assertEq(data.controller, user, "controller is user");
         assertEq(data.nonce, 1, "nonce is 1");
     }
+
 }

@@ -10,16 +10,16 @@ interface IRebalancer {
      * @dev REBALANCER_ROLE will be the Spark Automated Software
      */
     /// @notice Emitted when REBALANCER_ROLE deposits to Savings Vault
-    event SavingsDeposit(uint256 baseAmount);
+    event SavingsDeposit(uint256 assets, uint256 outputShares);
 
     /// @notice Emitted when REBALANCER_ROLE withdraws from Savings Vault
-    event SavingsWithdraw(uint256 baseAmount);
+    event SavingsWithdraw(uint256 shares, uint256 outputAssets);
 
     /// @notice Move idle base asset from Vault to Savings Vault to earn yield. REBALANCER_ROLE only
     /// @dev Internals handle conversion to saving vault.
-    function depositToSavings(uint256 baseAmount) external;
+    function depositToSavings(uint256 shares) external;
 
     /// @notice Withdraws from Savings Vault into Prime vault base asset. REBALANCER_ROLE only
     /// @dev Internals handle conversion to saving vault.
-    function withdrawFromSavings(uint256 baseAmount) external;
+    function withdrawFromSavings(uint256 assets) external;
 }

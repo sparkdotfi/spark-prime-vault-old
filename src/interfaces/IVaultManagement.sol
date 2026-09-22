@@ -16,6 +16,9 @@ interface IVaultManagement {
     /// @notice Emitted when VAULT_MANAGER calls updateWithdrawFee(uint256 bps)
     event WithdrawFeeUpdated(uint256 oldValue, uint256 newValue);
 
+    /// @notice Thrown when VAULT_MANAGER attempts to set maximumCapacity < totalAssets
+    error MaximumCapacityCannotExceedCurrentTotal();
+
     /// @notice Sets the per-second continiuous interest rate. VAULT_MANAGER only
     function setInterestRate(uint256 newRate) external;
 

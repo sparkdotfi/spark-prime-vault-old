@@ -95,7 +95,7 @@ contract RequestWithdrawUnitTests is QueueHelper {
 
         vault.requestRedeem(shares, user, user);
 
-        assertEq(vault.maxRedeem(user), shares); // All shares instant claimab;e
+        assertEq(vault.maxRedeem(user), vault.convertToShares(assets)); // All shares instant claimab;e
         uint256 balanceBefore = baseAsset.balanceOf(user);
 
         vault.redeem(shares, user, user);

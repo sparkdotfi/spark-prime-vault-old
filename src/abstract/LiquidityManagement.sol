@@ -9,6 +9,7 @@ import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {
     SafeERC20
 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {console} from "forge-std/console.sol";
 
 abstract contract LiquidityManagement is
@@ -17,6 +18,7 @@ abstract contract LiquidityManagement is
     ILiquidityManagement
 {
     using SafeERC20 for IERC20;
+    using SafeCast for uint256;
 
     /// @notice Provides Spark PAU ability to withdraw the vaults baseAsset balance
     function take(uint256 baseAmount) public onlyRole(LIQUIDITY_MANAGER_ROLE) {
@@ -58,8 +60,8 @@ abstract contract LiquidityManagement is
     {
         Storage storage $ = getStorage();
         totalBaseAssets = int256(
-            IERC20(asset()).balanceOf(address(this)) -
-                convertToAssets($.totalClaimableWithdraws)
+            IERC20(asset()).balanceOf(address(this)).toInt256() -
+                convertToAssets($.totalClaimableWithdraws).toInt256()
         );
     }
 }

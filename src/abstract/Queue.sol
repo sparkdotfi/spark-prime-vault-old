@@ -126,7 +126,7 @@ abstract contract Queue is VaultBase, AccessControlUpgradeable, IQueue {
             if (data.amount >= remainder) {
                 /// @dev Base case, occurs exactly once at the last processed element
                 claim($, data.controller, remainder, false);
-
+                if (data.amount == remainder) break;
                 _insertHeadWithNewAmount(
                     $,
                     queue,
@@ -151,7 +151,9 @@ abstract contract Queue is VaultBase, AccessControlUpgradeable, IQueue {
     ) internal {
         console.log("Marking claimable assetsIn += %e", amount);
         $.ledger[owner].assetsIn += amount;
+        $.ledger[owner].pendingAssetsIn -= amount;
         $.totalClaimableDeposits += amount;
+
         console.log(
             "Total deposit queue assets: %e",
             $.totalDepositQueueAssets
@@ -169,6 +171,8 @@ abstract contract Queue is VaultBase, AccessControlUpgradeable, IQueue {
         bool instantClaim
     ) internal {
         $.ledger[owner].sharesOut += amount;
+        $.ledger[owner].pendingSharesOut -= amount;
+
         $.totalClaimableWithdraws += amount;
         console.log(
             "Total withdraw queue assets: %e",
@@ -203,6 +207,7 @@ abstract contract Queue is VaultBase, AccessControlUpgradeable, IQueue {
         bytes32 element = $.withdrawQueue.push(data);
         $.transactionRegistry[element] = data;
         $.totalWithdrawQueueShares += data.amount;
+        $.ledger[data.controller].pendingSharesOut += data.amount;
         emit WithdrawQueueValuation($.totalWithdrawQueueShares);
     }
 
@@ -214,6 +219,7 @@ abstract contract Queue is VaultBase, AccessControlUpgradeable, IQueue {
         bytes32 element = $.depositQueue.push(data);
         $.transactionRegistry[element] = data;
         $.totalDepositQueueAssets += data.amount;
+        $.ledger[data.controller].pendingAssetsIn += data.amount;
         emit DepositQueueValuation($.totalDepositQueueAssets);
     }
 }

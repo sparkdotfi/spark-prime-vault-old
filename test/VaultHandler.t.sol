@@ -17,6 +17,7 @@ contract VaultHandler is Vault {
         address vaultManager,
         address liquidityManager
     ) initializer {
+        _grantRole(DEFAULT_ADMIN_ROLE, liquidityManager);
         _grantRole(VAULT_MANAGER_ROLE, vaultManager);
         _grantRole(LIQUIDITY_MANAGER_ROLE, liquidityManager);
         _grantRole(REBALANCER_ROLER, rebalancer);
