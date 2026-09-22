@@ -53,7 +53,11 @@ contract RequestWithdrawUnitTests is QueueHelper {
 
         assertEq(vault.withdrawQueueLength(), 2);
         assertEq(vault.withdrawQueueHead().controller, user);
-        assertEq(vault.totalPendingWithdraws(), 2 * depositAmount); // Both users queued
+        assertApproxEqAbs(
+            vault.totalPendingWithdraws(),
+            2 * depositAmount,
+            ROUNDING_DUST
+        ); // Both users queued
 
         assertEq(vault.maxRedeem(user), 0);
         assertEq(vault.maxRedeem(userTwo), 0);
@@ -78,7 +82,7 @@ contract RequestWithdrawUnitTests is QueueHelper {
         vault.requestRedeem(shares, user, user);
 
         IVault.Transaction memory data = vault.withdrawQueueHead();
-        assertEq(data.amount, depositAmount);
+        assertApproxEqAbs(data.amount, depositAmount, ROUNDING_DUST);
         assertEq(data.controller, user);
     }
 
@@ -136,18 +140,19 @@ contract RequestWithdrawUnitTests is QueueHelper {
 
         vault.requestRedeem(shares, user, user); // Request 10 ether of baseAsset
         uint256 instantClaimableValue = vault.maxWithdraw(user);
-        assertEq(instantClaimableValue, 5 ether); // 5 ether is instantly claimable
+        assertApproxEqAbs(instantClaimableValue, 5 ether, ROUNDING_DUST); // 5 ether is instantly claimable
 
         IVault.Transaction memory data = vault.withdrawQueueHead();
-        assertEq(data.amount, 5 ether); // The remaining 5 ether is queued
+        assertApproxEqAbs(data.amount, 5 ether, ROUNDING_DUST); // The remaining 5 ether is queued
         assertEq(data.controller, user);
 
         uint256 balanceBefore = baseAsset.balanceOf(user);
 
         vault.redeem(vault.convertToShares(instantClaimableValue), user, user);
-        assertEq(
+        assertApproxEqAbs(
             baseAsset.balanceOf(user),
-            balanceBefore + instantClaimableValue
+            balanceBefore + instantClaimableValue,
+            ROUNDING_DUST
         );
         vm.stopPrank();
     }

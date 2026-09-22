@@ -29,7 +29,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {console} from "forge-std/console.sol";
 contract Vault is
     Rebalancer,
-    LiquidityManagement,
+    //  LiquidityManagement,
     VaultManagement,
     Queue,
     ISparkPrimeVault,
@@ -146,7 +146,7 @@ contract Vault is
         if (totalAssets() >= $.maximumCapacity) {
             // we cant mint
             if (totalLiquidShares < assets) revert Insolvency(); // Not enough withdraws have claimed to fill liquidity
-            transfer(receiver, assets);
+            _transfer(address(this), receiver, assets);
         } else {
             // we can mint $.maximumCapacity - totalAssets()
             uint256 mintableShares = convertToShares(
@@ -158,7 +158,7 @@ contract Vault is
                 revert Insolvency(); // Both vault owned shares and minting couldn't fulfill this request
 
             uint256 fromLiquid = Math.min(shares, totalLiquidShares);
-            if (fromLiquid > 0) transfer(receiver, fromLiquid);
+            if (fromLiquid > 0) _transfer(address(this), receiver, fromLiquid);
 
             console.log("toMint = %e - %e", shares, fromLiquid);
             uint256 toMint = shares - fromLiquid;

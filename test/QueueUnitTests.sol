@@ -82,18 +82,19 @@ contract QueueUnitTests is QueueHelper {
     function test_orderMatching_depositsSmallerThanWithdraws_curatorRequestsHalfDepositQueueValue()
         public
     {
+        uint256 curatorCapacity = 50 ether;
+        uint256 totalDepositValue = 100 ether;
+        uint256 totalWithdrawValue = 200 ether;
+
         address[] memory users = new address[](4);
         users[0] = user;
         users[1] = userTwo;
         users[2] = userThree;
         users[3] = userFour;
 
-        uint256 totalDepositValue = 100 ether;
         createDepositQueue(vault, 10, totalDepositValue, users);
-        uint256 totalWithdrawValue = 200 ether;
         createWithdrawQueue(vault, 50, totalWithdrawValue, users);
 
-        uint256 curatorCapacity = 50 ether;
         vm.prank(rebalancer);
         vault.processQueue(curatorCapacity);
 
@@ -195,13 +196,18 @@ contract QueueUnitTests is QueueHelper {
         assertLt(vault.depositQueueLength(), totalDepositors);
         assertLt(vault.totalPendingDeposits(), totalDepositValue);
     }
-    /// @dev 10 depositors, 100 ether total. 50 withdrawers, 200 ether total. Curator wants 200 ether in volume exchanged (non-symmetric)
+
+    /// @dev 10 depositors, 100 ether total. 50 withdrawers, 200 ether total. There is no additional liquidity (mintable shares/idle base asset) Curator wants 200 ether in volume exchanged (non-symmetric)
     function test_cannot_orderMatching_nonSymmetricCuratorRequest() public {
         address[] memory users = new address[](4);
         users[0] = user;
         users[1] = userTwo;
         users[2] = userThree;
         users[3] = userFour;
+
+        // By setting the capacity to 0, we restrict the deposit queues liquidity to solely the withdraw queue members
+        vm.prank(vaultManager);
+        vault.setCapacity(0);
 
         uint256 totalDepositValue = 100 ether;
         createDepositQueue(vault, 10, totalDepositValue, users);
@@ -211,7 +217,7 @@ contract QueueUnitTests is QueueHelper {
         uint256 curatorCapacity = totalWithdrawValue; // I'm requesting an non-symmetric amount
         vm.prank(rebalancer);
         vm.expectRevert(
-            abi.encodeWithSelector(IQueue.CapacityOutOfBounds.selector)
+            abi.encodeWithSelector(IQueue.CapacityExceedsLiquidity.selector)
         );
         vault.processQueue(curatorCapacity);
     }

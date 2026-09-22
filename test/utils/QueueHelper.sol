@@ -11,6 +11,8 @@ import {
 } from "@openzeppelin/community-contracts/interfaces/IERC7540.sol";
 import {IVault} from "src/interfaces/IVault.sol";
 abstract contract QueueHelper is Test {
+    uint256 constant ROUNDING_DUST = 1e12;
+
     function _fundAndDeposit(
         VaultHandler vault,
         address _user,
@@ -79,6 +81,7 @@ abstract contract QueueHelper is Test {
                 valuePerEntry,
                 0
             );
+            vm.prank(user);
             vault.pushToDepositQueue(data);
         }
     }
@@ -101,5 +104,29 @@ abstract contract QueueHelper is Test {
             );
             vault.pushToWithdrawQueue(data);
         }
+    }
+
+    function _request(
+        VaultHandler vault,
+        IERC20 baseAsset,
+        address who,
+        uint256 amount
+    ) internal {
+        vm.startPrank(who);
+        deal(address(baseAsset), who, amount);
+        baseAsset.approve(address(vault), amount);
+        vault.requestDeposit(amount, who, who);
+        vm.stopPrank();
+    }
+
+    function _requestAndClaim(
+        VaultHandler vault,
+        IERC20 baseAsset,
+        address who,
+        uint256 amount
+    ) internal {
+        _request(vault, baseAsset, who, amount);
+        vm.prank(who);
+        vault.deposit(amount, who);
     }
 }

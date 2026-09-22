@@ -12,7 +12,7 @@ library InterestLib {
 
         $.lastAccrualTimestamp = block.timestamp;
 
-        uint256 compoundingFactor = rpow($.ratePerSecond, timeDelta, RAY) / RAY;
+        uint256 compoundingFactor = rpow($.ratePerSecond, timeDelta, RAY);
         $.indexRate = Math.mulDiv($.indexRate, compoundingFactor, RAY);
     }
 

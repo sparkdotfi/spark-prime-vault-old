@@ -22,7 +22,8 @@ interface IQueue {
 
     function withdrawQueueLength() external view returns (uint256);
 
-    error CapacityOutOfBounds();
+    error CapacityExceedsLiquidity();
+
     error PartialFillFailure();
 
     function depositQueueHead()

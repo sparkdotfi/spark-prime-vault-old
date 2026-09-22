@@ -8,13 +8,15 @@ import {
     DoubleEndedQueue
 } from "@openzeppelin/contracts/utils/structs/DoubleEndedQueue.sol";
 import {TransactionQueue} from "../libraries/TransactionQueue.sol";
+import {LiquidityManagement} from "./LiquidityManagement.sol";
 import {
     AccessControlUpgradeable
 } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
-
+import {InterestLib} from "../libraries/InterestLib.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {console} from "forge-std/console.sol";
 
-abstract contract Queue is VaultBase, AccessControlUpgradeable, IQueue {
+abstract contract Queue is LiquidityManagement, IQueue {
     using TransactionQueue for DoubleEndedQueue.Bytes32Deque;
 
     /// @notice The total share amount in the Withdraw Queue
@@ -74,27 +76,57 @@ abstract contract Queue is VaultBase, AccessControlUpgradeable, IQueue {
     }
 
     /// @notice Process pending deposits/withdrawals against eachother
-    /// @dev Trusts the planner/rebalancer for a reasonable `capacity` amount to bound the loop
-    function processQueue(uint256 capacity) public onlyRole(REBALANCER_ROLER) {
+    /// @dev Trusts the planner/rebalancer for a reasonable `tradeVolume` amount to bound the loop
+    function processQueue(
+        uint256 tradeVolume
+    ) public onlyRole(REBALANCER_ROLER) {
         Storage storage $ = getStorage();
+        InterestLib.accrueInterest($);
 
-        uint256 totalWithdrawValue = convertToAssets(totalPendingWithdraws());
-        uint256 totalDepositValue = totalPendingDeposits();
-        if (capacity > totalWithdrawValue || capacity > totalDepositValue)
-            revert CapacityOutOfBounds();
+        int256 liquidAssets = availableLiquidAssets();
+        uint256 totalAssetLiquidity = uint256(
+            liquidAssets > 0 ? liquidAssets : int256(0)
+        );
 
-        capacity == totalWithdrawValue
+        int256 liquidShares = availableLiquidShares();
+
+        uint256 totalShareLiquidity = totalPendingWithdraws() + /// @dev availableLiquidShares doesn't include the withdraw queue, because shares aren't taken until claim
+            uint256(liquidShares > 0 ? liquidShares : int256(0));
+
+        if (
+            tradeVolume >
+            Math.min(totalAssetLiquidity, convertToAssets(totalShareLiquidity))
+        ) revert CapacityExceedsLiquidity();
+
+        /// Withdraw Queue can eat upto totalAssetLiquidity
+        /// Withdraw queue size is totalPendingWithdraws
+        /// totalPendingWithdraws must be smaller than or equal to totalAssetLiquidity
+        /// Exchange Volume cannot exceed totalAssetLiquidity
+
+        /// Deposit Queue can eat upto totalShareLiquidity
+        /// Deposit Queue size is totalPendingDeposits
+        /// totalPendingDeposits must be smaller than or equal to totalShareLiquidity
+        /// Exchange Volume cannot exceed totalPendingDeposits
+
+        /// Only one of withdraw queue or deposit queue will be filled completely, the other fillUntil'ed
+        /// unless the tradeVolume == totalAssetLiquidity == totalShareLiquidity, in which case, both queues are fulfilled unbounded
+        tradeVolume >= convertToAssets(totalPendingWithdraws())
             ? fillUnbounded($, $.withdrawQueue, _markClaimableWithdraw)
             : fillUntil(
                 $,
                 $.withdrawQueue,
                 _markClaimableWithdraw,
-                convertToShares(capacity)
+                convertToShares(tradeVolume)
             );
 
-        capacity == totalDepositValue
+        tradeVolume >= totalPendingDeposits()
             ? fillUnbounded($, $.depositQueue, _markClaimableDeposit)
-            : fillUntil($, $.depositQueue, _markClaimableDeposit, capacity);
+            : fillUntil($, $.depositQueue, _markClaimableDeposit, tradeVolume);
+
+        // Sanity Invariants
+        if (availableLiquidAssets() < 0) revert();
+        if (availableLiquidShares() + int256(claimableWithdrawTotal()) < 0)
+            revert();
     }
 
     /// @dev Iterate over entire queue and eat until EOF
@@ -103,6 +135,7 @@ abstract contract Queue is VaultBase, AccessControlUpgradeable, IQueue {
         DoubleEndedQueue.Bytes32Deque storage queue,
         function(Storage storage, address, uint256, bool) claim
     ) internal {
+        console.log("FILL UNBOUNDED");
         uint256 n = queue.length();
 
         for (n; n > 0; --n) {
@@ -118,7 +151,7 @@ abstract contract Queue is VaultBase, AccessControlUpgradeable, IQueue {
         uint256 remainder
     ) internal {
         uint256 length = queue.length();
-
+        console.log("FILL UNTIL: %e", remainder);
         while (remainder > 0) {
             if (length == 0) revert PartialFillFailure();
 
