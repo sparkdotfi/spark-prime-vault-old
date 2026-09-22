@@ -28,10 +28,6 @@ contract OperatorUnitTests is QueueHelper {
         );
     }
     //Operator Rules
-    //Test: Operator cannot claim for a controller that hasn't assigned him
-    //Test: Operator cannot claim withdraw to any address other than the controller
-    //Test: Operator cannot create a deposit request
-    //Test: Operator cannot create a withdraw request
 
     /// @dev Operator cannot claim deposit to any address other than the controller
     function test_claimDeposit_ToNonUserWallet_asOperator() public {
@@ -50,6 +46,41 @@ contract OperatorUnitTests is QueueHelper {
         vm.stopPrank();
     }
 
+    /// @dev Operator cannot claim for a controller that hasn't assigned him
+    function test_cannot_claimDeposit_notSetAsOperator() public {
+        vm.startPrank(operator);
+        vm.expectRevert(
+            abi.encodeWithSelector(IVault.UnauthorizedCaller.selector, operator)
+        );
+        vault.deposit(5 ether, user, user);
+        vm.stopPrank();
+    }
+
+    /// @dev Operator cannot create a deposit request
+    function test_cannot_requestDeposit_AsOperator() public {
+        deal(address(baseAsset), user, 10 ether);
+        vault.setOperatorForUser(user, operator, true);
+
+        vm.startPrank(operator);
+        vm.expectRevert(
+            abi.encodeWithSelector(IVault.UnauthorizedCaller.selector, operator)
+        );
+        vault.requestDeposit(5 ether, user, user);
+        vm.stopPrank();
+    }
+
+    /// @dev Operator cannot create a withdraw request
+    function test_cannot_requestWithdraw_AsOperator() public {
+        deal(address(baseAsset), user, 10 ether);
+        vault.setOperatorForUser(user, operator, true);
+
+        vm.startPrank(operator);
+        vm.expectRevert(
+            abi.encodeWithSelector(IVault.UnauthorizedCaller.selector, operator)
+        );
+        vault.requestRedeem(5 ether, user, user);
+        vm.stopPrank();
+    }
     function test_claimDeposit_asOperator() public {
         _fundAndDeposit(vault, user, baseAsset, 10 ether);
 

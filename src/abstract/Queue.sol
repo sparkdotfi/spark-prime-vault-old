@@ -107,7 +107,7 @@ abstract contract Queue is VaultBase, AccessControlUpgradeable, IQueue {
 
         for (n; n > 0; --n) {
             Transaction memory data = queue.pop($);
-            claim($, data.beneficiary, data.amount, false);
+            claim($, data.controller, data.amount, false);
         }
     }
     /// @dev Iterate queue and accumulate claims until we hit required capacity. Reverts on pre-mature EOF
@@ -125,7 +125,7 @@ abstract contract Queue is VaultBase, AccessControlUpgradeable, IQueue {
             Transaction memory data = queue.pop($);
             if (data.amount >= remainder) {
                 /// @dev Base case, occurs exactly once at the last processed element
-                claim($, data.beneficiary, remainder, false);
+                claim($, data.controller, remainder, false);
 
                 _insertHeadWithNewAmount(
                     $,
@@ -136,7 +136,7 @@ abstract contract Queue is VaultBase, AccessControlUpgradeable, IQueue {
                 break;
             } else {
                 /// @dev Recursive case
-                claim($, data.beneficiary, data.amount, false);
+                claim($, data.controller, data.amount, false);
                 remainder -= data.amount;
             }
             length--;

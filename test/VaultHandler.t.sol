@@ -51,13 +51,13 @@ contract VaultHandler is Vault {
 
     function pushToDepositQueue(IVault.Transaction memory data) external {
         Storage storage $ = getStorage();
-        data.nonce = ++$.nonces[data.beneficiary];
+        data.nonce = ++$.nonces[data.controller];
         _pushToDepositQueue($, data);
     }
 
     function pushToWithdrawQueue(IVault.Transaction memory data) external {
         Storage storage $ = getStorage();
-        data.nonce = ++$.nonces[data.beneficiary];
+        data.nonce = ++$.nonces[data.controller];
         _pushToWithdrawQueue($, data);
     }
 

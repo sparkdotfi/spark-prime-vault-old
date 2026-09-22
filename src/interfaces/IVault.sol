@@ -14,9 +14,8 @@ interface IVault is IERC7540 {
     }
 
     struct Transaction {
-        address beneficiary;
-        uint256 amount;
         address controller;
+        uint256 amount;
         uint256 nonce;
     }
     /// @notice Lazy accrual of continuous interest

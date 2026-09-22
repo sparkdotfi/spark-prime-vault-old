@@ -77,7 +77,6 @@ abstract contract QueueHelper is Test {
             IVault.Transaction memory data = IVault.Transaction(
                 user,
                 valuePerEntry,
-                user,
                 0
             );
             vault.pushToDepositQueue(data);
@@ -98,7 +97,6 @@ abstract contract QueueHelper is Test {
             IVault.Transaction memory data = IVault.Transaction(
                 user,
                 valuePerEntry,
-                user,
                 0
             );
             vault.pushToWithdrawQueue(data);

@@ -190,10 +190,9 @@ contract Vault is
         emit DepositRequest(controller, owner, 0, msg.sender, assets);
 
         Transaction memory transaction = Transaction(
-            owner,
-            assets,
             controller,
-            ++$.nonces[owner]
+            assets,
+            ++$.nonces[controller]
         );
 
         if (!$.depositQueue.isEmpty() || capacity == 0) {
@@ -203,12 +202,12 @@ contract Vault is
 
         if (assets > capacity) {
             console.log("Assets greater than capacity");
-            _markClaimableDeposit($, owner, capacity, true);
+            _markClaimableDeposit($, controller, capacity, true);
             transaction.amount -= capacity;
             _pushToDepositQueue($, transaction);
         } else {
             console.log("Assets less than or equal to capacity");
-            _markClaimableDeposit($, owner, assets, true);
+            _markClaimableDeposit($, controller, assets, true);
         }
 
         return 0;
@@ -227,10 +226,12 @@ contract Vault is
     function withdraw(
         uint256 assets,
         address receiver,
-        address owner
+        address controller
     ) public override(ERC4626Upgradeable, IERC4626) returns (uint256 shares) {
         return
-            convertToAssets(redeem(convertToShares(assets), receiver, owner));
+            convertToAssets(
+                redeem(convertToShares(assets), receiver, controller)
+            );
     }
 
     function mint(
@@ -259,12 +260,20 @@ contract Vault is
         address owner
     ) public returns (uint256) {
         Storage storage $ = getStorage();
+        if (owner != msg.sender) revert UnauthorizedCaller(msg.sender);
+
         Transaction memory transaction = Transaction(
-            owner,
-            shares,
             controller,
-            ++$.nonces[owner]
+            shares,
+            ++$.nonces[controller]
         );
+        if (owner != controller) {
+            /// @dev If owner != controller: A user has put blind trust in their controller to claim and manage requests on their behalf.
+            /// We want to accrue yield and allow cancellations while in the withdraw queue but redeem has no concept of the owner.
+            /// In this case, we transfer shares to the controller. The controller is trusted to call the correct `reciever == owner` at redeem time
+            _transfer(owner, controller, shares);
+            owner = controller;
+        }
 
         $.lockedShares[owner] += shares;
 
@@ -292,18 +301,19 @@ contract Vault is
     function redeem(
         uint256 shares,
         address receiver,
-        address owner
+        address controller
     ) public override(ERC4626Upgradeable, IERC4626) returns (uint256 assets) {
-        require(msg.sender == owner || isOperator(owner, msg.sender));
+        if (msg.sender != controller && !isOperator(controller, msg.sender))
+            revert UnauthorizedCaller(msg.sender);
 
         Storage storage $ = getStorage();
 
-        if ($.ledger[owner].sharesOut < shares) revert();
+        if ($.ledger[controller].sharesOut < shares) revert();
 
-        $.ledger[owner].sharesOut -= shares;
+        $.ledger[controller].sharesOut -= shares;
         $.totalClaimableWithdraws -= shares;
 
-        _transfer(owner, address(this), shares);
+        _transfer(controller, address(this), shares);
 
         //(IERC20(address(this)), owner, address(this), shares);
 
@@ -315,7 +325,7 @@ contract Vault is
         if (assets > liquidAssets) revert();
         baseAsset.safeTransfer(receiver, assets);
 
-        $.lockedShares[owner] -= shares;
+        $.lockedShares[controller] -= shares;
         emit WithdrawClaimed(receiver, assets, shares);
     }
 

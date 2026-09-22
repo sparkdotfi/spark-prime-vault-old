@@ -52,7 +52,7 @@ contract RequestWithdrawUnitTests is QueueHelper {
         vault.requestRedeem(shares, userTwo, userTwo);
 
         assertEq(vault.withdrawQueueLength(), 2);
-        assertEq(vault.withdrawQueueHead().beneficiary, user);
+        assertEq(vault.withdrawQueueHead().controller, user);
         assertEq(vault.totalPendingWithdraws(), 2 * depositAmount); // Both users queued
 
         assertEq(vault.maxRedeem(user), 0);
@@ -79,7 +79,7 @@ contract RequestWithdrawUnitTests is QueueHelper {
 
         IVault.Transaction memory data = vault.withdrawQueueHead();
         assertEq(data.amount, depositAmount);
-        assertEq(data.beneficiary, user);
+        assertEq(data.controller, user);
     }
 
     /// @dev When no withdraw queue exists and the availableLiquidAssets can cover the entire withdraw amont, instant claim entire amount
@@ -140,7 +140,7 @@ contract RequestWithdrawUnitTests is QueueHelper {
 
         IVault.Transaction memory data = vault.withdrawQueueHead();
         assertEq(data.amount, 5 ether); // The remaining 5 ether is queued
-        assertEq(data.beneficiary, user);
+        assertEq(data.controller, user);
 
         uint256 balanceBefore = baseAsset.balanceOf(user);
 
@@ -164,16 +164,22 @@ contract RequestWithdrawUnitTests is QueueHelper {
         vm.prank(liquidityManager);
         vault.take(userDeposit + userTwoDeposit);
 
-        vm.prank(user);
-        vault.requestRedeem(vault.convertToShares(50), user, user);
+        vm.startPrank(user);
+        uint256 shares = vault.convertToShares(50);
+        vault.requestRedeem(shares, user, user);
+        vm.stopPrank();
+
         assertEq(vault.withdrawQueueLength(), 1);
     }
 
     /// @dev If a withdraw queue exists, we enter the queue always.
     function test_requestWithdraw_alwaysFIFO() public {
         generateWithdrawQueue();
-        vm.prank(userTwo);
-        vault.requestRedeem(vault.convertToShares(5 ether), userTwo, userTwo);
+
+        vm.startPrank(userTwo);
+        uint256 shares = vault.convertToShares(5 ether);
+        vault.requestRedeem(shares, userTwo, userTwo);
+        vm.stopPrank();
 
         assertEq(vault.maxRedeem(userTwo), 0);
         assertEq(vault.withdrawQueueLength(), 2);

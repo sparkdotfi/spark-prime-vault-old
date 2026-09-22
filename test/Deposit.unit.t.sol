@@ -137,7 +137,6 @@ contract RequestDepositUnitTests is QueueHelper {
 
         VaultHandler.Transaction memory data = vault.depositQueueHead();
         assertEq(data.amount, 100 ether);
-        assertEq(data.beneficiary, user);
         assertEq(data.controller, user);
         assertEq(data.nonce, 1);
 
@@ -199,7 +198,6 @@ contract RequestDepositUnitTests is QueueHelper {
 
         VaultHandler.Transaction memory data = vault.depositQueueHead();
         assertEq(data.amount, 10 ether);
-        assertEq(data.beneficiary, user);
         assertEq(data.controller, user);
         assertEq(data.nonce, 1);
     }
@@ -243,7 +241,6 @@ contract RequestDepositUnitTests is QueueHelper {
 
         VaultHandler.Transaction memory data = vault.depositQueueHead();
         assertEq(data.amount, 10 ether, "amount matches queue");
-        assertEq(data.beneficiary, user, "beneficary matches");
         assertEq(data.controller, user, "controller is user");
         assertEq(data.nonce, 1, "nonce is 1");
     }

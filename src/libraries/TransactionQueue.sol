@@ -26,7 +26,7 @@ library TransactionQueue {
         bytes32 element
     ) internal view returns (IVault.Transaction memory transaction) {
         transaction = $.transactionRegistry[element];
-        if (transaction.beneficiary == address(0)) revert DecodeFailed(element);
+        if (transaction.controller == address(0)) revert DecodeFailed(element);
     }
 
     function front(
