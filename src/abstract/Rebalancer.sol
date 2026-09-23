@@ -5,12 +5,18 @@ import {VaultBase} from "./VaultBase.sol";
 import {
     AccessControlUpgradeable
 } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
+import {
+    SafeERC20
+} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 abstract contract Rebalancer is
     VaultBase,
     AccessControlUpgradeable,
     IRebalancer
 {
+    using SafeERC20 for IERC20;
+
     /// @notice Allows Rebalancer Role to increase baseAsset position by unwinding Savings Vault deposits
     /// @dev Trusts the planner/rebalancer for a reasonable `share` amount
     function withdrawFromSavings(
@@ -27,6 +33,7 @@ abstract contract Rebalancer is
         uint256 assets
     ) public onlyRole(REBALANCER_ROLER) returns (uint256 shares) {
         Storage storage $ = getStorage();
+        IERC20(asset()).forceApprove(address($.savingsVault), assets);
         shares = $.savingsVault.deposit(assets, address(this));
         emit SavingsDeposit(assets, shares);
     }

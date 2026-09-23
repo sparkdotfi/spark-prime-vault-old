@@ -41,6 +41,7 @@ interface ISparkPrimeVault {
     error Insolvency();
 
     error ZeroValueProvided();
+    error MustExceedMinimumRequestAmount(uint256 amount);
 
     error InsufficientClaimableAmount(uint256 requested, uint256 actual);
     error InsufficientFunds();

@@ -16,6 +16,10 @@ interface IVaultManagement {
     /// @notice Emitted when VAULT_MANAGER calls updateWithdrawFee(uint256 bps)
     event WithdrawFeeUpdated(uint256 oldValue, uint256 newValue);
 
+    event MinimumDepositUpdated(uint256 amount);
+
+    event MinimumWithdrawUpdated(uint256 amount);
+
     /// @notice Thrown when VAULT_MANAGER attempts to set maximumCapacity < totalAssets
     error MaximumCapacityCannotExceedCurrentTotal();
 

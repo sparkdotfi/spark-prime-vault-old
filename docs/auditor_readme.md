@@ -29,3 +29,8 @@ Note for auditor: A `controller` could not be used, as the 7540 spec clearly def
 The curator can define a `capacity`, the amount of volume in base asset units that both queues should consume.
 The `capacity` cannot be larger than the minimum of total deposit liquidity and total withdraw liquidity.
 The liquidity is determined by the total pending value of the queue + total idle liquidity (that would have been instant claimed if no queues existed, once a queue exists, this idle liquidity is consumed by `processQueue`)
+
+## `processQueue` loop is bounded by capacity, not by elements
+The curator defines exactly how much volume should be traded between the deposit and withdraw queues, and iteration occurs until this volume is fulfilled or queue depletes. 
+
+Note for auditor: It has already been discussed that a minimum deposit + withdraw amount must be defined, to prevent users bloating queue length.

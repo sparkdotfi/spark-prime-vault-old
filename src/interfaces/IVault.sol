@@ -20,6 +20,7 @@ interface IVault is IERC7540 {
     }
 
     error NotAnOperator(address);
+    error DeltaMismatch();
 
     /// @notice Lazy accrual of continuous interest
     event AccruedInterest(uint256 newIndex, uint256 timestamp);

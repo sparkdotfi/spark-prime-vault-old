@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import {Test} from "forge-std/Test.sol";
 import {VaultHandler} from "./VaultHandler.t.sol";
 import {IVault} from "src/interfaces/IVault.sol";
+import {ISparkPrimeVault} from "src/interfaces/ISparkPrimeVault.sol";
 import {IVaultManagement} from "src/interfaces/IVaultManagement.sol";
 import {USDC} from "./mocks/USDC.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
@@ -231,4 +232,83 @@ contract RequestDepositUnitTests is QueueHelper {
         assertEq(data.nonce, 1, "nonce is 1");
     }
 
+    function test_minimumDeposit_isSetByInitialize() public view {
+        assertEq(vault.minimumDeposit(), MINIMUM_DEPOSIT);
+    }
+
+    function test_cannot_requestDeposit_belowMinimum() public {
+        uint256 amount = MINIMUM_DEPOSIT - 1;
+        _fund(user, amount);
+
+        vm.prank(user);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ISparkPrimeVault.MustExceedMinimumRequestAmount.selector,
+                MINIMUM_DEPOSIT
+            )
+        );
+        vault.requestDeposit(amount, user, user);
+    }
+
+    function test_requestDeposit_atMinimum() public {
+        _requestDeposit(user, MINIMUM_DEPOSIT);
+
+        assertEq(vault.maxDeposit(user), MINIMUM_DEPOSIT);
+        assertEq(baseAsset.balanceOf(address(vault)), MINIMUM_DEPOSIT);
+    }
+
+    function test_requestDeposit_belowMinimum_doesNotMoveAssets() public {
+        uint256 amount = MINIMUM_DEPOSIT - 1;
+        _fund(user, amount);
+
+        vm.prank(user);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ISparkPrimeVault.MustExceedMinimumRequestAmount.selector,
+                MINIMUM_DEPOSIT
+            )
+        );
+        vault.requestDeposit(amount, user, user);
+
+        assertEq(baseAsset.balanceOf(user), amount);
+        assertEq(baseAsset.balanceOf(address(vault)), 0);
+        assertEq(vault.depositQueueLength(), 0);
+    }
+
+    function test_cannot_requestDeposit_belowMinimum_whenQueueExists() public {
+        _closeCapacity();
+        _requestDeposit(user, 10 ether);
+        assertEq(vault.depositQueueLength(), 1);
+
+        uint256 amount = MINIMUM_DEPOSIT - 1;
+        _fund(userTwo, amount);
+
+        vm.prank(userTwo);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ISparkPrimeVault.MustExceedMinimumRequestAmount.selector,
+                MINIMUM_DEPOSIT
+            )
+        );
+        vault.requestDeposit(amount, userTwo, userTwo);
+
+        assertEq(vault.depositQueueLength(), 1);
+    }
+
+    function test_requestDeposit_zeroRevertsBeforeTheMinimumCheck() public {
+        _fund(user, 1 ether);
+
+        vm.prank(user);
+        vm.expectRevert(ISparkPrimeVault.ZeroValueProvided.selector);
+        vault.requestDeposit(0, user, user);
+    }
+
+    function test_requestDeposit_anyAmountWhenNoMinimumConfigured() public {
+        _deployVaultWithMinimums(0, 0);
+
+        assertEq(vault.minimumDeposit(), 0);
+        _requestDeposit(user, 1 wei);
+
+        assertEq(vault.maxDeposit(user), 1 wei);
+    }
 }

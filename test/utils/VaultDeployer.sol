@@ -13,6 +13,8 @@ library VaultDeployer {
     uint256 internal constant TEN_PERCENT_APY = 1000000003022265980097387650;
     uint256 internal constant RAY = 1e27;
     uint256 internal constant MAXIMUM_VAULT_CAPACITY = 100 ether;
+    uint256 internal constant MINIMUM_DEPOSIT = 0.01 ether;
+    uint256 internal constant MINIMUM_WITHDRAW = 0.01 ether;
 
     string internal constant NAME = "spPrime Vault";
     string internal constant SYMBOL = "spPRIME";
@@ -33,6 +35,8 @@ library VaultDeployer {
                 vaultManager,
                 liquidityManager,
                 rebalancer,
+                MINIMUM_DEPOSIT,
+                MINIMUM_WITHDRAW,
                 MAXIMUM_VAULT_CAPACITY,
                 TEN_PERCENT_APY
             );
@@ -45,6 +49,8 @@ library VaultDeployer {
         address vaultManager,
         address liquidityManager,
         address rebalancer,
+        uint256 minimumDeposit,
+        uint256 minimumWithdraw,
         uint256 capacity,
         uint256 ratePerSecond
     ) internal returns (VaultHandler vault) {
@@ -59,6 +65,8 @@ library VaultDeployer {
                     SYMBOL,
                     baseAsset,
                     savingsVault,
+                    minimumDeposit,
+                    minimumWithdraw,
                     capacity,
                     ratePerSecond,
                     admin,

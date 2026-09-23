@@ -15,7 +15,15 @@ import {
 import {InterestLib} from "../libraries/InterestLib.sol";
 import {console} from "forge-std/console.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-abstract contract VaultBase is ERC4626Upgradeable, IVault {
+import {
+    ReentrancyGuardTransient
+} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
+
+abstract contract VaultBase is
+    ERC4626Upgradeable,
+    ReentrancyGuardTransient,
+    IVault
+{
     using TransactionQueue for DoubleEndedQueue.Bytes32Deque;
 
     bytes32 constant LIQUIDITY_MANAGER_ROLE =
@@ -34,14 +42,18 @@ abstract contract VaultBase is ERC4626Upgradeable, IVault {
         mapping(bytes32 => Transaction) transactionRegistry;
         DoubleEndedQueue.Bytes32Deque withdrawQueue;
         DoubleEndedQueue.Bytes32Deque depositQueue;
+        // Vault Management
         IERC20 baseAsset;
         IERC4626 savingsVault;
         uint256 maximumCapacity;
         uint256 totalAssets;
+        uint256 minimumDeposit;
+        uint256 minimumWithdraw;
         // Interest Rate
         uint256 ratePerSecond;
         uint256 lastAccrualTimestamp;
         uint256 indexRate;
+        // Queue Accounting
         uint256 totalDepositQueueAssets;
         uint256 totalWithdrawQueueShares;
         uint256 totalClaimableDeposits; //in base asset
@@ -204,6 +216,16 @@ abstract contract VaultBase is ERC4626Upgradeable, IVault {
     function maxCapacity() public view returns (uint256) {
         Storage storage $ = getStorage();
         return $.maximumCapacity;
+    }
+
+    function minimumDeposit() public view returns (uint256) {
+        Storage storage $ = getStorage();
+        return $.minimumDeposit;
+    }
+
+    function minimumWithdraw() public view returns (uint256) {
+        Storage storage $ = getStorage();
+        return $.minimumWithdraw;
     }
     /*  function balanceOf(
         address account

@@ -26,6 +26,7 @@ import {
 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {TransientSlot} from "@openzeppelin/contracts/utils/TransientSlot.sol";
 import {console} from "forge-std/console.sol";
 contract Vault is
     Rebalancer,
@@ -73,6 +74,20 @@ contract Vault is
     using TransactionQueue for DoubleEndedQueue.Bytes32Deque;
     using SafeERC20 for IERC20;
     using SafeCast for int256;
+    using TransientSlot for bytes32;
+    using TransientSlot for TransientSlot.BooleanSlot;
+
+    /// @dev cast index-erc7201 sparkprime.vault.internalTransfer
+    bytes32 private constant INTERNAL_TRANSFER_SLOT =
+        0x847c1ce996b34c883673c43d0837cf9867d57360e13c4942350d76beee85a400;
+
+    function _setInternalTransfer(bool value) private {
+        INTERNAL_TRANSFER_SLOT.asBoolean().tstore(value);
+    }
+
+    function _isInternalTransfer() private view returns (bool) {
+        return INTERNAL_TRANSFER_SLOT.asBoolean().tload();
+    }
     constructor() {
         _disableInitializers();
     }
@@ -81,6 +96,8 @@ contract Vault is
         string memory symbol,
         IERC20 _baseAsset,
         IERC4626 _savingsVault,
+        uint256 minimumDeposit,
+        uint256 minimumWithdraw,
         uint256 _capacity,
         uint256 _ratePerSecond,
         address admin,
@@ -93,12 +110,16 @@ contract Vault is
         __AccessControl_init();
         __Pausable_init();
 
-        Storage storage $ = getStorage();
-        $.savingsVault = _savingsVault;
-        $.maximumCapacity = _capacity;
-        $.ratePerSecond = _ratePerSecond;
-        $.indexRate = InterestLib.RAY;
-        $.lastAccrualTimestamp = block.timestamp;
+        {
+            Storage storage $ = getStorage();
+            $.savingsVault = _savingsVault;
+            $.maximumCapacity = _capacity;
+            $.minimumDeposit = minimumDeposit;
+            $.minimumWithdraw = minimumWithdraw;
+            $.ratePerSecond = _ratePerSecond;
+            $.indexRate = InterestLib.RAY;
+            $.lastAccrualTimestamp = block.timestamp;
+        }
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(VAULT_MANAGER_ROLE, vaultManager);
@@ -172,12 +193,14 @@ contract Vault is
         // We can only mint shares if we're below capacity and transfer shares we own
         // How much of that can we mint, and how much of that can we get from our idle balance
 
-        uint256 totalLiquidShares = this.balanceOf(address(this));
+        uint256 totalLiquidShares = balanceOf(address(this));
 
         if (totalAssets() >= $.maximumCapacity) {
             // we cant mint
             if (totalLiquidShares < shares) revert Insolvency(); // Not enough withdraws have claimed to fill liquidity
+            _setInternalTransfer(true);
             _transfer(address(this), receiver, shares);
+            _setInternalTransfer(false);
         } else {
             // we can mint $.maximumCapacity - totalAssets()
             uint256 mintableShares = convertToShares(
@@ -189,7 +212,11 @@ contract Vault is
                 revert Insolvency(); // Both vault owned shares and minting couldn't fulfill this request
 
             uint256 fromLiquid = Math.min(shares, totalLiquidShares);
-            if (fromLiquid > 0) _transfer(address(this), receiver, fromLiquid);
+            if (fromLiquid > 0) {
+                _setInternalTransfer(true);
+                _transfer(address(this), receiver, fromLiquid);
+                _setInternalTransfer(false);
+            }
 
             console.log("toMint = %e - %e", shares, fromLiquid);
             uint256 toMint = shares - fromLiquid;
@@ -209,39 +236,35 @@ contract Vault is
     ) public returns (uint256) {
         Storage storage $ = getStorage();
         if (assets == 0) revert ZeroValueProvided();
+        if (assets < $.minimumDeposit)
+            revert MustExceedMinimumRequestAmount($.minimumDeposit);
         if (msg.sender != owner) revert UnauthorizedCaller(msg.sender);
 
         uint256 capacity = availableCapacity();
-        IERC20 baseAsset = IERC20(asset());
-
-        console.log("Available capacity for this deposit: %e", capacity);
-        console.log("Deposit size: %e", assets);
-
-        baseAsset.safeTransferFrom(owner, address(this), assets);
-
-        emit DepositRequest(controller, owner, 0, msg.sender, assets);
-
         Transaction memory transaction = Transaction(
             controller,
             assets,
             ++$.nonces[controller]
         );
-
         if (!$.depositQueue.isEmpty() || capacity == 0) {
             _pushToDepositQueue($, transaction);
-            return 0;
-        }
-
-        if (assets > capacity) {
-            console.log("Assets greater than capacity");
+        } else if (assets > capacity) {
             _markClaimableDeposit($, controller, capacity, true);
             transaction.amount -= capacity;
             _pushToDepositQueue($, transaction);
         } else {
-            console.log("Assets less than or equal to capacity");
             _markClaimableDeposit($, controller, assets, true);
         }
 
+        IERC20 baseAsset = IERC20(asset());
+
+        uint256 before = baseAsset.balanceOf(address(this));
+        baseAsset.safeTransferFrom(owner, address(this), assets);
+
+        if (baseAsset.balanceOf(address(this)) - before != assets)
+            revert DeltaMismatch();
+
+        emit DepositRequest(controller, owner, 0, msg.sender, assets);
         return 0;
     }
 
@@ -293,6 +316,9 @@ contract Vault is
     ) public returns (uint256) {
         Storage storage $ = getStorage();
         if (shares == 0) revert ZeroValueProvided();
+        if (convertToAssets(shares) < $.minimumWithdraw)
+            revert MustExceedMinimumRequestAmount($.minimumWithdraw);
+
         if (owner != msg.sender) revert UnauthorizedCaller(msg.sender);
 
         uint256 unlockedShares = balanceOf(owner) - $.lockedShares[owner];
@@ -359,8 +385,9 @@ contract Vault is
         $.ledger[controller].sharesOut -= shares;
         $.totalClaimableWithdraws -= shares;
 
+        _setInternalTransfer(true);
         _transfer(controller, address(this), shares);
-
+        _setInternalTransfer(false);
         //(IERC20(address(this)), owner, address(this), shares);
 
         InterestLib.accrueInterest($);
@@ -384,7 +411,7 @@ contract Vault is
     ) internal override {
         Storage storage $ = getStorage();
 
-        if (from != address(0) && to != address(this)) {
+        if (from != address(0) && !_isInternalTransfer()) {
             uint256 balanceRemaining = balanceOf(from) - value;
             if ($.lockedShares[from] > balanceRemaining) revert();
         }

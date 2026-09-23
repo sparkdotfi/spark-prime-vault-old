@@ -32,6 +32,8 @@ abstract contract QueueHelper is Test {
     uint256 constant TEN_PERCENT_APY = 1000000003022265980097387650;
     uint256 constant RAY = 1e27;
     uint256 constant MAXIMUM_VAULT_CAPACITY = 100 ether;
+    uint256 constant MINIMUM_DEPOSIT = 0.01 ether;
+    uint256 constant MINIMUM_WITHDRAW = 0.01 ether;
 
     function _deployVault() internal {
         baseAsset = new USDC();
@@ -44,6 +46,27 @@ abstract contract QueueHelper is Test {
             vaultManager,
             liquidityManager,
             rebalancer
+        );
+    }
+
+    function _deployVaultWithMinimums(
+        uint256 minimumDeposit,
+        uint256 minimumWithdraw
+    ) internal {
+        baseAsset = new USDC();
+        savingsVault = new SavingsVault(baseAsset);
+
+        vault = VaultDeployer.deploy(
+            baseAsset,
+            savingsVault,
+            admin,
+            vaultManager,
+            liquidityManager,
+            rebalancer,
+            minimumDeposit,
+            minimumWithdraw,
+            MAXIMUM_VAULT_CAPACITY,
+            TEN_PERCENT_APY
         );
     }
 

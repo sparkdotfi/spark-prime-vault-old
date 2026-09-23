@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import {Test} from "forge-std/Test.sol";
 import {VaultHandler} from "./VaultHandler.t.sol";
 import {IVault} from "src/interfaces/IVault.sol";
+import {ISparkPrimeVault} from "src/interfaces/ISparkPrimeVault.sol";
 import {USDC} from "./mocks/USDC.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {console} from "forge-std/console.sol";
@@ -155,7 +156,7 @@ contract RequestWithdrawUnitTests is QueueHelper {
         vault.take(userDeposit + userTwoDeposit);
 
         vm.startPrank(user);
-        uint256 shares = vault.convertToShares(50);
+        uint256 shares = vault.convertToShares(50 ether);
         vault.requestRedeem(shares, user, user);
         vm.stopPrank();
 
@@ -173,5 +174,199 @@ contract RequestWithdrawUnitTests is QueueHelper {
 
         assertEq(vault.maxRedeem(userTwo), 0);
         assertEq(vault.withdrawQueueLength(), 2);
+    }
+
+    function test_minimumWithdraw_isSetByInitialize() public view {
+        assertEq(vault.minimumWithdraw(), MINIMUM_WITHDRAW);
+    }
+
+    function test_cannot_requestRedeem_belowMinimum() public {
+        _depositAndClaim(user, 50 ether);
+        _drainLiquidity();
+
+        uint256 shares = vault.convertToShares(MINIMUM_WITHDRAW) - 1;
+
+        vm.prank(user);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ISparkPrimeVault.MustExceedMinimumRequestAmount.selector,
+                MINIMUM_WITHDRAW
+            )
+        );
+        vault.requestRedeem(shares, user, user);
+    }
+
+    function test_requestRedeem_atMinimum() public {
+        _depositAndClaim(user, 50 ether);
+        _drainLiquidity();
+
+        uint256 shares = vault.convertToShares(MINIMUM_WITHDRAW);
+
+        vm.prank(user);
+        vault.requestRedeem(shares, user, user);
+
+        assertEq(vault.withdrawQueueLength(), 1);
+        assertEq(vault.totalPendingWithdraws(), shares);
+    }
+
+    function test_requestRedeem_belowMinimum_doesNotLockShares() public {
+        _depositAndClaim(user, 50 ether);
+        _drainLiquidity();
+
+        uint256 balanceBefore = vault.balanceOf(user);
+        uint256 shares = vault.convertToShares(MINIMUM_WITHDRAW) - 1;
+
+        vm.prank(user);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ISparkPrimeVault.MustExceedMinimumRequestAmount.selector,
+                MINIMUM_WITHDRAW
+            )
+        );
+        vault.requestRedeem(shares, user, user);
+
+        assertEq(vault.balanceOf(user), balanceBefore);
+        assertEq(vault.withdrawQueueLength(), 0);
+        assertEq(vault.totalPendingWithdraws(), 0);
+
+        vm.prank(user);
+        vault.transfer(userTwo, balanceBefore);
+        assertEq(vault.balanceOf(user), 0);
+    }
+
+    function test_cannot_requestRedeem_belowMinimum_onTheInstantClaimPath()
+        public
+    {
+        _depositAndClaim(user, 50 ether);
+
+        assertGt(vault.availableLiquidAssets(), 0);
+        uint256 shares = vault.convertToShares(MINIMUM_WITHDRAW) - 1;
+
+        vm.prank(user);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ISparkPrimeVault.MustExceedMinimumRequestAmount.selector,
+                MINIMUM_WITHDRAW
+            )
+        );
+        vault.requestRedeem(shares, user, user);
+
+        assertEq(vault.maxRedeem(user), 0);
+    }
+
+    function test_requestRedeem_minimumIsDenominatedInAssets() public {
+        _depositAndClaim(user, 50 ether);
+        vm.warp(block.timestamp + 365 days);
+        _depositAndClaim(userTwo, 10 ether);
+        _drainLiquidity();
+
+        assertGt(vault.index(), RAY);
+
+        uint256 minShares = vault.convertToShares(MINIMUM_WITHDRAW);
+        assertLt(minShares, MINIMUM_WITHDRAW);
+
+        vm.prank(user);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ISparkPrimeVault.MustExceedMinimumRequestAmount.selector,
+                MINIMUM_WITHDRAW
+            )
+        );
+        vault.requestRedeem(minShares - 1, user, user);
+
+        vm.prank(user);
+        vault.requestRedeem(minShares + 1, user, user);
+
+        assertEq(vault.withdrawQueueLength(), 1);
+    }
+
+    function test_requestRedeem_zeroRevertsBeforeTheMinimumCheck() public {
+        _depositAndClaim(user, 50 ether);
+        _drainLiquidity();
+
+        vm.prank(user);
+        vm.expectRevert(ISparkPrimeVault.ZeroValueProvided.selector);
+        vault.requestRedeem(0, user, user);
+    }
+
+    function test_requestRedeem_anyAmountWhenNoMinimumConfigured() public {
+        _deployVaultWithMinimums(0, 0);
+        _depositAndClaim(user, 50 ether);
+        _drainLiquidity();
+
+        assertEq(vault.minimumWithdraw(), 0);
+
+        vm.prank(user);
+        vault.requestRedeem(1 wei, user, user);
+
+        assertEq(vault.withdrawQueueLength(), 1);
+    }
+
+    function test_cannot_transferLockedSharesToTheVault() public {
+        _depositAndClaim(user, 50 ether);
+        _drainLiquidity();
+
+        uint256 shares = vault.balanceOf(user);
+        vm.prank(user);
+        vault.requestRedeem(shares, user, user);
+
+        vm.prank(user);
+        vm.expectRevert();
+        vault.transfer(userTwo, shares);
+
+        vm.prank(user);
+        vm.expectRevert();
+        vault.transfer(address(vault), shares);
+
+        assertEq(vault.balanceOf(user), shares);
+        assertEq(vault.totalPendingWithdraws(), shares);
+    }
+
+    function test_redeem_clearsTheInternalTransferFlag() public {
+        _depositAndClaim(user, 50 ether);
+
+        uint256 shares = vault.balanceOf(user);
+        vm.prank(user);
+        vault.requestRedeem(shares, user, user);
+
+        uint256 claimable = vault.maxRedeem(user);
+        vm.prank(user);
+        vault.redeem(claimable, user, user);
+
+        _depositAndClaim(userTwo, 10 ether);
+        uint256 twoShares = vault.balanceOf(userTwo);
+
+        vm.prank(userTwo);
+        vault.requestRedeem(twoShares, userTwo, userTwo);
+
+        vm.prank(userTwo);
+        vm.expectRevert();
+        vault.transfer(address(vault), twoShares);
+    }
+
+    function test_deposit_clearsTheInternalTransferFlag() public {
+        _depositAndClaim(user, 50 ether);
+        uint256 shares = vault.balanceOf(user);
+        vm.startPrank(user);
+        vault.requestRedeem(shares, user, user);
+        vault.redeem(vault.maxRedeem(user), user, user);
+        vm.stopPrank();
+
+        _closeCapacity();
+        _requestDeposit(userTwo, 10 ether);
+        vm.prank(rebalancer);
+        vault.processQueue(10 ether);
+
+        vm.prank(userTwo);
+        vault.deposit(10 ether, userTwo);
+
+        uint256 twoShares = vault.balanceOf(userTwo);
+        _drainLiquidity();
+        vm.prank(userTwo);
+        vault.requestRedeem(twoShares, userTwo, userTwo);
+
+        vm.prank(userTwo);
+        vm.expectRevert();
+        vault.transfer(address(vault), twoShares);
     }
 }

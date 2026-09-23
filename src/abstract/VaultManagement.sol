@@ -21,6 +21,21 @@ abstract contract VaultManagement is
         emit RateUpdated(oldRate, newRate);
     }
 
+    function setMinimumDeposit(
+        uint256 amount
+    ) public onlyRole(VAULT_MANAGER_ROLE) {
+        Storage storage $ = getStorage();
+        $.minimumDeposit = amount;
+        emit MinimumDepositUpdated(amount);
+    }
+
+    function setMinimumWithdraw(
+        uint256 amount
+    ) public onlyRole(VAULT_MANAGER_ROLE) {
+        Storage storage $ = getStorage();
+        $.minimumWithdraw = amount;
+        emit MinimumWithdrawUpdated(amount);
+    }
     function updateWithdrawFee(
         uint256 bps
     ) public onlyRole(VAULT_MANAGER_ROLE) {}
