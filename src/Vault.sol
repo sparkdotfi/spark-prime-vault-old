@@ -27,6 +27,13 @@ import {
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {TransientSlot} from "@openzeppelin/contracts/utils/TransientSlot.sol";
+import {
+    AccessControlUpgradeable
+} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import {
+    IERC7540Operator
+} from "@openzeppelin/community-contracts/interfaces/IERC7540.sol";
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {console} from "forge-std/console.sol";
 contract Vault is
     Rebalancer,
@@ -75,6 +82,13 @@ contract Vault is
     using SafeCast for int256;
     using TransientSlot for bytes32;
     using TransientSlot for TransientSlot.BooleanSlot;
+
+    /// @dev type(IERC7575).interfaceId
+    bytes4 private constant ERC7575_INTERFACE_ID = 0x2f0a18c5;
+    /// @dev type(IERC7540Deposit).interfaceId
+    bytes4 private constant ERC7540_DEPOSIT_INTERFACE_ID = 0xce3bbe50;
+    /// @dev type(IERC7540Redeem).interfaceId
+    bytes4 private constant ERC7540_REDEEM_INTERFACE_ID = 0x620ee8e4;
 
     /// @dev cast index-erc7201 sparkprime.vault.internalTransfer
     bytes32 private constant INTERNAL_TRANSFER_SLOT =
@@ -419,6 +433,17 @@ contract Vault is
         }
 
         super._update(from, to, value);
+    }
+
+    function supportsInterface(
+        bytes4 interfaceId
+    ) public view override(AccessControlUpgradeable, IERC165) returns (bool) {
+        return
+            interfaceId == type(IERC7540Operator).interfaceId ||
+            interfaceId == ERC7575_INTERFACE_ID ||
+            interfaceId == ERC7540_DEPOSIT_INTERFACE_ID ||
+            interfaceId == ERC7540_REDEEM_INTERFACE_ID ||
+            super.supportsInterface(interfaceId);
     }
 
     function setOperator(

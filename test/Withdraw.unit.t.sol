@@ -384,8 +384,10 @@ contract RequestWithdrawUnitTests is QueueHelper {
         uint256 claimValue = vault.maxWithdraw(user);
 
         vm.prank(user);
-        vault.withdraw(claimValue, user, user);
+        uint256 burned = vault.withdraw(claimValue, user, user);
 
+        assertEq(burned, vault.convertToShares(claimValue));
+        assertEq(burned, claimable);
         assertEq(baseAsset.balanceOf(user), claimValue);
         assertEq(baseAsset.balanceOf(address(vault)), 50 ether - claimValue);
         assertEq(vault.maxRedeem(user), 0);
