@@ -10,6 +10,15 @@ The `take()` function is access controlled to the PAU, I'd still suggest adding 
 ### `setOperator` stores a single operator
 To simplify the model and allow Spark to rotate keys via the `AdministeredAgent`, a single Operator entry is permitted per user. This is set once by the user before they begin their Vault Journey, and Spark rotates it's keys that interact with the address in question.
 
+## Matched deposits are unclaimable until redeemers claim first
+A hard business requirement from Spark was to allow accruing yield whilst waiting in the queue. This means a withdrawers shares are reclaimed/distributed when they CLAIM. 
+
+Each withdrawer that doesn't claim increases the amount of assets not available to depositors when they claim.
+
+Spark will be set as the operator and will claim on behalf of the users. It is Sparks responsibility to claim on behalf of users after queuing processing (or atleast, withdrawers) to produce liquidity for trade volume.
+
+Note for auditor: It is possible for a user to NOT set Spark as an operator, in which case, they can potentially never claim to cause a grief attack against the depositors but this comes at the expense of their own funds being locked and becomes economomically infeasible for significant amounts.
+
 ### `requestRedeem` and `requestDeposit` are Operator barred functions
 The ERC 7540 spec defines that a user set operator should be able to perform requests on behalf of the user, the contract violates this spec. The blast radius of this spec violation is Spark itself (as Spark is the only Operator that should ever be set). This is a known trade off in order to guarantee Spark can only perform claims on behalf of users.
 

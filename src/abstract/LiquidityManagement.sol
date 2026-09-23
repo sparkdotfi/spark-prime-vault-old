@@ -46,10 +46,16 @@ abstract contract LiquidityManagement is
             int256(shareBalance + mintableShares) -
             int256(convertToShares($.totalClaimableDeposits));
     }
-    function totalMintableShares() public view returns (uint256 shares) {
+
+    function totalMintableShares() public view returns (uint256) {
         Storage storage $ = getStorage();
-        shares = convertToShares($.maximumCapacity - totalAssets());
+        uint256 total = totalAssets();
+        return
+            total >= $.maximumCapacity
+                ? 0
+                : convertToShares($.maximumCapacity - total);
     }
+
     /// @notice Calculates how many assets the vault can allocate for instant withdrawals
     /// @dev It is the Rebalancers responsibility to convert Savings Vault shares back to base asset for them to be considered instant liquidty
     /// @return totalBaseAssets Instant Withdrawal Liquidity

@@ -53,7 +53,7 @@ abstract contract VaultBase is ERC4626Upgradeable, IVault {
 
     function getStorage() internal view returns (Storage storage $) {
         assembly {
-            $.slot := sload(STORAGE_SLOT)
+            $.slot := STORAGE_SLOT
         }
     }
 
@@ -216,13 +216,15 @@ abstract contract VaultBase is ERC4626Upgradeable, IVault {
                 ? 0
                 : erc20_$._balances[account];
     }*/
+
     function availableCapacity() public view returns (uint256 available) {
         Storage storage $ = getStorage();
-        available = $.maximumCapacity - totalAssets();
-        console.log("maximumCap - totalAssets = %e", available);
+        uint256 total = totalAssets();
+        available = $.maximumCapacity > total ? $.maximumCapacity - total : 0;
         if ($.totalClaimableDeposits >= available) available = 0;
         else available -= $.totalClaimableDeposits;
     }
+
     function previewDeposit(
         uint256
     ) public pure override(ERC4626Upgradeable, IERC4626) returns (uint256) {

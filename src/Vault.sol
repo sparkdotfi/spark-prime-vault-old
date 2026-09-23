@@ -176,8 +176,8 @@ contract Vault is
 
         if (totalAssets() >= $.maximumCapacity) {
             // we cant mint
-            if (totalLiquidShares < assets) revert Insolvency(); // Not enough withdraws have claimed to fill liquidity
-            _transfer(address(this), receiver, assets);
+            if (totalLiquidShares < shares) revert Insolvency(); // Not enough withdraws have claimed to fill liquidity
+            _transfer(address(this), receiver, shares);
         } else {
             // we can mint $.maximumCapacity - totalAssets()
             uint256 mintableShares = convertToShares(
@@ -397,8 +397,10 @@ contract Vault is
         bool approved
     ) external returns (bool) {
         Storage storage $ = getStorage();
-        $.operators[msg.sender] = approved ? operator : address(0);
-        emit OperatorSet(msg.sender, operator, approved);
+        if (approved) $.operators[msg.sender] = operator;
+        else if ($.operators[msg.sender] == operator)
+            $.operators[msg.sender] = address(0);
+        else revert NotAnOperator(operator);
         return true;
     }
 
