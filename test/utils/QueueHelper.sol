@@ -5,13 +5,18 @@ import {Test} from "forge-std/Test.sol";
 import {console} from "forge-std/console.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {VaultHandler} from "../VaultHandler.t.sol";
+import {VaultDeployer} from "./VaultDeployer.sol";
 import {USDC} from "../mocks/USDC.sol";
+import {SavingsVault} from "../mocks/SavingsVault.sol";
 import {IVault} from "src/interfaces/IVault.sol";
+import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
 abstract contract QueueHelper is Test {
     VaultHandler internal vault;
+    IERC4626 internal savingsVault;
     IERC20 internal baseAsset;
 
+    address internal admin = makeAddr("admin");
     address internal rebalancer = makeAddr("rebalancer");
     address internal vaultManager = makeAddr("vault_manager");
     address internal liquidityManager = makeAddr("liquidity_manager");
@@ -24,14 +29,21 @@ abstract contract QueueHelper is Test {
     address internal victim = makeAddr("victim");
 
     uint256 internal constant ROUNDING_DUST = 1e12;
+    uint256 constant TEN_PERCENT_APY = 1000000003022265980097387650;
+    uint256 constant RAY = 1e27;
+    uint256 constant MAXIMUM_VAULT_CAPACITY = 100 ether;
 
     function _deployVault() internal {
         baseAsset = new USDC();
-        vault = new VaultHandler(
+        savingsVault = new SavingsVault(baseAsset);
+
+        vault = VaultDeployer.deploy(
             baseAsset,
-            rebalancer,
+            savingsVault,
+            admin,
             vaultManager,
-            liquidityManager
+            liquidityManager,
+            rebalancer
         );
     }
 

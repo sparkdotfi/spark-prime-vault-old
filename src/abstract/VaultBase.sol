@@ -205,6 +205,17 @@ abstract contract VaultBase is ERC4626Upgradeable, IVault {
         Storage storage $ = getStorage();
         return $.maximumCapacity;
     }
+    /*  function balanceOf(
+        address account
+    ) public view override(ERC20Upgradeable) returns (uint256) {
+        ERC20Storage storage erc20_$ = _getERC20Storage();
+        Storage storage $ = getStorage();
+
+        return
+            $.lockedShares[account] >= erc20_$._balances[account]
+                ? 0
+                : erc20_$._balances[account];
+    }*/
     function availableCapacity() public view returns (uint256 available) {
         Storage storage $ = getStorage();
         available = $.maximumCapacity - totalAssets();

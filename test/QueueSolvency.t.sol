@@ -88,6 +88,9 @@ contract QueueSolvencyTests is QueueHelper {
 
     function test_symmetricMatch_dustIsSweptByNextCall() public {
         _ensureCapacity(50 ether);
+
+        vm.warp(block.timestamp + 1);
+
         _mintShares(5, 50 ether, defaultUsers());
         _drainLiquidity();
         uint256 shares = createWithdrawQueue(

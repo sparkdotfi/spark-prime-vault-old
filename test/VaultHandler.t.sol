@@ -6,31 +6,9 @@ import {Vault} from "src/Vault.sol";
 import {IVault} from "src/interfaces/IVault.sol";
 import {USDC} from "./mocks/USDC.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
+import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
 contract VaultHandler is Vault {
-    uint256 constant TEN_PERCENT_APY = 1000000003022265980097387650;
-    uint256 constant RAY = 1e27;
-    uint256 constant MAXIMUM_VAULT_CAPACITY = 100 ether;
-    constructor(
-        IERC20 baseAsset,
-        address rebalancer,
-        address vaultManager,
-        address liquidityManager
-    ) initializer {
-        _grantRole(DEFAULT_ADMIN_ROLE, liquidityManager);
-        _grantRole(VAULT_MANAGER_ROLE, vaultManager);
-        _grantRole(LIQUIDITY_MANAGER_ROLE, liquidityManager);
-        _grantRole(REBALANCER_ROLER, rebalancer);
-
-        __ERC20_init("spPRIME Vault", "spPRIME");
-        __ERC4626_init(baseAsset);
-
-        Storage storage $ = getStorage();
-        $.maximumCapacity = MAXIMUM_VAULT_CAPACITY;
-        $.indexRate = RAY;
-        $.ratePerSecond = TEN_PERCENT_APY;
-    }
-
     function setOperatorForUser(
         address user,
         address operator,

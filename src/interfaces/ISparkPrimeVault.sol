@@ -43,6 +43,7 @@ interface ISparkPrimeVault {
     error ZeroValueProvided();
 
     error InsufficientClaimableAmount(uint256 requested, uint256 actual);
+    error InsufficientFunds();
 
     /// @notice Overload of ERC4626 deposit to allow Spark Referal Program support
     function deposit(

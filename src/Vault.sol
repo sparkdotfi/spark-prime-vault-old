@@ -73,7 +73,38 @@ contract Vault is
     using TransactionQueue for DoubleEndedQueue.Bytes32Deque;
     using SafeERC20 for IERC20;
     using SafeCast for int256;
+    constructor() {
+        _disableInitializers();
+    }
+    function initialize(
+        string memory name,
+        string memory symbol,
+        IERC20 _baseAsset,
+        IERC4626 _savingsVault,
+        uint256 _capacity,
+        uint256 _ratePerSecond,
+        address admin,
+        address vaultManager,
+        address liquidityManager,
+        address rebalancer
+    ) external initializer {
+        __ERC20_init(name, symbol);
+        __ERC4626_init(_baseAsset);
+        __AccessControl_init();
+        __Pausable_init();
 
+        Storage storage $ = getStorage();
+        $.savingsVault = _savingsVault;
+        $.maximumCapacity = _capacity;
+        $.ratePerSecond = _ratePerSecond;
+        $.indexRate = InterestLib.RAY;
+        $.lastAccrualTimestamp = block.timestamp;
+
+        _grantRole(DEFAULT_ADMIN_ROLE, admin);
+        _grantRole(VAULT_MANAGER_ROLE, vaultManager);
+        _grantRole(LIQUIDITY_MANAGER_ROLE, liquidityManager);
+        _grantRole(REBALANCER_ROLER, rebalancer);
+    }
     function pendingDepositRequest(
         uint256,
         address controller
@@ -263,6 +294,9 @@ contract Vault is
         Storage storage $ = getStorage();
         if (shares == 0) revert ZeroValueProvided();
         if (owner != msg.sender) revert UnauthorizedCaller(msg.sender);
+
+        uint256 unlockedShares = balanceOf(owner) - $.lockedShares[owner];
+        if (shares > unlockedShares) revert InsufficientFunds();
 
         Transaction memory transaction = Transaction(
             controller,
