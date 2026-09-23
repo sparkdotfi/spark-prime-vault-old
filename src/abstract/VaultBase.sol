@@ -45,7 +45,6 @@ abstract contract VaultBase is
         IERC20 baseAsset;
         IERC4626 savingsVault;
         uint256 maximumCapacity;
-        uint256 totalAssets;
         uint256 minimumDeposit;
         uint256 minimumWithdraw;
         // Interest Rate
@@ -56,7 +55,7 @@ abstract contract VaultBase is
         uint256 totalDepositQueueAssets;
         uint256 totalWithdrawQueueShares;
         uint256 totalClaimableDeposits; //in base asset
-        uint256 totalClaimableWithdraws; //in shares
+        uint256 totalClaimableWithdrawAssets; //in base asset, frozen at match
     }
 
     bytes32 constant STORAGE_SLOT =
@@ -202,7 +201,8 @@ abstract contract VaultBase is
         override(ERC4626Upgradeable, IERC4626)
         returns (uint256 claimValue)
     {
-        claimValue = convertToAssets(maxRedeem(owner));
+        Storage storage $ = getStorage();
+        claimValue = $.ledger[owner].assetsOut;
     }
     function totalAssets()
         public
@@ -210,9 +210,7 @@ abstract contract VaultBase is
         override(ERC4626Upgradeable, IERC4626)
         returns (uint256)
     {
-        Storage storage $ = getStorage();
-        console.log("Total assets: %e", $.totalAssets);
-        return $.totalAssets;
+        return convertToAssets(totalSupply());
     }
     function lastAccrual() public view returns (uint256) {
         Storage storage $ = getStorage();

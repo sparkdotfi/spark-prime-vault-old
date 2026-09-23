@@ -27,6 +27,7 @@ interface IVault is IERC7540 {
         uint256 assetsIn;
         uint256 pendingAssetsIn;
         uint256 sharesOut;
+        uint256 assetsOut;
         uint256 pendingSharesOut;
     }
 

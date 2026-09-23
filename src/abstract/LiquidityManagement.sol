@@ -31,21 +31,8 @@ abstract contract LiquidityManagement is
     /// @return shares Available SP Prime Tokens
     function availableLiquidShares() public view returns (int256 shares) {
         Storage storage $ = getStorage();
-        uint256 shareBalance = balanceOf(address(this));
-        console.log("Share balance: %e", shareBalance);
-        console.log("Maximum Capacity: %e", $.maximumCapacity);
-        console.log("Total Assets: %e", totalAssets());
-        uint256 mintableShares = totalMintableShares();
-        console.log("Mintable Shares: %e", mintableShares);
-
-        console.log(
-            "Total Claimable Deposits Shares: %e",
-            convertToShares($.totalClaimableDeposits)
-        );
-        // Any idle share balance the vault owns (i.e from withdraw claims) minus locked shares for queue members
         shares =
-            int256(shareBalance + mintableShares) -
-            int256($.totalWithdrawQueueShares) -
+            int256(totalMintableShares()) -
             int256(convertToShares($.totalClaimableDeposits));
     }
 
@@ -67,9 +54,8 @@ abstract contract LiquidityManagement is
         returns (int256 totalBaseAssets)
     {
         Storage storage $ = getStorage();
-        totalBaseAssets = int256(
+        totalBaseAssets =
             IERC20(asset()).balanceOf(address(this)).toInt256() -
-                convertToAssets($.totalClaimableWithdraws).toInt256()
-        );
+            $.totalClaimableWithdrawAssets.toInt256();
     }
 }

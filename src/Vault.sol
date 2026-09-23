@@ -168,40 +168,11 @@ contract Vault is
         shares = convertToShares(assets);
         if (shares == 0) revert ShareConversionFailure(assets);
 
-        console.log("USer assetsIn: %e", $.ledger[controller].assetsIn);
-        console.log("assets minused: %e", assets);
-
         $.ledger[controller].assetsIn -= assets;
-
-        // We can only mint shares if we're below capacity and transfer shares we own
-        // How much of that can we mint, and how much of that can we get from our idle balance
-
-        uint256 totalLiquidShares = balanceOf(address(this));
-
-        if (totalAssets() >= $.maximumCapacity) {
-            // we cant mint
-            if (totalLiquidShares < shares) revert Insolvency(); // Not enough withdraws have claimed to fill liquidity
-            _transfer(address(this), receiver, shares);
-        } else {
-            // we can mint $.maximumCapacity - totalAssets()
-            uint256 mintableShares = convertToShares(
-                $.maximumCapacity - totalAssets()
-            );
-            console.log("Mintable Shares: %e", mintableShares);
-            console.log("Total Liquid Shares: %e", totalLiquidShares);
-            if (totalLiquidShares + mintableShares < shares)
-                revert Insolvency(); // Both vault owned shares and minting couldn't fulfill this request
-
-            uint256 fromLiquid = Math.min(shares, totalLiquidShares);
-            if (fromLiquid > 0) _transfer(address(this), receiver, fromLiquid);
-
-            console.log("toMint = %e - %e", shares, fromLiquid);
-            uint256 toMint = shares - fromLiquid;
-            if (toMint > 0) super._mint(receiver, toMint);
-        }
-
         $.totalClaimableDeposits -= assets;
-        $.totalAssets += assets;
+
+        _mint(receiver, shares);
+
         emit Deposit(controller, receiver, assets, shares);
         return shares;
     }
@@ -259,9 +230,29 @@ contract Vault is
         uint256 assets,
         address receiver,
         address controller
-    ) public override(ERC4626Upgradeable, IERC4626) returns (uint256 shares) {
-        shares = _convertToShares(assets, Math.Rounding.Ceil);
-        redeem(shares, receiver, controller);
+    )
+        public
+        override(ERC4626Upgradeable, IERC4626)
+        whenNotPaused
+        nonReentrant
+        returns (uint256 shares)
+    {
+        _authorizeClaim(receiver, controller);
+
+        Storage storage $ = getStorage();
+        Settlement storage settlement = $.ledger[controller];
+
+        if (assets > settlement.assetsOut)
+            revert InsufficientClaimableAmount(assets, settlement.assetsOut);
+
+        shares = Math.mulDiv(
+            settlement.sharesOut,
+            assets,
+            settlement.assetsOut,
+            Math.Rounding.Ceil
+        );
+
+        _claimRedeem(receiver, controller, shares, assets);
     }
 
     function mint(
@@ -341,28 +332,41 @@ contract Vault is
         nonReentrant
         returns (uint256 assets)
     {
+        _authorizeClaim(receiver, controller);
+
+        Storage storage $ = getStorage();
+        Settlement storage settlement = $.ledger[controller];
+
+        if (settlement.sharesOut < shares)
+            revert InsufficientClaimableAmount(shares, settlement.sharesOut);
+
+        assets = Math.mulDiv(settlement.assetsOut, shares, settlement.sharesOut);
+
+        _claimRedeem(receiver, controller, shares, assets);
+    }
+
+    function _authorizeClaim(address receiver, address controller) internal view {
         if (controller != msg.sender && !isOperator(controller, msg.sender))
             revert UnauthorizedCaller(msg.sender);
         if (msg.sender != controller && receiver != controller)
             revert OperatorMaliciousAction(receiver, controller);
+    }
 
+    function _claimRedeem(
+        address receiver,
+        address controller,
+        uint256 shares,
+        uint256 assets
+    ) internal {
         Storage storage $ = getStorage();
+        Settlement storage settlement = $.ledger[controller];
 
-        if ($.ledger[controller].sharesOut < shares)
-            revert InsufficientClaimableAmount(
-                shares,
-                $.ledger[controller].sharesOut
-            );
+        settlement.sharesOut -= shares;
+        settlement.assetsOut -= assets;
+        $.totalClaimableWithdrawAssets -= assets;
 
-        $.ledger[controller].sharesOut -= shares;
-        $.totalClaimableWithdraws -= shares;
-
-        InterestLib.accrueInterest($);
-        assets = convertToAssets(shares);
         IERC20 baseAsset = IERC20(asset());
-        uint256 liquidAssets = baseAsset.balanceOf(address(this));
-
-        if (assets > liquidAssets) revert Insolvency();
+        if (assets > baseAsset.balanceOf(address(this))) revert Insolvency();
         baseAsset.safeTransfer(receiver, assets);
 
         emit Withdraw(msg.sender, receiver, controller, assets, shares);

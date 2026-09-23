@@ -33,7 +33,7 @@ abstract contract Queue is LiquidityManagement, IQueue {
 
     function claimableWithdrawTotal() public view returns (uint256) {
         Storage storage $ = getStorage();
-        return $.totalClaimableWithdraws;
+        return $.totalClaimableWithdrawAssets;
     }
 
     function claimableDepositTotal() public view returns (uint256) {
@@ -110,14 +110,7 @@ abstract contract Queue is LiquidityManagement, IQueue {
 
         /// Only one of withdraw queue or deposit queue will be filled completely, the other fillUntil'ed
         /// unless the tradeVolume == totalAssetLiquidity == totalShareLiquidity, in which case, both queues are fulfilled unbounded
-        tradeVolume >= convertToAssets(totalPendingWithdraws())
-            ? fillUnbounded($, $.withdrawQueue, _markClaimableWithdraw)
-            : fillUntil(
-                $,
-                $.withdrawQueue,
-                _markClaimableWithdraw,
-                convertToShares(tradeVolume)
-            );
+        _fillWithdrawQueue($, tradeVolume);
 
         tradeVolume >= totalPendingDeposits()
             ? fillUnbounded($, $.depositQueue, _markClaimableDeposit)
@@ -128,6 +121,25 @@ abstract contract Queue is LiquidityManagement, IQueue {
         if (assetsLeft < 0) revert AssetInvariantBroken(assetsLeft);
         int256 sharesLeft = availableLiquidShares();
         if (sharesLeft < 0) revert ShareInvariantBroken(sharesLeft);
+    }
+
+    function _fillWithdrawQueue(
+        Storage storage $,
+        uint256 tradeVolume
+    ) internal {
+        uint256 queuedBefore = $.totalWithdrawQueueShares;
+
+        tradeVolume >= convertToAssets(totalPendingWithdraws())
+            ? fillUnbounded($, $.withdrawQueue, _markClaimableWithdraw)
+            : fillUntil(
+                $,
+                $.withdrawQueue,
+                _markClaimableWithdraw,
+                convertToShares(tradeVolume)
+            );
+
+        uint256 matched = queuedBefore - $.totalWithdrawQueueShares;
+        if (matched > 0) _burn(address(this), matched);
     }
 
     /// @dev Iterate over entire queue and eat until EOF
@@ -204,18 +216,20 @@ abstract contract Queue is LiquidityManagement, IQueue {
         uint256 amount,
         bool instantClaim
     ) internal {
+        uint256 assets = convertToAssets(amount);
+
         $.ledger[owner].sharesOut += amount;
-        if (!instantClaim) $.ledger[owner].pendingSharesOut -= amount;
+        $.ledger[owner].assetsOut += assets;
+        $.totalClaimableWithdrawAssets += assets;
 
-        $.totalClaimableWithdraws += amount;
-        console.log(
-            "Total withdraw queue assets: %e",
-            $.totalWithdrawQueueShares
-        );
+        if (instantClaim) {
+            _burn(address(this), amount);
+        } else {
+            $.ledger[owner].pendingSharesOut -= amount;
+            $.totalWithdrawQueueShares -= amount;
+        }
 
-        console.log("Reducing by amount: %e", amount);
-        if (!instantClaim) $.totalWithdrawQueueShares -= amount;
-        emit ClaimableWithdraw(owner, $.ledger[owner].sharesOut);
+        emit ClaimableWithdraw(owner, $.ledger[owner].assetsOut);
     }
 
     /// @notice Cleans up void registry entries and links new data
