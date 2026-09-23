@@ -31,9 +31,6 @@ pragma solidity ^0.8.20;
  */
 
 interface ISparkPrimeVault {
-    /// @notice Emitted when the user claims their withdraw
-    event WithdrawClaimed(address beneficary, uint256 amount, uint256 shares);
-
     /// @notice Emitted when the user performs deposit with a referral code
     event ReferralCode(address beneficary, uint256 code);
 

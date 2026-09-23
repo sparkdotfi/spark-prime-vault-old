@@ -224,7 +224,7 @@ contract Vault is
 
         $.totalClaimableDeposits -= assets;
         $.totalAssets += assets;
-        emit Deposit(msg.sender, controller, assets, shares);
+        emit Deposit(controller, receiver, assets, shares);
         return shares;
     }
 
@@ -282,10 +282,8 @@ contract Vault is
         address receiver,
         address controller
     ) public override(ERC4626Upgradeable, IERC4626) returns (uint256 shares) {
-        return
-            convertToAssets(
-                redeem(convertToShares(assets), receiver, controller)
-            );
+        shares = convertToShares(assets);
+        redeem(shares, receiver, controller);
     }
 
     function mint(
@@ -403,6 +401,7 @@ contract Vault is
         baseAsset.safeTransfer(receiver, assets);
 
         $.lockedShares[controller] -= shares;
+        emit Withdraw(msg.sender, receiver, controller, assets, shares);
     }
 
     /// @dev Prevent a Withdrawer from transferring their commited shares
@@ -430,7 +429,8 @@ contract Vault is
         if (approved) $.operators[msg.sender] = operator;
         else if ($.operators[msg.sender] == operator)
             $.operators[msg.sender] = address(0);
-        else revert NotAnOperator(operator);
+
+        emit OperatorSet(msg.sender, operator, approved);
         return true;
     }
 

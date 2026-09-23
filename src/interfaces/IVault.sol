@@ -19,7 +19,6 @@ interface IVault is IERC7540 {
         uint256 nonce;
     }
 
-    error NotAnOperator(address);
     error DeltaMismatch();
 
     /// @notice Lazy accrual of continuous interest

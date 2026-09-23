@@ -4,6 +4,9 @@ pragma solidity ^0.8.20;
 import {Test} from "forge-std/Test.sol";
 import {VaultHandler} from "./VaultHandler.t.sol";
 import {IVault} from "src/interfaces/IVault.sol";
+import {
+    IERC7540Operator
+} from "@openzeppelin/community-contracts/interfaces/IERC7540.sol";
 import {USDC} from "./mocks/USDC.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {QueueHelper} from "./utils/QueueHelper.sol";
@@ -80,5 +83,66 @@ contract OperatorUnitTests is QueueHelper {
         // counter.setNumber(x);
         // assertEq(counter.number(), x);
         assertTrue(true);
+    }
+
+    function test_setOperator_emitsOperatorSetOnGrant() public {
+        vm.expectEmit(address(vault));
+        emit IERC7540Operator.OperatorSet(user, operator, true);
+
+        vm.prank(user);
+        bool ok = vault.setOperator(operator, true);
+
+        assertTrue(ok);
+        assertTrue(vault.isOperator(user, operator));
+    }
+
+    function test_setOperator_emitsOperatorSetOnRevoke() public {
+        vm.prank(user);
+        vault.setOperator(operator, true);
+
+        vm.expectEmit(address(vault));
+        emit IERC7540Operator.OperatorSet(user, operator, false);
+
+        vm.prank(user);
+        bool ok = vault.setOperator(operator, false);
+
+        assertTrue(ok);
+        assertFalse(vault.isOperator(user, operator));
+    }
+
+    function test_setOperator_revokingANonOperatorIsANoOp() public {
+        vm.prank(user);
+        vault.setOperator(operator, true);
+
+        address stranger = makeAddr("stranger");
+        vm.expectEmit(address(vault));
+        emit IERC7540Operator.OperatorSet(user, stranger, false);
+
+        vm.prank(user);
+        bool ok = vault.setOperator(stranger, false);
+
+        assertTrue(ok);
+        assertTrue(vault.isOperator(user, operator));
+    }
+
+    function test_setOperator_revokeIsIdempotent() public {
+        vm.startPrank(user);
+        vault.setOperator(operator, true);
+        vault.setOperator(operator, false);
+        vault.setOperator(operator, false);
+        vm.stopPrank();
+
+        assertFalse(vault.isOperator(user, operator));
+    }
+
+    function test_setOperator_isPerController() public {
+        vm.prank(user);
+        vault.setOperator(operator, true);
+
+        vm.prank(userTwo);
+        vault.setOperator(operator, false);
+
+        assertTrue(vault.isOperator(user, operator));
+        assertFalse(vault.isOperator(userTwo, operator));
     }
 }

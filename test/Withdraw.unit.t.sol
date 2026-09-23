@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {VaultHandler} from "./VaultHandler.t.sol";
 import {IVault} from "src/interfaces/IVault.sol";
 import {ISparkPrimeVault} from "src/interfaces/ISparkPrimeVault.sol";
+import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {USDC} from "./mocks/USDC.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {console} from "forge-std/console.sol";
@@ -368,5 +369,111 @@ contract RequestWithdrawUnitTests is QueueHelper {
         vm.prank(userTwo);
         vm.expectRevert();
         vault.transfer(address(vault), twoShares);
+    }
+
+    function _claimableRedeemer(uint256 amount) internal returns (uint256) {
+        _depositAndClaim(user, amount);
+        uint256 shares = vault.balanceOf(user);
+        vm.prank(user);
+        vault.requestRedeem(shares, user, user);
+        return vault.maxRedeem(user);
+    }
+
+    function test_withdraw_claimsAssets() public {
+        uint256 claimable = _claimableRedeemer(50 ether);
+        uint256 claimValue = vault.maxWithdraw(user);
+
+        vm.prank(user);
+        vault.withdraw(claimValue, user, user);
+
+        assertEq(baseAsset.balanceOf(user), claimValue);
+        assertEq(baseAsset.balanceOf(address(vault)), 50 ether - claimValue);
+        assertEq(vault.maxRedeem(user), 0);
+        assertEq(vault.balanceOf(address(vault)), claimable);
+        assertEq(vault.balanceOf(user), 0);
+    }
+
+    function test_withdraw_toADifferentReceiver() public {
+        _claimableRedeemer(50 ether);
+        uint256 claimValue = vault.maxWithdraw(user);
+
+        vm.prank(user);
+        vault.withdraw(claimValue, userTwo, user);
+
+        assertEq(baseAsset.balanceOf(userTwo), claimValue);
+        assertEq(baseAsset.balanceOf(user), 0);
+    }
+
+    function test_withdraw_partialLeavesTheRemainderClaimable() public {
+        uint256 claimable = _claimableRedeemer(50 ether);
+        uint256 half = vault.maxWithdraw(user) / 2;
+
+        vm.prank(user);
+        vault.withdraw(half, user, user);
+
+        assertEq(baseAsset.balanceOf(user), half);
+        assertEq(vault.maxRedeem(user), claimable - vault.convertToShares(half));
+    }
+
+    function test_cannot_withdraw_beyondClaimableAmount() public {
+        uint256 claimable = _claimableRedeemer(50 ether);
+        uint256 tooMuch = vault.maxWithdraw(user) + 1 ether;
+        uint256 requested = vault.convertToShares(tooMuch);
+
+        vm.prank(user);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ISparkPrimeVault.InsufficientClaimableAmount.selector,
+                requested,
+                claimable
+            )
+        );
+        vault.withdraw(tooMuch, user, user);
+    }
+
+    function test_cannot_withdraw_asUnauthorizedCaller() public {
+        _claimableRedeemer(50 ether);
+        uint256 claimValue = vault.maxWithdraw(user);
+
+        vm.prank(userTwo);
+        vm.expectRevert(
+            abi.encodeWithSelector(IVault.UnauthorizedCaller.selector, userTwo)
+        );
+        vault.withdraw(claimValue, userTwo, user);
+    }
+
+    function test_redeem_emitsErc4626Withdraw() public {
+        uint256 claimable = _claimableRedeemer(50 ether);
+        uint256 assets = vault.convertToAssets(claimable);
+
+        vm.expectEmit(address(vault));
+        emit IERC4626.Withdraw(user, user, user, assets, claimable);
+
+        vm.prank(user);
+        vault.redeem(claimable, user, user);
+    }
+
+    function test_withdraw_emitsErc4626Withdraw() public {
+        _claimableRedeemer(50 ether);
+        uint256 claimValue = vault.maxWithdraw(user);
+        uint256 burned = vault.convertToShares(claimValue);
+
+        vm.expectEmit(address(vault));
+        emit IERC4626.Withdraw(user, user, user, claimValue, burned);
+
+        vm.prank(user);
+        vault.withdraw(claimValue, user, user);
+    }
+
+    function test_redeem_emitsWithdrawWithTheOperatorAsSender() public {
+        uint256 claimable = _claimableRedeemer(50 ether);
+        vault.setOperatorForUser(user, operator, true);
+        uint256 assets = vault.convertToAssets(claimable);
+
+        vm.expectEmit(address(vault));
+        emit IERC4626.Withdraw(operator, user, user, assets, claimable);
+
+        vm.prank(operator);
+        vault.redeem(claimable, user, user);
     }
 }

@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {VaultHandler} from "./VaultHandler.t.sol";
 import {IVault} from "src/interfaces/IVault.sol";
 import {ISparkPrimeVault} from "src/interfaces/ISparkPrimeVault.sol";
+import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {IVaultManagement} from "src/interfaces/IVaultManagement.sol";
 import {USDC} from "./mocks/USDC.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
@@ -310,5 +311,153 @@ contract RequestDepositUnitTests is QueueHelper {
         _requestDeposit(user, 1 wei);
 
         assertEq(vault.maxDeposit(user), 1 wei);
+    }
+
+    function test_mint_claimsAgainstAClaimableBalance() public {
+        _requestDeposit(user, 40 ether);
+        uint256 shares = vault.convertToShares(40 ether);
+
+        vm.prank(user);
+        uint256 assets = vault.mint(shares, user);
+
+        assertEq(assets, 40 ether);
+        assertEq(vault.balanceOf(user), shares);
+        assertEq(vault.maxDeposit(user), 0);
+        assertEq(vault.totalAssets(), 40 ether);
+    }
+
+    function test_mint_partiallyConsumesTheClaimableBalance() public {
+        _requestDeposit(user, 40 ether);
+        uint256 shares = vault.convertToShares(10 ether);
+
+        vm.prank(user);
+        vault.mint(shares, user);
+
+        assertEq(vault.balanceOf(user), shares);
+        assertEq(vault.maxDeposit(user), 30 ether);
+    }
+
+    function test_mint_withExplicitController() public {
+        _requestDeposit(user, 40 ether);
+        uint256 shares = vault.convertToShares(40 ether);
+
+        vm.prank(user);
+        uint256 assets = vault.mint(shares, user, user);
+
+        assertEq(assets, 40 ether);
+        assertEq(vault.balanceOf(user), shares);
+    }
+
+    function test_mint_asOperator() public {
+        _requestDeposit(user, 40 ether);
+        vault.setOperatorForUser(user, operator, true);
+        uint256 shares = vault.convertToShares(40 ether);
+
+        vm.prank(operator);
+        vault.mint(shares, user, user);
+
+        assertEq(vault.balanceOf(user), shares);
+        assertEq(vault.balanceOf(operator), 0);
+    }
+
+    function test_cannot_mint_beyondClaimableBalance() public {
+        _requestDeposit(user, 10 ether);
+        uint256 shares = vault.convertToShares(20 ether);
+
+        vm.prank(user);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IVault.InsufficientClaimableBalance.selector,
+                20 ether,
+                10 ether
+            )
+        );
+        vault.mint(shares, user);
+    }
+
+    function test_mint_emitsDeposit() public {
+        _requestDeposit(user, 40 ether);
+        uint256 shares = vault.convertToShares(40 ether);
+
+        vm.expectEmit(address(vault));
+        emit IERC4626.Deposit(user, user, 40 ether, shares);
+
+        vm.prank(user);
+        vault.mint(shares, user);
+    }
+
+    function test_depositWithReferralCode_emitsReferralCode() public {
+        _requestDeposit(user, 40 ether);
+
+        vm.expectEmit(address(vault));
+        emit ISparkPrimeVault.ReferralCode(user, 7);
+
+        vm.prank(user);
+        vault.deposit(40 ether, user, user, 7);
+    }
+
+    function test_depositWithReferralCode_matchesPlainDeposit() public {
+        _requestDeposit(user, 40 ether);
+        uint256 expected = vault.convertToShares(40 ether);
+
+        vm.prank(user);
+        uint256 shares = vault.deposit(40 ether, user, user, 99);
+
+        assertEq(shares, expected);
+        assertEq(vault.balanceOf(user), expected);
+        assertEq(vault.maxDeposit(user), 0);
+        assertEq(vault.totalAssets(), 40 ether);
+    }
+
+    function test_cannot_depositWithReferralCode_asUnauthorizedCaller() public {
+        _requestDeposit(user, 40 ether);
+
+        vm.prank(userTwo);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IVault.UnauthorizedCaller.selector,
+                userTwo
+            )
+        );
+        vault.deposit(40 ether, userTwo, user, 7);
+    }
+
+    function test_deposit_emitsDepositWithControllerThenReceiver() public {
+        _requestDeposit(user, 40 ether);
+        uint256 shares = vault.convertToShares(40 ether);
+
+        vm.expectEmit(address(vault));
+        emit IERC4626.Deposit(user, userTwo, 40 ether, shares);
+
+        vm.prank(user);
+        vault.deposit(40 ether, userTwo, user);
+
+        assertEq(vault.balanceOf(userTwo), shares);
+        assertEq(vault.balanceOf(user), 0);
+    }
+
+    function test_deposit_asOperator_emitsControllerNotOperator() public {
+        _requestDeposit(user, 40 ether);
+        vault.setOperatorForUser(user, operator, true);
+        uint256 shares = vault.convertToShares(40 ether);
+
+        vm.expectEmit(address(vault));
+        emit IERC4626.Deposit(user, user, 40 ether, shares);
+
+        vm.prank(operator);
+        vault.deposit(40 ether, user, user);
+    }
+
+    function test_depositWithReferralCode_emitsDepositWithSpecParameters()
+        public
+    {
+        _requestDeposit(user, 40 ether);
+        uint256 shares = vault.convertToShares(40 ether);
+
+        vm.expectEmit(address(vault));
+        emit IERC4626.Deposit(user, userTwo, 40 ether, shares);
+
+        vm.prank(user);
+        vault.deposit(40 ether, userTwo, user, 3);
     }
 }
