@@ -1,6 +1,18 @@
-### `totalAssets` only ever increases *Shares are never burnt* 
+### Mint and Burns
 
-We never burn LP tokens on redeem, or reduce totalAssets. Instead the vault itself holds these shares, and allocates them to future depositors. `totalAssets` becomes monotonically increasing by nature, with a ceiling at `maximumCapacity`
+`totalAssets()` is not stored. It returns `convertToAssets(totalSupply())`, so it is
+self-consistent with the outstanding share supply by construction and cannot drift from
+what was deposited.
+
+Redeemed shares are burned, not retained. Shares leave the owner's custody on
+`requestRedeem` and are escrowed by the vault while the request is Pending; they are
+burned at the moment the request becomes Claimable. Queue fills burn once for the whole
+batch, costing O(1) always. 
+The vault never holds share inventory, and `balanceOf(address(this)) == totalPendingWithdraws()` at all times.
+
+The Withdraw Queue is always processed before the Deposit Queue. Because the burn reduces supply, it also avails capacity allowing Deposit Queue claims to directly mint.
+
+Note that capacity tracks accrued yield, since the index feeds `convertToAssets`. A vault sitting at its capacity will start to queue deposits as the index climbs, and the curator must raise the capacity or call processQueue.
 
 ### `take()` has no solvency guard
 `take` transfers any amount up to the full base-asset balance, with no check against `claimableWithdrawTotal()`. These assets are already promised to users, and will result in revert with `Insolvency` at claim time. 
@@ -10,14 +22,24 @@ The `take()` function is access controlled to the PAU, I'd still suggest adding 
 ### `setOperator` stores a single operator
 To simplify the model and allow Spark to rotate keys via the `AdministeredAgent`, a single Operator entry is permitted per user. This is set once by the user before they begin their Vault Journey, and Spark rotates it's keys that interact with the address in question.
 
-## Matched deposits are unclaimable until redeemers claim first
-A hard business requirement from Spark was to allow accruing yield whilst waiting in the queue. This means a withdrawers shares are reclaimed/distributed when they CLAIM. 
+## Claimable redemptions are paid at the rate during their processQueue execution
 
-Each withdrawer that doesn't claim increases the amount of assets not available to depositors when they claim.
+When a request becomes Claimable the vault records the asset value owed
+(`Settlement.assetsOut`) alongside the shares burnt (`Settlement.sharesOut`)
 
-Spark will be set as the operator and will claim on behalf of the users. It is Sparks responsibility to claim on behalf of users after queuing processing (or atleast, withdrawers) to produce liquidity for trade volume.
+ `redeem` and `withdraw` pay against that stored asset value, not against the live
+index. 
 
-Note for auditor: It is possible for a user to NOT set Spark as an operator, in which case, they can potentially never claim to cause a grief attack against the depositors but this comes at the expense of their own funds being locked and becomes economomically infeasible for significant amounts.
+A claim may sit unclaimed, it will not accrue interest or occupy shares. 
+
+Yield accrues for the whole time a request is Pending, which is the period users are
+actually waiting. It stops at the Claimable transition (`processQueue`), where the vault has
+already set the assets aside and they are no longer at work.
+
+A user who never claims wont cost anyone anything because their shares are already
+burned and the capacity is already released, so depositors are unaffected. The assets owed
+to them stay inside `claimableWithdrawTotal()`, which `availableLiquidAssets`
+subtracts. 
 
 ### `requestRedeem` and `requestDeposit` are Operator barred functions
 The ERC 7540 spec defines that a user set operator should be able to perform requests on behalf of the user, the contract violates this spec. The blast radius of this spec violation is Spark itself (as Spark is the only Operator that should ever be set). This is a known trade off in order to guarantee Spark can only perform claims on behalf of users.
