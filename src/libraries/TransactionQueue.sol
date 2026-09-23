@@ -54,11 +54,13 @@ library TransactionQueue {
     function pop(
         DoubleEndedQueue.Bytes32Deque storage queue,
         VaultBase.Storage storage $
-    ) internal returns (VaultBase.Transaction memory) {
+    ) internal returns (VaultBase.Transaction memory data) {
         (bool success, bytes32 value) = queue.tryPopFront();
         if (!success) revert QueueEmpty();
 
-        return decodeTransaction($, value);
+        data = decodeTransaction($, value);
+
+        delete $.transactionRegistry[value];
     }
 
     function push(

@@ -224,8 +224,6 @@ abstract contract Queue is LiquidityManagement, IQueue {
         Transaction memory data,
         uint256 newAmount
     ) private {
-        delete $.transactionRegistry[TransactionQueue.encodeTransaction(data)];
-
         data.amount = newAmount;
         bytes32 newHash = queue.pushFront(data);
 
