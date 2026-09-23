@@ -16,6 +16,8 @@ import {
 import {USDC} from "./mocks/USDC.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {console} from "forge-std/console.sol";
+import {Vm} from "forge-std/Vm.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {QueueHelper} from "./utils/QueueHelper.sol";
 
 contract VaultManagerUnitTests is QueueHelper {
@@ -464,5 +466,88 @@ contract VaultManagerUnitTests is QueueHelper {
         uint256 claimable = vault.maxRedeem(user);
         vm.prank(user);
         vault.redeem(claimable, user, user);
+    }
+
+    function test_setCapacity_emitsCapacityUpdated() public {
+        uint256 old = vault.maxCapacity();
+
+        vm.expectEmit(address(vault));
+        emit IVaultManagement.CapacityUpdated(old, old + 50 ether);
+
+        vm.prank(vaultManager);
+        vault.setCapacity(old + 50 ether);
+
+        assertEq(vault.maxCapacity(), old + 50 ether);
+    }
+
+    function test_accrueInterest_emitsAccruedInterest() public {
+        _requestDeposit(user, 10 ether);
+        vm.warp(block.timestamp + 365 days);
+
+        uint256 expected = vault.previewIndex();
+
+        vm.expectEmit(address(vault));
+        emit IVault.AccruedInterest(expected, block.timestamp);
+
+        vm.prank(user);
+        vault.deposit(10 ether, user);
+
+        assertEq(vault.index(), expected);
+        assertGt(expected, RAY);
+    }
+
+    function test_cannot_accrueInterest_emitTwiceInTheSameBlock() public {
+        _requestDeposit(user, 10 ether);
+        vm.warp(block.timestamp + 365 days);
+
+        vm.prank(user);
+        vault.deposit(5 ether, user);
+        uint256 index = vault.index();
+
+        vm.recordLogs();
+        vm.prank(user);
+        vault.deposit(5 ether, user);
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i; i < logs.length; ++i) {
+            assertTrue(
+                logs[i].topics[0] != IVault.AccruedInterest.selector,
+                "accrued with no time elapsed"
+            );
+        }
+        assertEq(vault.index(), index);
+    }
+
+    function test_convertToShares_honoursTheRoundingArgument() public {
+        vault.setIndexRate(3e27);
+
+        assertEq(
+            vault.convertToSharesRounded(10, Math.Rounding.Floor),
+            3,
+            "floor"
+        );
+        assertEq(
+            vault.convertToSharesRounded(10, Math.Rounding.Ceil),
+            4,
+            "ceil"
+        );
+    }
+
+    function test_convertToAssets_honoursTheRoundingArgument() public {
+        vault.setIndexRate((RAY * 10) / 3);
+
+        assertEq(
+            vault.convertToAssetsRounded(1, Math.Rounding.Floor),
+            3,
+            "floor"
+        );
+        assertEq(vault.convertToAssetsRounded(1, Math.Rounding.Ceil), 4, "ceil");
+    }
+
+    function test_publicConvertersStillFloor() public {
+        vault.setIndexRate(3e27);
+
+        assertEq(vault.convertToShares(10), 3);
+        assertEq(vault.convertToAssets(1), 3);
     }
 }

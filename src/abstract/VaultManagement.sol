@@ -58,6 +58,7 @@ abstract contract VaultManagement is
         Storage storage $ = getStorage();
         if (newCapacity < $.totalAssets)
             revert MaximumCapacityCannotExceedCurrentTotal();
+        emit CapacityUpdated($.maximumCapacity, newCapacity);
         $.maximumCapacity = newCapacity;
     }
 }

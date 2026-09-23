@@ -154,7 +154,12 @@ abstract contract VaultBase is
     ) internal view override(ERC4626Upgradeable) returns (uint256) {
         Storage storage $ = getStorage();
         console.log("Converting to shares..");
-        uint256 shares = Math.mulDiv(assets, InterestLib.RAY, $.indexRate);
+        uint256 shares = Math.mulDiv(
+            assets,
+            InterestLib.RAY,
+            $.indexRate,
+            rounding
+        );
         console.log("shares = %e", shares);
         return shares;
     }
@@ -166,7 +171,12 @@ abstract contract VaultBase is
         Storage storage $ = getStorage();
 
         console.log("Converting to assets..");
-        uint256 assets = Math.mulDiv(shares, $.indexRate, InterestLib.RAY);
+        uint256 assets = Math.mulDiv(
+            shares,
+            $.indexRate,
+            InterestLib.RAY,
+            rounding
+        );
         console.log("assets = %e", assets);
         return assets;
     }

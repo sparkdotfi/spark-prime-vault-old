@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 import {VaultBase} from "../abstract/VaultBase.sol";
+import {IVault} from "../interfaces/IVault.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 /** Continiously Compounding Interest Rate System */
 library InterestLib {
@@ -14,6 +15,8 @@ library InterestLib {
 
         uint256 compoundingFactor = rpow($.ratePerSecond, timeDelta, RAY);
         $.indexRate = Math.mulDiv($.indexRate, compoundingFactor, RAY);
+
+        emit IVault.AccruedInterest($.indexRate, block.timestamp);
     }
 
     function simulateAccrue(

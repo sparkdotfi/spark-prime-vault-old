@@ -7,6 +7,7 @@ import {
     ERC1967Proxy
 } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {Vault} from "src/Vault.sol";
+import {IVault} from "src/interfaces/IVault.sol";
 import {VaultHandler} from "../VaultHandler.t.sol";
 
 library VaultDeployer {
@@ -56,25 +57,24 @@ library VaultDeployer {
     ) internal returns (VaultHandler vault) {
         VaultHandler implementation = new VaultHandler();
 
+        IVault.InitParams memory params = IVault.InitParams({
+            name: NAME,
+            symbol: SYMBOL,
+            baseAsset: baseAsset,
+            savingsVault: savingsVault,
+            minimumDeposit: minimumDeposit,
+            minimumWithdraw: minimumWithdraw,
+            capacity: capacity,
+            ratePerSecond: ratePerSecond,
+            admin: admin,
+            vaultManager: vaultManager,
+            liquidityManager: liquidityManager,
+            rebalancer: rebalancer
+        });
+
         ERC1967Proxy proxy = new ERC1967Proxy(
             address(implementation),
-            abi.encodeCall(
-                Vault.initialize,
-                (
-                    NAME,
-                    SYMBOL,
-                    baseAsset,
-                    savingsVault,
-                    minimumDeposit,
-                    minimumWithdraw,
-                    capacity,
-                    ratePerSecond,
-                    admin,
-                    vaultManager,
-                    liquidityManager,
-                    rebalancer
-                )
-            )
+            abi.encodeCall(Vault.initialize, (params))
         );
 
         vault = VaultHandler(address(proxy));

@@ -21,8 +21,9 @@ abstract contract LiquidityManagement is
     using SafeCast for uint256;
 
     /// @notice Provides Spark PAU ability to withdraw the vaults baseAsset balance
-    function take(uint256 baseAmount) public onlyRole(LIQUIDITY_MANAGER_ROLE) {
-        Storage storage $ = getStorage();
+    function take(
+        uint256 baseAmount
+    ) public onlyRole(LIQUIDITY_MANAGER_ROLE) nonReentrant {
         IERC20(asset()).safeTransfer(msg.sender, baseAmount);
     }
 

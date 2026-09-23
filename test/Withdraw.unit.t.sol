@@ -13,8 +13,6 @@ import {console} from "forge-std/console.sol";
 import {QueueHelper} from "./utils/QueueHelper.sol";
 
 contract RequestWithdrawUnitTests is QueueHelper {
-
-
     function setUp() public {
         _deployVault();
     }
@@ -328,6 +326,24 @@ contract RequestWithdrawUnitTests is QueueHelper {
         assertEq(vault.balanceOf(user), 0);
     }
 
+    function test_withdraw_FullClaim_NoSharesLeftBehind() public {
+        _depositAndClaim(user, 50 ether);
+        uint256 shares = vault.balanceOf(user);
+        _requestRedeem(user, shares);
+
+        vault.setIndexRate((RAY * 10) / 3);
+        _injectLiquidity(vault.maxWithdraw(user));
+
+        uint256 claimValue = vault.maxWithdraw(user);
+        assertGt(vault.maxRedeem(user), vault.convertToShares(claimValue));
+
+        vm.prank(user);
+        uint256 burned = vault.withdraw(claimValue, user, user);
+
+        assertEq(burned, shares);
+        assertEq(vault.maxRedeem(user), 0);
+    }
+
     function test_withdraw_toADifferentReceiver() public {
         _claimableRedeemer(50 ether);
         uint256 claimValue = vault.maxWithdraw(user);
@@ -347,7 +363,10 @@ contract RequestWithdrawUnitTests is QueueHelper {
         vault.withdraw(half, user, user);
 
         assertEq(baseAsset.balanceOf(user), half);
-        assertEq(vault.maxRedeem(user), claimable - vault.convertToShares(half));
+        assertEq(
+            vault.maxRedeem(user),
+            claimable - vault.convertToShares(half)
+        );
     }
 
     function test_cannot_withdraw_beyondClaimableAmount() public {

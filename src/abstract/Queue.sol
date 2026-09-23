@@ -79,7 +79,7 @@ abstract contract Queue is LiquidityManagement, IQueue {
     /// @dev Trusts the planner/rebalancer for a reasonable `tradeVolume` amount to bound the loop
     function processQueue(
         uint256 tradeVolume
-    ) public onlyRole(REBALANCER_ROLER) {
+    ) public onlyRole(REBALANCER_ROLER) nonReentrant {
         Storage storage $ = getStorage();
         InterestLib.accrueInterest($);
 
@@ -124,8 +124,10 @@ abstract contract Queue is LiquidityManagement, IQueue {
             : fillUntil($, $.depositQueue, _markClaimableDeposit, tradeVolume);
 
         // Sanity Invariants
-        if (availableLiquidAssets() < 0) revert();
-        if (availableLiquidShares() < 0) revert();
+        int256 assetsLeft = availableLiquidAssets();
+        if (assetsLeft < 0) revert AssetInvariantBroken(assetsLeft);
+        int256 sharesLeft = availableLiquidShares();
+        if (sharesLeft < 0) revert ShareInvariantBroken(sharesLeft);
     }
 
     /// @dev Iterate over entire queue and eat until EOF

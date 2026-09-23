@@ -9,11 +9,10 @@ import {
 } from "@openzeppelin/community-contracts/interfaces/IERC7540.sol";
 import {USDC} from "./mocks/USDC.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
+import {ISparkPrimeVault} from "src/interfaces/ISparkPrimeVault.sol";
 import {QueueHelper} from "./utils/QueueHelper.sol";
 
 contract OperatorUnitTests is QueueHelper {
-
-
     function setUp() public {
         _deployVault();
     }
@@ -133,6 +132,38 @@ contract OperatorUnitTests is QueueHelper {
         vm.stopPrank();
 
         assertFalse(vault.isOperator(user, operator));
+    }
+
+    function test_cannot_isOperator_forTheZeroAddress() public view {
+        assertFalse(vault.isOperator(user, address(0)));
+        assertFalse(vault.isOperator(userTwo, address(0)));
+        assertFalse(vault.isOperator(address(0), address(0)));
+    }
+
+    function test_cannot_isOperator_forTheZeroAddressAfterSetting() public {
+        vm.prank(user);
+        vault.setOperator(operator, true);
+
+        assertFalse(vault.isOperator(user, address(0)));
+    }
+
+    function test_cannot_setOperator_approvingTheZeroAddress() public {
+        vm.prank(user);
+        vm.expectRevert(
+            abi.encodeWithSelector(ISparkPrimeVault.ZeroValueProvided.selector)
+        );
+        vault.setOperator(address(0), true);
+    }
+
+    function test_setOperator_revokingTheZeroAddressNoOp() public {
+        vm.prank(user);
+        vault.setOperator(operator, true);
+
+        vm.prank(user);
+        bool ok = vault.setOperator(address(0), false);
+
+        assertTrue(ok);
+        assertTrue(vault.isOperator(user, operator));
     }
 
     function test_setOperator_isPerController() public {

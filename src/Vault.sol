@@ -89,40 +89,25 @@ contract Vault is
     constructor() {
         _disableInitializers();
     }
-    function initialize(
-        string memory name,
-        string memory symbol,
-        IERC20 _baseAsset,
-        IERC4626 _savingsVault,
-        uint256 minimumDeposit,
-        uint256 minimumWithdraw,
-        uint256 _capacity,
-        uint256 _ratePerSecond,
-        address admin,
-        address vaultManager,
-        address liquidityManager,
-        address rebalancer
-    ) external initializer {
-        __ERC20_init(name, symbol);
-        __ERC4626_init(_baseAsset);
+    function initialize(InitParams calldata params) external initializer {
+        __ERC20_init(params.name, params.symbol);
+        __ERC4626_init(params.baseAsset);
         __AccessControl_init();
         __Pausable_init();
 
-        {
-            Storage storage $ = getStorage();
-            $.savingsVault = _savingsVault;
-            $.maximumCapacity = _capacity;
-            $.minimumDeposit = minimumDeposit;
-            $.minimumWithdraw = minimumWithdraw;
-            $.ratePerSecond = _ratePerSecond;
-            $.indexRate = InterestLib.RAY;
-            $.lastAccrualTimestamp = block.timestamp;
-        }
+        Storage storage $ = getStorage();
+        $.savingsVault = params.savingsVault;
+        $.maximumCapacity = params.capacity;
+        $.minimumDeposit = params.minimumDeposit;
+        $.minimumWithdraw = params.minimumWithdraw;
+        $.ratePerSecond = params.ratePerSecond;
+        $.indexRate = InterestLib.RAY;
+        $.lastAccrualTimestamp = block.timestamp;
 
-        _grantRole(DEFAULT_ADMIN_ROLE, admin);
-        _grantRole(VAULT_MANAGER_ROLE, vaultManager);
-        _grantRole(LIQUIDITY_MANAGER_ROLE, liquidityManager);
-        _grantRole(REBALANCER_ROLER, rebalancer);
+        _grantRole(DEFAULT_ADMIN_ROLE, params.admin);
+        _grantRole(VAULT_MANAGER_ROLE, params.vaultManager);
+        _grantRole(LIQUIDITY_MANAGER_ROLE, params.liquidityManager);
+        _grantRole(REBALANCER_ROLER, params.rebalancer);
     }
     function pendingDepositRequest(
         uint256,
@@ -163,7 +148,7 @@ contract Vault is
         uint256 assets,
         address receiver,
         address controller
-    ) public whenNotPaused returns (uint256 shares) {
+    ) public whenNotPaused nonReentrant returns (uint256 shares) {
         Storage storage $ = getStorage();
         if (assets == 0) revert ZeroValueProvided();
 
@@ -225,7 +210,7 @@ contract Vault is
         uint256 assets,
         address controller,
         address owner
-    ) public whenNotPaused returns (uint256) {
+    ) public whenNotPaused nonReentrant returns (uint256) {
         Storage storage $ = getStorage();
         if (assets == 0) revert ZeroValueProvided();
         if (assets < $.minimumDeposit)
@@ -275,7 +260,7 @@ contract Vault is
         address receiver,
         address controller
     ) public override(ERC4626Upgradeable, IERC4626) returns (uint256 shares) {
-        shares = convertToShares(assets);
+        shares = _convertToShares(assets, Math.Rounding.Ceil);
         redeem(shares, receiver, controller);
     }
 
@@ -303,7 +288,7 @@ contract Vault is
         uint256 shares,
         address controller,
         address owner
-    ) public whenNotPaused returns (uint256) {
+    ) public whenNotPaused nonReentrant returns (uint256) {
         Storage storage $ = getStorage();
         if (shares == 0) revert ZeroValueProvided();
         if (convertToAssets(shares) < $.minimumWithdraw)
@@ -335,8 +320,10 @@ contract Vault is
                 _markClaimableWithdraw($, controller, shares, true);
             } else {
                 uint256 instantShares = convertToShares(liquidAssets);
-                _markClaimableWithdraw($, controller, instantShares, true);
-                transaction.amount -= instantShares;
+                if (instantShares > 0) {
+                    _markClaimableWithdraw($, controller, instantShares, true);
+                    transaction.amount -= instantShares;
+                }
                 _pushToWithdrawQueue($, transaction);
             }
         }
@@ -351,6 +338,7 @@ contract Vault is
         public
         override(ERC4626Upgradeable, IERC4626)
         whenNotPaused
+        nonReentrant
         returns (uint256 assets)
     {
         if (controller != msg.sender && !isOperator(controller, msg.sender))
@@ -396,6 +384,7 @@ contract Vault is
         bool approved
     ) external returns (bool) {
         Storage storage $ = getStorage();
+        if (approved && operator == address(0)) revert ZeroValueProvided();
         if (approved) $.operators[msg.sender] = operator;
         else if ($.operators[msg.sender] == operator)
             $.operators[msg.sender] = address(0);
@@ -408,6 +397,7 @@ contract Vault is
         address controller,
         address operator
     ) public view returns (bool status) {
+        if (operator == address(0)) return false;
         Storage storage $ = getStorage();
         status = $.operators[controller] == operator;
     }
