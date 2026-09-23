@@ -35,6 +35,14 @@ abstract contract QueueHelper is Test {
     uint256 constant MINIMUM_DEPOSIT = 0.01 ether;
     uint256 constant MINIMUM_WITHDRAW = 0.01 ether;
 
+    bytes32 constant DEFAULT_ADMIN_ROLE = 0x00;
+    bytes32 constant LIQUIDITY_MANAGER_ROLE =
+        0x77e60b99a50d27fb027f6912a507d956105b4148adab27a86d235c8bcca8fa2f;
+    bytes32 constant REBALANCER_ROLER =
+        0xccc64574297998b6c3edf6078cc5e01268465ff116954e3af02ff3a70a730f46;
+    bytes32 constant VAULT_MANAGER_ROLE =
+        0xd1473398bb66596de5d1ea1fc8e303ff2ac23265adc9144b1b52065dc4f0934b;
+
     function _deployVault() internal {
         baseAsset = new USDC();
         savingsVault = new SavingsVault(baseAsset);
