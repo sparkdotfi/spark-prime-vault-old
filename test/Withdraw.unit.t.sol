@@ -317,12 +317,12 @@ contract RequestWithdrawUnitTests is QueueHelper {
         vm.prank(user);
         uint256 burned = vault.withdraw(claimValue, user, user);
 
-        assertEq(burned, vault.convertToShares(claimValue));
         assertEq(burned, claimable);
         assertEq(baseAsset.balanceOf(user), claimValue);
         assertEq(baseAsset.balanceOf(address(vault)), 50 ether - claimValue);
         assertEq(vault.maxRedeem(user), 0);
-        assertEq(vault.balanceOf(address(vault)), claimable);
+        assertEq(vault.maxWithdraw(user), 0);
+        assertEq(vault.balanceOf(address(vault)), 0);
         assertEq(vault.balanceOf(user), 0);
     }
 
@@ -342,6 +342,55 @@ contract RequestWithdrawUnitTests is QueueHelper {
 
         assertEq(burned, shares);
         assertEq(vault.maxRedeem(user), 0);
+    }
+
+    function test_redeem_paysTheRateFrozenAtMatchNotAtClaim() public {
+        _depositAndClaim(user, 50 ether);
+        _injectLiquidity(50 ether);
+
+        uint256 shares = vault.balanceOf(user);
+        _requestRedeem(user, shares);
+        uint256 owed = vault.maxWithdraw(user);
+
+        vm.warp(block.timestamp + 365 days);
+        _depositAndClaim(userTwo, 10 ether);
+
+        assertGt(
+            vault.convertToAssets(shares),
+            owed,
+            "index climbed since the match"
+        );
+
+        uint256 claimable = vault.maxRedeem(user);
+        vm.prank(user);
+        uint256 paid = vault.redeem(claimable, user, user);
+
+        assertEq(paid, owed, "payout frozen at the Claimable transition");
+        assertEq(baseAsset.balanceOf(user), owed);
+        assertEq(vault.maxWithdraw(user), 0);
+    }
+
+    function test_redeem_partialClaimsUseTheFrozenRatio() public {
+        _depositAndClaim(user, 50 ether);
+        _injectLiquidity(50 ether);
+
+        uint256 shares = vault.balanceOf(user);
+        _requestRedeem(user, shares);
+        uint256 owed = vault.maxWithdraw(user);
+
+        vm.warp(block.timestamp + 365 days);
+        _depositAndClaim(userTwo, 10 ether);
+
+        vm.startPrank(user);
+        uint256 first = vault.redeem(shares / 2, user, user);
+        assertEq(vault.maxWithdraw(user), owed - first);
+
+        uint256 second = vault.redeem(vault.maxRedeem(user), user, user);
+        vm.stopPrank();
+
+        assertEq(first + second, owed, "no dust stranded across partials");
+        assertEq(vault.maxRedeem(user), 0);
+        assertEq(vault.maxWithdraw(user), 0);
     }
 
     function test_withdraw_toADifferentReceiver() public {
@@ -502,7 +551,21 @@ contract RequestWithdrawUnitTests is QueueHelper {
         assertEq(vault.pendingRedeemRequest(0, user), 0);
     }
 
-    function test_redeem_leavesTheEscrowedSharesWithTheVault() public {
+    function test_requestRedeem_burnsTheEscrowWhenItBecomesClaimable() public {
+        _depositAndClaim(user, 50 ether);
+        uint256 shares = vault.balanceOf(user);
+        uint256 supply = vault.totalSupply();
+
+        vm.prank(user);
+        vault.requestRedeem(shares, user, user);
+
+        assertEq(vault.balanceOf(address(vault)), 0);
+        assertEq(vault.totalSupply(), supply - shares);
+        assertEq(vault.maxRedeem(user), shares);
+        assertEq(vault.maxWithdraw(user), 50 ether);
+    }
+
+    function test_redeem_afterTheBurnLeavesNothingOutstanding() public {
         _depositAndClaim(user, 50 ether);
         uint256 shares = vault.balanceOf(user);
 
@@ -513,9 +576,12 @@ contract RequestWithdrawUnitTests is QueueHelper {
         vm.prank(user);
         vault.redeem(claimable, user, user);
 
-        assertEq(vault.balanceOf(address(vault)), shares);
+        assertEq(vault.balanceOf(address(vault)), 0);
         assertEq(vault.balanceOf(user), 0);
+        assertEq(vault.totalSupply(), 0);
+        assertEq(vault.totalAssets(), 0);
         assertEq(vault.totalPendingWithdraws(), 0);
         assertEq(vault.claimableWithdrawTotal(), 0);
+        assertEq(vault.availableCapacity(), MAXIMUM_VAULT_CAPACITY);
     }
 }

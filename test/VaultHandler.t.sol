@@ -43,9 +43,9 @@ contract VaultHandler is Vault {
         $.totalClaimableDeposits = value;
     }
 
-    function setTotalClaimableWithdraws(uint256 value) external {
+    function setTotalClaimableWithdrawAssets(uint256 value) external {
         Storage storage $ = getStorage();
-        $.totalClaimableWithdraws = value;
+        $.totalClaimableWithdrawAssets = value;
     }
 
     function pushToDepositQueue(IVault.Transaction memory data) external {

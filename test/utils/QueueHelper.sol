@@ -201,7 +201,7 @@ abstract contract QueueHelper is Test {
     }
 
     function assetsOwed() internal view returns (uint256) {
-        return vault.convertToAssets(vault.claimableWithdrawTotal());
+        return vault.claimableWithdrawTotal();
     }
 
     function sharesOwed() internal view returns (uint256) {
@@ -209,13 +209,7 @@ abstract contract QueueHelper is Test {
     }
 
     function sharesDeliverable() internal view returns (uint256) {
-        uint256 escrowed = vault.balanceOf(address(vault));
-        uint256 pending = vault.totalPendingWithdraws();
-        uint256 owned = escrowed > pending ? escrowed - pending : 0;
-        uint256 total = vault.totalAssets();
-        uint256 cap = vault.maxCapacity();
-        uint256 mintable = cap > total ? vault.convertToShares(cap - total) : 0;
-        return owned + mintable;
+        return vault.totalMintableShares();
     }
 
     /// @notice The invariant: everything marked Claimable must be claimable.
@@ -229,6 +223,11 @@ abstract contract QueueHelper is Test {
             sharesOwed(),
             sharesDeliverable(),
             "INSOLVENT: claimable deposits larger than "
+        );
+        assertEq(
+            vault.balanceOf(address(vault)),
+            vault.totalPendingWithdraws(),
+            "ESCROW: vault holds shares beyond pending redeem escrow"
         );
     }
 

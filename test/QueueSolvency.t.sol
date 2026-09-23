@@ -3,8 +3,12 @@ pragma solidity ^0.8.20;
 
 import {QueueHelper} from "./utils/QueueHelper.sol";
 import {IQueue} from "src/interfaces/IQueue.sol";
+import {Vm} from "forge-std/Vm.sol";
 
 contract QueueSolvencyTests is QueueHelper {
+    bytes32 constant TRANSFER_SIG =
+        keccak256("Transfer(address,address,uint256)");
+
     function setUp() public {
         _deployVault();
     }
@@ -300,7 +304,7 @@ contract QueueSolvencyTests is QueueHelper {
         assertSolvent();
     }
 
-    function test_matchedEscrowBecomesDeliverableInventory() public {
+    function test_matchedEscrowIsBurnedAtProcessing() public {
         _mintShares(1, 100 ether, defaultUsers());
         _drainLiquidity();
         uint256 shares = createWithdrawQueue(
@@ -319,9 +323,108 @@ contract QueueSolvencyTests is QueueHelper {
         assertEq(vault.totalPendingWithdraws(), 0, "escrow no longer pending");
         assertEq(
             vault.balanceOf(address(vault)),
-            shares,
-            "shares dont move on queue processing anymore"
+            0,
+            "matched escrow is burned, not retained"
         );
+        assertEq(vault.totalSupply(), 0, "supply retired with it");
         assertSolvent();
+    }
+
+    function test_escrowIsPendingOnlyAcrossAFullCycle() public {
+        _mintShares(1, 100 ether, defaultUsers());
+        _drainLiquidity();
+        uint256 shares = createWithdrawQueue(
+            1,
+            vault.convertToShares(100 ether),
+            defaultUsers()
+        );
+
+        assertEq(vault.balanceOf(address(vault)), shares);
+        assertEq(vault.totalPendingWithdraws(), shares);
+        assertSolvent();
+
+        _injectLiquidity(100 ether);
+        uint256 volume = vault.convertToAssets(shares);
+        vm.prank(rebalancer);
+        vault.processQueue(volume);
+
+        assertEq(vault.balanceOf(address(vault)), 0);
+        assertEq(vault.totalPendingWithdraws(), 0);
+        assertSolvent();
+    }
+
+    function test_fullRoundTripRestoresCapacity() public {
+        assertEq(vault.availableCapacity(), MAXIMUM_VAULT_CAPACITY);
+
+        _depositAndClaim(user, 100 ether);
+        assertEq(vault.availableCapacity(), 0, "cap consumed");
+
+        uint256 shares = vault.balanceOf(user);
+        _requestRedeem(user, shares);
+        uint256 claimable = vault.maxRedeem(user);
+        vm.prank(user);
+        vault.redeem(claimable, user, user);
+
+        assertEq(vault.totalSupply(), 0);
+        assertEq(vault.totalAssets(), 0);
+        assertEq(
+            vault.availableCapacity(),
+            MAXIMUM_VAULT_CAPACITY,
+            "capacity returns, vault reopens"
+        );
+    }
+
+    function test_capacityIsUnchangedAcrossADepositClaim() public {
+        _requestDeposit(user, 40 ether);
+
+        uint256 before = vault.availableCapacity();
+        vm.prank(user);
+        vault.deposit(40 ether, user);
+
+        assertEq(vault.availableCapacity(), before);
+    }
+
+    function test_accruedYieldDoesNotStrandCapacity() public {
+        _depositAndClaim(user, 50 ether);
+        vm.warp(block.timestamp + 365 days);
+        _injectLiquidity(50 ether);
+
+        uint256 shares = vault.balanceOf(user);
+        _requestRedeem(user, shares);
+
+        uint256 owed = vault.maxWithdraw(user);
+        assertGt(owed, 50 ether, "redeeming more than was deposited");
+
+        uint256 claimable = vault.maxRedeem(user);
+        vm.prank(user);
+        vault.redeem(claimable, user, user);
+
+        assertEq(vault.totalSupply(), 0);
+        assertEq(vault.totalAssets(), 0);
+        assertEq(
+            vault.availableCapacity(),
+            MAXIMUM_VAULT_CAPACITY,
+            "a stored totalAssets would have underflowed here"
+        );
+    }
+
+    function test_instantRedeemBurnsImmediately() public {
+        _depositAndClaim(user, 50 ether);
+        uint256 shares = vault.balanceOf(user);
+
+        vm.recordLogs();
+        _requestRedeem(user, shares);
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        uint256 burns;
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].topics[0] != TRANSFER_SIG) continue;
+            if (address(uint160(uint256(logs[i].topics[2]))) == address(0))
+                ++burns;
+        }
+
+        assertEq(burns, 1);
+        assertEq(vault.balanceOf(address(vault)), 0);
+        assertEq(vault.totalPendingWithdraws(), 0);
     }
 }
