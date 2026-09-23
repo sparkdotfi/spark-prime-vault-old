@@ -33,8 +33,7 @@ contract Vault is
     //  LiquidityManagement,
     VaultManagement,
     Queue,
-    ISparkPrimeVault,
-    PausableUpgradeable
+    ISparkPrimeVault
 {
     //Withdraw Queue: Withdraw Requests that couldn't be fulfilled with availableLiquidAssets()
     //Deposit Queue: Requests that couldn't be fulfilled with availableCapacity()
@@ -165,7 +164,7 @@ contract Vault is
         uint256 assets,
         address receiver,
         address controller
-    ) public returns (uint256 shares) {
+    ) public whenNotPaused returns (uint256 shares) {
         Storage storage $ = getStorage();
         if (assets == 0) revert ZeroValueProvided();
 
@@ -233,7 +232,7 @@ contract Vault is
         uint256 assets,
         address controller,
         address owner
-    ) public returns (uint256) {
+    ) public whenNotPaused returns (uint256) {
         Storage storage $ = getStorage();
         if (assets == 0) revert ZeroValueProvided();
         if (assets < $.minimumDeposit)
@@ -313,7 +312,7 @@ contract Vault is
         uint256 shares,
         address controller,
         address owner
-    ) public returns (uint256) {
+    ) public whenNotPaused returns (uint256) {
         Storage storage $ = getStorage();
         if (shares == 0) revert ZeroValueProvided();
         if (convertToAssets(shares) < $.minimumWithdraw)
@@ -368,7 +367,12 @@ contract Vault is
         uint256 shares,
         address receiver,
         address controller
-    ) public override(ERC4626Upgradeable, IERC4626) returns (uint256 assets) {
+    )
+        public
+        override(ERC4626Upgradeable, IERC4626)
+        whenNotPaused
+        returns (uint256 assets)
+    {
         if (controller != msg.sender && !isOperator(controller, msg.sender))
             revert UnauthorizedCaller(msg.sender);
         if (msg.sender != controller && receiver != controller)
@@ -399,7 +403,6 @@ contract Vault is
         baseAsset.safeTransfer(receiver, assets);
 
         $.lockedShares[controller] -= shares;
-        emit WithdrawClaimed(receiver, assets, shares);
     }
 
     /// @dev Prevent a Withdrawer from transferring their commited shares

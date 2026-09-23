@@ -31,4 +31,10 @@ interface IVaultManagement {
 
     /// @notice Set Maximum Vault Capacity (totalAssets cap). VAULT_MANAGER only
     function setCapacity(uint256 newCapacity) external;
+
+    /// @notice Halts every user entry point. VAULT_MANAGER only
+    function pause() external;
+
+    /// @notice Resumes user entry points. DEFAULT_ADMIN only
+    function unpause() external;
 }

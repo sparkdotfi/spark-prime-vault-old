@@ -10,6 +10,9 @@ import {IRebalancer} from "src/interfaces/IRebalancer.sol";
 import {
     IAccessControl
 } from "@openzeppelin/contracts/access/IAccessControl.sol";
+import {
+    PausableUpgradeable
+} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {USDC} from "./mocks/USDC.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {console} from "forge-std/console.sol";
@@ -286,5 +289,180 @@ contract VaultManagerUnitTests is QueueHelper {
             )
         );
         vault.setMinimumWithdraw(5 ether);
+    }
+
+    function _pause() internal {
+        vm.prank(vaultManager);
+        vault.pause();
+    }
+
+    function _expectPaused() internal {
+        vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
+    }
+
+    function test_pause() public {
+        assertFalse(vault.paused());
+
+        vm.expectEmit(address(vault));
+        emit PausableUpgradeable.Paused(vaultManager);
+        _pause();
+
+        assertTrue(vault.paused());
+    }
+
+    function test_unpause() public {
+        _pause();
+
+        vm.expectEmit(address(vault));
+        emit PausableUpgradeable.Unpaused(admin);
+        vm.prank(admin);
+        vault.unpause();
+
+        assertFalse(vault.paused());
+    }
+
+    function test_cannot_pause_withoutVaultManagerRole() public {
+        vm.prank(rebalancer);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector,
+                rebalancer,
+                VAULT_MANAGER_ROLE
+            )
+        );
+        vault.pause();
+    }
+
+    function test_cannot_unpause_withoutAdminRole() public {
+        _pause();
+
+        vm.prank(vaultManager);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector,
+                vaultManager,
+                DEFAULT_ADMIN_ROLE
+            )
+        );
+        vault.unpause();
+    }
+
+    function test_paused_blocksRequestDeposit() public {
+        _fund(user, 10 ether);
+        _pause();
+
+        vm.prank(user);
+        _expectPaused();
+        vault.requestDeposit(10 ether, user, user);
+    }
+
+    function test_paused_blocksDeposit() public {
+        _requestDeposit(user, 10 ether);
+        _pause();
+
+        vm.prank(user);
+        _expectPaused();
+        vault.deposit(10 ether, user);
+
+        vm.prank(user);
+        _expectPaused();
+        vault.deposit(10 ether, user, user);
+
+        vm.prank(user);
+        _expectPaused();
+        vault.deposit(10 ether, user, user, 1);
+    }
+
+    function test_paused_blocksMint() public {
+        _requestDeposit(user, 10 ether);
+        uint256 shares = vault.convertToShares(10 ether);
+        _pause();
+
+        vm.prank(user);
+        _expectPaused();
+        vault.mint(shares, user);
+
+        vm.prank(user);
+        _expectPaused();
+        vault.mint(shares, user, user);
+    }
+
+    function test_paused_blocksRequestRedeem() public {
+        _depositAndClaim(user, 50 ether);
+        _drainLiquidity();
+        uint256 shares = vault.balanceOf(user);
+        _pause();
+
+        vm.prank(user);
+        _expectPaused();
+        vault.requestRedeem(shares, user, user);
+    }
+
+    function test_paused_blocksRedeemAndWithdraw() public {
+        _depositAndClaim(user, 50 ether);
+        uint256 shares = vault.balanceOf(user);
+        vm.prank(user);
+        vault.requestRedeem(shares, user, user);
+
+        uint256 claimable = vault.maxRedeem(user);
+        uint256 claimValue = vault.maxWithdraw(user);
+        _pause();
+
+        vm.prank(user);
+        _expectPaused();
+        vault.redeem(claimable, user, user);
+
+        vm.prank(user);
+        _expectPaused();
+        vault.withdraw(claimValue, user, user);
+    }
+
+    function test_paused_doesNotBlockProcessQueueOrTake() public {
+        _depositAndClaim(user, 50 ether);
+        _drainLiquidity();
+
+        uint256 shares = vault.balanceOf(user);
+        vm.prank(user);
+        vault.requestRedeem(shares, user, user);
+        assertEq(vault.withdrawQueueLength(), 1);
+
+        _injectLiquidity(50 ether);
+        uint256 volume = vault.convertToAssets(vault.totalPendingWithdraws());
+        _pause();
+
+        vm.prank(rebalancer);
+        vault.processQueue(volume);
+        assertEq(vault.withdrawQueueLength(), 0);
+
+        vm.prank(liquidityManager);
+        vault.take(1 ether);
+    }
+
+    function test_paused_doesNotBlockSetOperator() public {
+        _pause();
+
+        vm.prank(user);
+        vault.setOperator(operator, true);
+        assertTrue(vault.isOperator(user, operator));
+    }
+
+    function test_unpause_restoresEveryEntryPoint() public {
+        _depositAndClaim(user, 50 ether);
+        uint256 shares = vault.balanceOf(user);
+        _pause();
+
+        vm.prank(admin);
+        vault.unpause();
+
+        _requestDeposit(userTwo, 10 ether);
+        vm.prank(userTwo);
+        vault.deposit(10 ether, userTwo);
+
+        vm.prank(user);
+        vault.requestRedeem(shares, user, user);
+
+        uint256 claimable = vault.maxRedeem(user);
+        vm.prank(user);
+        vault.redeem(claimable, user, user);
     }
 }
