@@ -36,7 +36,6 @@ abstract contract VaultBase is
     /// @custom:storage-location erc7201:sparkprime.vault.v1
     struct Storage {
         mapping(address => Settlement) ledger;
-        mapping(address => uint256) lockedShares;
         mapping(address => address) operators;
         mapping(address => uint256) nonces;
         mapping(bytes32 => Transaction) transactionRegistry;
@@ -227,17 +226,6 @@ abstract contract VaultBase is
         Storage storage $ = getStorage();
         return $.minimumWithdraw;
     }
-    /*  function balanceOf(
-        address account
-    ) public view override(ERC20Upgradeable) returns (uint256) {
-        ERC20Storage storage erc20_$ = _getERC20Storage();
-        Storage storage $ = getStorage();
-
-        return
-            $.lockedShares[account] >= erc20_$._balances[account]
-                ? 0
-                : erc20_$._balances[account];
-    }*/
 
     function availableCapacity() public view returns (uint256 available) {
         Storage storage $ = getStorage();

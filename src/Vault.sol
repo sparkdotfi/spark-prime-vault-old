@@ -26,7 +26,6 @@ import {
 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {TransientSlot} from "@openzeppelin/contracts/utils/TransientSlot.sol";
 import {
     AccessControlUpgradeable
 } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
@@ -68,7 +67,6 @@ contract Vault is
     //Test: If no withdraw queue exists,
 
     //Withdraw Claim Rules
-    //Test: Claimed amount is deducted from lockedShares
     //Test: If claim amount is greater than claimableWithdrawTotal(), always revert (Insolvency)
 
     //Deposit Queue Rules
@@ -80,8 +78,6 @@ contract Vault is
     using TransactionQueue for DoubleEndedQueue.Bytes32Deque;
     using SafeERC20 for IERC20;
     using SafeCast for int256;
-    using TransientSlot for bytes32;
-    using TransientSlot for TransientSlot.BooleanSlot;
 
     /// @dev type(IERC7575).interfaceId
     bytes4 private constant ERC7575_INTERFACE_ID = 0x2f0a18c5;
@@ -90,17 +86,6 @@ contract Vault is
     /// @dev type(IERC7540Redeem).interfaceId
     bytes4 private constant ERC7540_REDEEM_INTERFACE_ID = 0x620ee8e4;
 
-    /// @dev cast index-erc7201 sparkprime.vault.internalTransfer
-    bytes32 private constant INTERNAL_TRANSFER_SLOT =
-        0x847c1ce996b34c883673c43d0837cf9867d57360e13c4942350d76beee85a400;
-
-    function _setInternalTransfer(bool value) private {
-        INTERNAL_TRANSFER_SLOT.asBoolean().tstore(value);
-    }
-
-    function _isInternalTransfer() private view returns (bool) {
-        return INTERNAL_TRANSFER_SLOT.asBoolean().tload();
-    }
     constructor() {
         _disableInitializers();
     }
@@ -211,9 +196,7 @@ contract Vault is
         if (totalAssets() >= $.maximumCapacity) {
             // we cant mint
             if (totalLiquidShares < shares) revert Insolvency(); // Not enough withdraws have claimed to fill liquidity
-            _setInternalTransfer(true);
             _transfer(address(this), receiver, shares);
-            _setInternalTransfer(false);
         } else {
             // we can mint $.maximumCapacity - totalAssets()
             uint256 mintableShares = convertToShares(
@@ -225,11 +208,7 @@ contract Vault is
                 revert Insolvency(); // Both vault owned shares and minting couldn't fulfill this request
 
             uint256 fromLiquid = Math.min(shares, totalLiquidShares);
-            if (fromLiquid > 0) {
-                _setInternalTransfer(true);
-                _transfer(address(this), receiver, fromLiquid);
-                _setInternalTransfer(false);
-            }
+            if (fromLiquid > 0) _transfer(address(this), receiver, fromLiquid);
 
             console.log("toMint = %e - %e", shares, fromLiquid);
             uint256 toMint = shares - fromLiquid;
@@ -332,9 +311,6 @@ contract Vault is
 
         if (owner != msg.sender) revert UnauthorizedCaller(msg.sender);
 
-        uint256 unlockedShares = balanceOf(owner) - $.lockedShares[owner];
-        if (shares > unlockedShares) revert InsufficientFunds();
-
         Transaction memory transaction = Transaction(
             controller,
             shares,
@@ -343,15 +319,7 @@ contract Vault is
 
         emit RedeemRequest(controller, owner, 0, msg.sender, shares);
 
-        if (owner != controller) {
-            /// @dev If owner != controller: A user has put blind trust in their controller to claim and manage requests on their behalf.
-            /// We want to accrue yield and allow cancellations while in the withdraw queue but redeem has no concept of the owner.
-            /// In this case, we transfer shares to the controller. The controller is trusted to call the correct `reciever == owner` at redeem time
-            _transfer(owner, controller, shares);
-            owner = controller;
-        }
-
-        $.lockedShares[owner] += shares;
+        _transfer(owner, address(this), shares);
 
         InterestLib.accrueInterest($);
 
@@ -364,10 +332,10 @@ contract Vault is
             uint256 liquidAssets = availableLiquidAssets.toUint256();
 
             if (liquidAssets >= requestedAmount) {
-                _markClaimableWithdraw($, owner, shares, true);
+                _markClaimableWithdraw($, controller, shares, true);
             } else {
                 uint256 instantShares = convertToShares(liquidAssets);
-                _markClaimableWithdraw($, owner, instantShares, true);
+                _markClaimableWithdraw($, controller, instantShares, true);
                 transaction.amount -= instantShares;
                 _pushToWithdrawQueue($, transaction);
             }
@@ -401,11 +369,6 @@ contract Vault is
         $.ledger[controller].sharesOut -= shares;
         $.totalClaimableWithdraws -= shares;
 
-        _setInternalTransfer(true);
-        _transfer(controller, address(this), shares);
-        _setInternalTransfer(false);
-        //(IERC20(address(this)), owner, address(this), shares);
-
         InterestLib.accrueInterest($);
         assets = convertToAssets(shares);
         IERC20 baseAsset = IERC20(asset());
@@ -414,25 +377,7 @@ contract Vault is
         if (assets > liquidAssets) revert Insolvency();
         baseAsset.safeTransfer(receiver, assets);
 
-        $.lockedShares[controller] -= shares;
         emit Withdraw(msg.sender, receiver, controller, assets, shares);
-    }
-
-    /// @dev Prevent a Withdrawer from transferring their commited shares
-    /// @dev Exclude mints
-    function _update(
-        address from,
-        address to,
-        uint256 value
-    ) internal override {
-        Storage storage $ = getStorage();
-
-        if (from != address(0) && !_isInternalTransfer()) {
-            uint256 balanceRemaining = balanceOf(from) - value;
-            if ($.lockedShares[from] > balanceRemaining) revert();
-        }
-
-        super._update(from, to, value);
     }
 
     function supportsInterface(

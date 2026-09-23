@@ -9,6 +9,13 @@ contract QueueSolvencyTests is QueueHelper {
         _deployVault();
     }
 
+    function createOneUserList(
+        address who
+    ) internal pure returns (address[] memory u) {
+        u = new address[](1);
+        u[0] = who;
+    }
+
     function test_depositQueue_isFunded() public {
         _closeCapacity();
         uint256 queued = createDepositQueue(10, 100 ether, defaultUsers());
@@ -226,5 +233,95 @@ contract QueueSolvencyTests is QueueHelper {
         _drainLiquidity();
 
         assertInsolvent();
+    }
+
+    function test_pendingEscrowIsHeldButNotDeliverable() public {
+        _mintShares(1, 100 ether, defaultUsers());
+        _drainLiquidity();
+
+        uint256 shares = createWithdrawQueue(
+            1,
+            vault.convertToShares(100 ether),
+            defaultUsers()
+        );
+
+        assertEq(
+            vault.balanceOf(address(vault)),
+            shares,
+            "vault holds shares in escrow"
+        );
+        assertEq(vault.balanceOf(user), 0, "no longer in owner custody");
+        assertEq(
+            vault.totalMintableShares(),
+            0,
+            "mintable shares shouldnt increase"
+        );
+        assertEq(
+            vault.availableLiquidShares(),
+            0,
+            "liquid shares shouldnt increase"
+        );
+        assertSolvent();
+    }
+
+    function test_matchedDepositIsClaimableBeforeTheRedeemerClaims() public {
+        _mintShares(1, 100 ether, defaultUsers());
+        _drainLiquidity();
+        uint256 shares = createWithdrawQueue(
+            1,
+            vault.convertToShares(100 ether),
+            defaultUsers()
+        );
+
+        createDepositQueue(1, 100 ether, createOneUserList(userTwo));
+
+        uint256 volume = vault.convertToAssets(shares);
+        vm.prank(rebalancer);
+        vault.processQueue(volume);
+
+        uint256 claimable = vault.claimableDepositRequest(0, userTwo);
+        assertGt(claimable, 0, "amount claimable");
+        assertGt(vault.claimableRedeemRequest(0, user), 0, "redeem claimable");
+
+        vm.prank(userTwo);
+        vault.deposit(claimable, userTwo);
+
+        assertGt(vault.balanceOf(userTwo), 0, "depositor claims first");
+
+        uint256 redeemable = vault.maxRedeem(user);
+        vm.prank(user);
+        vault.redeem(redeemable, user, user);
+
+        assertEq(
+            baseAsset.balanceOf(user),
+            volume,
+            "withdrawer still fulfilled"
+        );
+        assertSolvent();
+    }
+
+    function test_matchedEscrowBecomesDeliverableInventory() public {
+        _mintShares(1, 100 ether, defaultUsers());
+        _drainLiquidity();
+        uint256 shares = createWithdrawQueue(
+            1,
+            vault.convertToShares(100 ether),
+            defaultUsers()
+        );
+        createDepositQueue(1, 100 ether, createOneUserList(userTwo));
+
+        assertEq(vault.availableLiquidShares(), 0, "escrow in pending");
+
+        uint256 volume = vault.convertToAssets(shares);
+        vm.prank(rebalancer);
+        vault.processQueue(volume);
+
+        assertEq(vault.totalPendingWithdraws(), 0, "escrow no longer pending");
+        assertEq(
+            vault.balanceOf(address(vault)),
+            shares,
+            "shares dont move on queue processing anymore"
+        );
+        assertSolvent();
     }
 }

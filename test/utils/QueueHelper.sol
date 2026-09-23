@@ -209,11 +209,13 @@ abstract contract QueueHelper is Test {
     }
 
     function sharesDeliverable() internal view returns (uint256) {
-        uint256 inventory = vault.balanceOf(address(vault));
+        uint256 escrowed = vault.balanceOf(address(vault));
+        uint256 pending = vault.totalPendingWithdraws();
+        uint256 owned = escrowed > pending ? escrowed - pending : 0;
         uint256 total = vault.totalAssets();
         uint256 cap = vault.maxCapacity();
         uint256 mintable = cap > total ? vault.convertToShares(cap - total) : 0;
-        return inventory + mintable + vault.claimableWithdrawTotal();
+        return owned + mintable;
     }
 
     /// @notice The invariant: everything marked Claimable must be claimable.

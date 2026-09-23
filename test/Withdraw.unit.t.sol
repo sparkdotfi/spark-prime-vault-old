@@ -6,6 +6,7 @@ import {VaultHandler} from "./VaultHandler.t.sol";
 import {IVault} from "src/interfaces/IVault.sol";
 import {ISparkPrimeVault} from "src/interfaces/ISparkPrimeVault.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {USDC} from "./mocks/USDC.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {console} from "forge-std/console.sol";
@@ -303,74 +304,6 @@ contract RequestWithdrawUnitTests is QueueHelper {
         assertEq(vault.withdrawQueueLength(), 1);
     }
 
-    function test_cannot_transferLockedSharesToTheVault() public {
-        _depositAndClaim(user, 50 ether);
-        _drainLiquidity();
-
-        uint256 shares = vault.balanceOf(user);
-        vm.prank(user);
-        vault.requestRedeem(shares, user, user);
-
-        vm.prank(user);
-        vm.expectRevert();
-        vault.transfer(userTwo, shares);
-
-        vm.prank(user);
-        vm.expectRevert();
-        vault.transfer(address(vault), shares);
-
-        assertEq(vault.balanceOf(user), shares);
-        assertEq(vault.totalPendingWithdraws(), shares);
-    }
-
-    function test_redeem_clearsTheInternalTransferFlag() public {
-        _depositAndClaim(user, 50 ether);
-
-        uint256 shares = vault.balanceOf(user);
-        vm.prank(user);
-        vault.requestRedeem(shares, user, user);
-
-        uint256 claimable = vault.maxRedeem(user);
-        vm.prank(user);
-        vault.redeem(claimable, user, user);
-
-        _depositAndClaim(userTwo, 10 ether);
-        uint256 twoShares = vault.balanceOf(userTwo);
-
-        vm.prank(userTwo);
-        vault.requestRedeem(twoShares, userTwo, userTwo);
-
-        vm.prank(userTwo);
-        vm.expectRevert();
-        vault.transfer(address(vault), twoShares);
-    }
-
-    function test_deposit_clearsTheInternalTransferFlag() public {
-        _depositAndClaim(user, 50 ether);
-        uint256 shares = vault.balanceOf(user);
-        vm.startPrank(user);
-        vault.requestRedeem(shares, user, user);
-        vault.redeem(vault.maxRedeem(user), user, user);
-        vm.stopPrank();
-
-        _closeCapacity();
-        _requestDeposit(userTwo, 10 ether);
-        vm.prank(rebalancer);
-        vault.processQueue(10 ether);
-
-        vm.prank(userTwo);
-        vault.deposit(10 ether, userTwo);
-
-        uint256 twoShares = vault.balanceOf(userTwo);
-        _drainLiquidity();
-        vm.prank(userTwo);
-        vault.requestRedeem(twoShares, userTwo, userTwo);
-
-        vm.prank(userTwo);
-        vm.expectRevert();
-        vault.transfer(address(vault), twoShares);
-    }
-
     function _claimableRedeemer(uint256 amount) internal returns (uint256) {
         _depositAndClaim(user, amount);
         uint256 shares = vault.balanceOf(user);
@@ -477,5 +410,93 @@ contract RequestWithdrawUnitTests is QueueHelper {
 
         vm.prank(operator);
         vault.redeem(claimable, user, user);
+    }
+
+    function test_requestRedeem_movesSharesOutOfOwnerCustody() public {
+        _depositAndClaim(user, 50 ether);
+        _drainLiquidity();
+
+        uint256 shares = vault.balanceOf(user);
+        uint256 supplyBefore = vault.totalSupply();
+
+        vm.prank(user);
+        vault.requestRedeem(shares, user, user);
+
+        assertEq(vault.balanceOf(user), 0);
+        assertEq(vault.balanceOf(address(vault)), shares);
+        assertEq(vault.totalSupply(), supplyBefore);
+        assertEq(vault.pendingRedeemRequest(0, user), shares);
+    }
+
+    function test_requestRedeem_emitsTransferToTheVault() public {
+        _depositAndClaim(user, 50 ether);
+        _drainLiquidity();
+        uint256 shares = vault.balanceOf(user);
+
+        vm.expectEmit(address(vault));
+        emit IERC20.Transfer(user, address(vault), shares);
+
+        vm.prank(user);
+        vault.requestRedeem(shares, user, user);
+    }
+
+    function test_cannot_requestRedeem_moreSharesThanHeld() public {
+        _depositAndClaim(user, 50 ether);
+        _drainLiquidity();
+        uint256 shares = vault.balanceOf(user);
+
+        vm.prank(user);
+        vm.expectRevert();
+        vault.requestRedeem(shares + 1, user, user);
+
+        assertEq(vault.balanceOf(user), shares);
+        assertEq(vault.withdrawQueueLength(), 0);
+    }
+
+    function test_cannot_requestRedeem_twiceWithTheSameShares() public {
+        _depositAndClaim(user, 50 ether);
+        _drainLiquidity();
+        uint256 shares = vault.balanceOf(user);
+
+        vm.prank(user);
+        vault.requestRedeem(shares, user, user);
+
+        vm.prank(user);
+        vm.expectRevert();
+        vault.requestRedeem(shares, user, user);
+    }
+
+    function test_requestRedeem_withSeparateControllerEscrowsFromTheOwner()
+        public
+    {
+        _depositAndClaim(user, 50 ether);
+        _drainLiquidity();
+        uint256 shares = vault.balanceOf(user);
+
+        vm.prank(user);
+        vault.requestRedeem(shares, userTwo, user);
+
+        assertEq(vault.balanceOf(user), 0);
+        assertEq(vault.balanceOf(userTwo), 0);
+        assertEq(vault.balanceOf(address(vault)), shares);
+        assertEq(vault.pendingRedeemRequest(0, userTwo), shares);
+        assertEq(vault.pendingRedeemRequest(0, user), 0);
+    }
+
+    function test_redeem_leavesTheEscrowedSharesWithTheVault() public {
+        _depositAndClaim(user, 50 ether);
+        uint256 shares = vault.balanceOf(user);
+
+        vm.prank(user);
+        vault.requestRedeem(shares, user, user);
+
+        uint256 claimable = vault.maxRedeem(user);
+        vm.prank(user);
+        vault.redeem(claimable, user, user);
+
+        assertEq(vault.balanceOf(address(vault)), shares);
+        assertEq(vault.balanceOf(user), 0);
+        assertEq(vault.totalPendingWithdraws(), 0);
+        assertEq(vault.claimableWithdrawTotal(), 0);
     }
 }

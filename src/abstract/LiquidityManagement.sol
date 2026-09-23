@@ -41,9 +41,10 @@ abstract contract LiquidityManagement is
             "Total Claimable Deposits Shares: %e",
             convertToShares($.totalClaimableDeposits)
         );
-        // Any idle share balance the vault owns from withdraw claims - locked shares for previous claimers
+        // Any idle share balance the vault owns (i.e from withdraw claims) minus locked shares for queue members
         shares =
             int256(shareBalance + mintableShares) -
+            int256($.totalWithdrawQueueShares) -
             int256(convertToShares($.totalClaimableDeposits));
     }
 

@@ -90,7 +90,7 @@ abstract contract Queue is LiquidityManagement, IQueue {
 
         int256 liquidShares = availableLiquidShares();
 
-        uint256 totalShareLiquidity = totalPendingWithdraws() + /// @dev availableLiquidShares doesn't include the withdraw queue, because shares aren't taken until claim
+        uint256 totalShareLiquidity = totalPendingWithdraws() +
             uint256(liquidShares > 0 ? liquidShares : int256(0));
 
         if (
@@ -125,8 +125,7 @@ abstract contract Queue is LiquidityManagement, IQueue {
 
         // Sanity Invariants
         if (availableLiquidAssets() < 0) revert();
-        if (availableLiquidShares() + int256(claimableWithdrawTotal()) < 0)
-            revert();
+        if (availableLiquidShares() < 0) revert();
     }
 
     /// @dev Iterate over entire queue and eat until EOF
