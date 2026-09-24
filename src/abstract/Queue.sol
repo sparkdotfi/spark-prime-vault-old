@@ -93,32 +93,27 @@ abstract contract Queue is LiquidityManagement, IQueue {
         uint256 totalShareLiquidity = totalPendingWithdraws() +
             uint256(liquidShares > 0 ? liquidShares : int256(0));
 
+        /// We can only ever eat uptil the smaller queue
         if (
             tradeVolume >
             Math.min(totalAssetLiquidity, convertToAssets(totalShareLiquidity))
         ) revert CapacityExceedsLiquidity();
 
-        /// Withdraw Queue can eat upto totalAssetLiquidity
-        /// Withdraw queue size is totalPendingWithdraws
-        /// totalPendingWithdraws must be smaller than or equal to totalAssetLiquidity
-        /// Exchange Volume cannot exceed totalAssetLiquidity
-
-        /// Deposit Queue can eat upto totalShareLiquidity
-        /// Deposit Queue size is totalPendingDeposits
-        /// totalPendingDeposits must be smaller than or equal to totalShareLiquidity
-        /// Exchange Volume cannot exceed totalPendingDeposits
-
-        /// Only one of withdraw queue or deposit queue will be filled completely, the other fillUntil'ed
-        /// unless the tradeVolume == totalAssetLiquidity == totalShareLiquidity, in which case, both queues are fulfilled unbounded
+        /// Process the Withdraw Queue first, burning all matched shares to increase totalMintableShares
         _fillWithdrawQueue($, tradeVolume);
 
+        /// Process the Deposit Queue second, so every claim has access to totalMintableShares
         tradeVolume >= totalPendingDeposits()
             ? fillUnbounded($, $.depositQueue, _markClaimableDeposit)
             : fillUntil($, $.depositQueue, _markClaimableDeposit, tradeVolume);
 
-        // Sanity Invariants
+        // Sanity Invariants: Never allow claims to exceed current balance resulting in debt
+
+        /// Order Matching should never result in base asset insolvency
         int256 assetsLeft = availableLiquidAssets();
         if (assetsLeft < 0) revert AssetInvariantBroken(assetsLeft);
+
+        /// Order Matching should never result in share insolvency
         int256 sharesLeft = availableLiquidShares();
         if (sharesLeft < 0) revert ShareInvariantBroken(sharesLeft);
     }
