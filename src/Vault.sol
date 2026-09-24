@@ -188,19 +188,26 @@ contract Vault is
             revert MustExceedMinimumRequestAmount($.minimumDeposit);
         if (msg.sender != owner) revert UnauthorizedCaller(msg.sender);
 
+        InterestLib.accrueInterest($);
+
+        /// How many shares are available to mint (subtracting what we've committed to claimable deposits)
         uint256 capacity = availableCapacity();
+
         Transaction memory transaction = Transaction(
             controller,
             assets,
             ++$.nonces[controller]
         );
         if (!$.depositQueue.isEmpty() || capacity == 0) {
+            /// If a queue exists, or there's no shares to mint: Immediately queue entire request
             _pushToDepositQueue($, transaction);
         } else if (assets > capacity) {
+            /// User request can be partially fulfilled instantly, remainder is queued
             _markClaimableDeposit($, controller, capacity, true);
             transaction.amount -= capacity;
             _pushToDepositQueue($, transaction);
         } else {
+            /// User request can be completed fulfilled instantly
             _markClaimableDeposit($, controller, assets, true);
         }
 
@@ -295,27 +302,34 @@ contract Vault is
 
         emit RedeemRequest(controller, owner, 0, msg.sender, shares);
 
+        /// Vault locks the users shares by taking ownership of them
         _transfer(owner, address(this), shares);
 
         InterestLib.accrueInterest($);
 
+        /// Amount of baseAsset the vault holds (subtracting amounts commited to claimable withdraws)
         int256 availableLiquidAssets = availableLiquidAssets();
 
+        /// If no assets/over-commited to claimers or queue already exists: Immediately queue entire request
         if (availableLiquidAssets <= 0 || !$.withdrawQueue.isEmpty()) {
             _pushToWithdrawQueue($, transaction);
         } else {
             uint256 requestedAmount = convertToAssets(shares);
             uint256 liquidAssets = availableLiquidAssets.toUint256();
 
+            /// Users entire request can be fulfilled using the vaults liquid assets, instant claimable
             if (liquidAssets >= requestedAmount) {
                 _markClaimableWithdraw($, controller, shares, true);
             } else {
                 uint256 instantShares = convertToShares(liquidAssets);
+                /// We partially fill from liquidAssets if possible
                 if (instantShares > 0) {
                     _markClaimableWithdraw($, controller, instantShares, true);
                     transaction.amount -= instantShares;
                 }
-                _pushToWithdrawQueue($, transaction);
+                /// We queue the remainder
+                if (transaction.amount > 0)
+                    _pushToWithdrawQueue($, transaction);
             }
         }
         return 0;
@@ -335,17 +349,25 @@ contract Vault is
         _authorizeClaim(receiver, controller);
 
         Storage storage $ = getStorage();
+
         Settlement storage settlement = $.ledger[controller];
 
         if (settlement.sharesOut < shares)
             revert InsufficientClaimableAmount(shares, settlement.sharesOut);
 
-        assets = Math.mulDiv(settlement.assetsOut, shares, settlement.sharesOut);
+        assets = Math.mulDiv(
+            settlement.assetsOut,
+            shares,
+            settlement.sharesOut
+        );
 
         _claimRedeem(receiver, controller, shares, assets);
     }
 
-    function _authorizeClaim(address receiver, address controller) internal view {
+    function _authorizeClaim(
+        address receiver,
+        address controller
+    ) internal view {
         if (controller != msg.sender && !isOperator(controller, msg.sender))
             revert UnauthorizedCaller(msg.sender);
         if (msg.sender != controller && receiver != controller)
