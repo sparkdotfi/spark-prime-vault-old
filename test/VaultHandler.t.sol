@@ -7,7 +7,6 @@ import {IVault} from "src/interfaces/IVault.sol";
 import {USDC} from "./mocks/USDC.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
-import {TransactionQueue} from "src/libraries/TransactionQueue.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 contract VaultHandler is Vault {
@@ -68,13 +67,7 @@ contract VaultHandler is Vault {
 
     function fillUntilDepositQueue(uint256 capacity) external {
         Storage storage $ = getStorage();
-        fillUntil(
-            $,
-            $.depositQueue,
-            TransactionQueue.DEPOSIT_REQUEST_TYPE,
-            _markClaimableDeposit,
-            capacity
-        );
+        fillUntil($, $.depositQueue, _markClaimableDeposit, capacity);
     }
 
     function fillWithdrawQueue() external {
@@ -84,12 +77,6 @@ contract VaultHandler is Vault {
 
     function fillUntilWithdrawQueue(uint256 capacity) external {
         Storage storage $ = getStorage();
-        fillUntil(
-            $,
-            $.withdrawQueue,
-            TransactionQueue.REDEEM_REQUEST_TYPE,
-            _markClaimableWithdraw,
-            capacity
-        );
+        fillUntil($, $.withdrawQueue, _markClaimableWithdraw, capacity);
     }
 }

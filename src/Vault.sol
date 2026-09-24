@@ -10,9 +10,6 @@ import {
 } from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
 
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
-import {
-    DoubleEndedQueue
-} from "@openzeppelin/contracts/utils/structs/DoubleEndedQueue.sol";
 import {TransactionQueue} from "./libraries/TransactionQueue.sol";
 import {InterestLib} from "./libraries/InterestLib.sol";
 import {VaultBase} from "./abstract/VaultBase.sol";
@@ -75,7 +72,7 @@ contract Vault is
     // TransactionQueue Library
     //Fuzz Test: Encoding and Decoding should be a strict bi-directional match, for any input
 
-    using TransactionQueue for DoubleEndedQueue.Bytes32Deque;
+    using TransactionQueue for TransactionQueue.RequestQueue;
     using SafeERC20 for IERC20;
     using SafeCast for int256;
 
@@ -404,10 +401,10 @@ contract Vault is
         uint256 nonce
     ) external nonReentrant {
         Storage storage $ = getStorage();
-        bytes32 element = TransactionQueue.depositKey(controller, nonce);
+        bytes32 element = TransactionQueue.key(controller, nonce);
 
         (bool active, Transaction memory data) = TransactionQueue.tryGet(
-            $,
+            $.depositQueue,
             element
         );
         if (!active) revert RequestNotQueued(controller, nonce);
@@ -421,7 +418,7 @@ contract Vault is
         if (free < 0 || uint256(free) < assets)
             revert InsufficientFreeLiquidity(assets, free);
 
-        delete $.transactionRegistry[element];
+        delete $.depositQueue.entries[element];
         $.totalDepositQueueAssets -= assets;
         $.ledger[controller].pendingAssetsIn -= assets;
 
@@ -453,8 +450,8 @@ contract Vault is
         uint256 nonce
     ) public view returns (Transaction memory transaction) {
         Storage storage $ = getStorage();
-        transaction = $.transactionRegistry[
-            TransactionQueue.depositKey(controller, nonce)
+        transaction = $.depositQueue.entries[
+            TransactionQueue.key(controller, nonce)
         ];
     }
 

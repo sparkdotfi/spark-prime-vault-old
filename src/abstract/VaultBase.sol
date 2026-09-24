@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {
-    DoubleEndedQueue
-} from "@openzeppelin/contracts/utils/structs/DoubleEndedQueue.sol";
 import {TransactionQueue} from "../libraries/TransactionQueue.sol";
 
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
@@ -24,8 +21,6 @@ abstract contract VaultBase is
     ReentrancyGuardTransient,
     IVault
 {
-    using TransactionQueue for DoubleEndedQueue.Bytes32Deque;
-
     bytes32 constant LIQUIDITY_MANAGER_ROLE =
         0x77e60b99a50d27fb027f6912a507d956105b4148adab27a86d235c8bcca8fa2f; /// keccak256("LIQUIDITY_MANAGER_ROLE")
     bytes32 constant REBALANCER_ROLER =
@@ -38,9 +33,8 @@ abstract contract VaultBase is
         mapping(address => Settlement) ledger;
         mapping(address => address) operators;
         mapping(address => uint256) nonces;
-        mapping(bytes32 => Transaction) transactionRegistry;
-        DoubleEndedQueue.Bytes32Deque withdrawQueue;
-        DoubleEndedQueue.Bytes32Deque depositQueue;
+        TransactionQueue.RequestQueue withdrawQueue;
+        TransactionQueue.RequestQueue depositQueue;
         // Vault Management
         IERC20 baseAsset;
         IERC4626 savingsVault;
