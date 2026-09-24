@@ -11,32 +11,53 @@ library TransactionQueue {
     using SafeCast for uint256;
     using DoubleEndedQueue for DoubleEndedQueue.Bytes32Deque;
 
-    error DecodeFailed(bytes32 element);
     error QueueEmpty();
     error QueueFull(); // only when more than uint128 entries exceeded
 
-    function encodeTransaction(
-        IVault.Transaction memory transaction
+    uint8 internal constant DEPOSIT_REQUEST_TYPE = 0;
+    uint8 internal constant REDEEM_REQUEST_TYPE = 1;
+
+    function key(
+        uint8 requestType,
+        address controller,
+        uint256 nonce
     ) internal pure returns (bytes32 element) {
-        element = keccak256(abi.encode(transaction));
+        element = keccak256(abi.encode(requestType, controller, nonce));
     }
 
-    function decodeTransaction(
+    function depositKey(
+        address controller,
+        uint256 nonce
+    ) internal pure returns (bytes32) {
+        return key(DEPOSIT_REQUEST_TYPE, controller, nonce);
+    }
+
+    function encodeTransaction(
+        uint8 requestType,
+        IVault.Transaction memory transaction
+    ) internal pure returns (bytes32 element) {
+        element = key(requestType, transaction.controller, transaction.nonce);
+    }
+
+    function tryGet(
         VaultBase.Storage storage $,
         bytes32 element
-    ) internal view returns (IVault.Transaction memory transaction) {
+    ) internal view returns (bool active, IVault.Transaction memory transaction) {
         transaction = $.transactionRegistry[element];
-        if (transaction.controller == address(0)) revert DecodeFailed(element);
+        active = transaction.controller != address(0);
     }
 
     function front(
         VaultBase.Storage storage $,
         DoubleEndedQueue.Bytes32Deque storage queue
-    ) internal view returns (IVault.Transaction memory) {
-        (bool success, bytes32 value) = queue.tryFront();
-        if (!success) revert QueueEmpty();
-
-        return decodeTransaction($, value);
+    ) internal view returns (IVault.Transaction memory transaction) {
+        uint256 n = queue.length();
+        for (uint256 i; i < n; ++i) {
+            bool active;
+            (active, transaction) = tryGet($, queue.at(i));
+            if (active) return transaction;
+        }
+        revert QueueEmpty();
     }
 
     function length(
@@ -54,20 +75,21 @@ library TransactionQueue {
     function pop(
         DoubleEndedQueue.Bytes32Deque storage queue,
         VaultBase.Storage storage $
-    ) internal returns (VaultBase.Transaction memory data) {
+    ) internal returns (bool active, VaultBase.Transaction memory data) {
         (bool success, bytes32 value) = queue.tryPopFront();
         if (!success) revert QueueEmpty();
 
-        data = decodeTransaction($, value);
+        (active, data) = tryGet($, value);
 
-        delete $.transactionRegistry[value];
+        if (active) delete $.transactionRegistry[value];
     }
 
     function push(
         DoubleEndedQueue.Bytes32Deque storage queue,
+        uint8 requestType,
         VaultBase.Transaction memory transaction
     ) internal returns (bytes32 element) {
-        element = encodeTransaction(transaction);
+        element = encodeTransaction(requestType, transaction);
 
         bool success = queue.tryPushBack(element);
         if (!success) revert QueueFull();
@@ -75,9 +97,10 @@ library TransactionQueue {
 
     function pushFront(
         DoubleEndedQueue.Bytes32Deque storage queue,
+        uint8 requestType,
         VaultBase.Transaction memory transaction
     ) internal returns (bytes32 element) {
-        element = encodeTransaction(transaction);
+        element = encodeTransaction(requestType, transaction);
 
         bool success = queue.tryPushFront(element);
         if (!success) revert QueueFull();

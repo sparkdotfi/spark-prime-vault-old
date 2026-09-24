@@ -195,6 +195,7 @@ contract Vault is
 
         Transaction memory transaction = Transaction(
             controller,
+            owner,
             assets,
             ++$.nonces[controller]
         );
@@ -211,6 +212,7 @@ contract Vault is
             _markClaimableDeposit($, controller, assets, true);
         }
 
+        /// Transfer baseAsset from user to vault and emit DepositRequest
         IERC20 baseAsset = IERC20(asset());
 
         uint256 before = baseAsset.balanceOf(address(this));
@@ -252,6 +254,7 @@ contract Vault is
         if (assets > settlement.assetsOut)
             revert InsufficientClaimableAmount(assets, settlement.assetsOut);
 
+        /// Calculate the amount owed to user, based on their sharesOut and assetsOut at `processQueue` time
         shares = Math.mulDiv(
             settlement.sharesOut,
             assets,
@@ -296,6 +299,7 @@ contract Vault is
 
         Transaction memory transaction = Transaction(
             controller,
+            owner,
             shares,
             ++$.nonces[controller]
         );
@@ -355,6 +359,7 @@ contract Vault is
         if (settlement.sharesOut < shares)
             revert InsufficientClaimableAmount(shares, settlement.sharesOut);
 
+        /// Calculate the amount owed to user, based on their sharesOut and assetsOut at `processQueue` time
         assets = Math.mulDiv(
             settlement.assetsOut,
             shares,
@@ -392,6 +397,65 @@ contract Vault is
         baseAsset.safeTransfer(receiver, assets);
 
         emit Withdraw(msg.sender, receiver, controller, assets, shares);
+    }
+
+    function cancelDepositRequest(
+        address controller,
+        uint256 nonce
+    ) external nonReentrant {
+        Storage storage $ = getStorage();
+        bytes32 element = TransactionQueue.depositKey(controller, nonce);
+
+        (bool active, Transaction memory data) = TransactionQueue.tryGet(
+            $,
+            element
+        );
+        if (!active) revert RequestNotQueued(controller, nonce);
+        _authorizeCancel(controller, data.owner);
+
+        InterestLib.accrueInterest($);
+
+        uint256 assets = data.amount;
+
+        int256 free = availableLiquidAssets();
+        if (free < 0 || uint256(free) < assets)
+            revert InsufficientFreeLiquidity(assets, free);
+
+        delete $.transactionRegistry[element];
+        $.totalDepositQueueAssets -= assets;
+        $.ledger[controller].pendingAssetsIn -= assets;
+
+        emit DepositRequestCancelled(controller, data.owner, nonce, assets);
+        emit DepositQueueValuation($.totalDepositQueueAssets);
+
+        IERC20(asset()).safeTransfer(data.owner, assets);
+    }
+
+    function _authorizeCancel(
+        address controller,
+        address owner
+    ) internal view {
+        if (
+            msg.sender != owner &&
+            msg.sender != controller &&
+            !isOperator(controller, msg.sender) &&
+            !hasRole(VAULT_MANAGER_ROLE, msg.sender)
+        ) revert UnauthorizedCaller(msg.sender);
+    }
+
+    function requestNonce(address controller) public view returns (uint256) {
+        Storage storage $ = getStorage();
+        return $.nonces[controller];
+    }
+
+    function queuedDepositRequest(
+        address controller,
+        uint256 nonce
+    ) public view returns (Transaction memory transaction) {
+        Storage storage $ = getStorage();
+        transaction = $.transactionRegistry[
+            TransactionQueue.depositKey(controller, nonce)
+        ];
     }
 
     function supportsInterface(

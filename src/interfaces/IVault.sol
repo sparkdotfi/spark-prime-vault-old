@@ -33,6 +33,7 @@ interface IVault is IERC7540 {
 
     struct Transaction {
         address controller;
+        address owner;
         uint256 amount;
         uint256 nonce;
     }

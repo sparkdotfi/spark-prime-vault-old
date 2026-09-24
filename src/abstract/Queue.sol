@@ -94,6 +94,12 @@ abstract contract Queue is LiquidityManagement, IQueue {
             uint256(liquidShares > 0 ? liquidShares : int256(0));
 
         /// We can only ever eat uptil the smaller queue
+
+        /// baseAsset = 100
+        /// shares = 500 ==> 400,
+        /// tradeVolume = 200
+
+        /// TODO: Send examples of each use case to Lucas via Slack
         if (
             tradeVolume >
             Math.min(totalAssetLiquidity, convertToAssets(totalShareLiquidity))
@@ -105,7 +111,13 @@ abstract contract Queue is LiquidityManagement, IQueue {
         /// Process the Deposit Queue second, so every claim has access to totalMintableShares
         tradeVolume >= totalPendingDeposits()
             ? fillUnbounded($, $.depositQueue, _markClaimableDeposit)
-            : fillUntil($, $.depositQueue, _markClaimableDeposit, tradeVolume);
+            : fillUntil(
+                $,
+                $.depositQueue,
+                TransactionQueue.DEPOSIT_REQUEST_TYPE,
+                _markClaimableDeposit,
+                tradeVolume
+            );
 
         // Sanity Invariants: Never allow claims to exceed current balance resulting in debt
 
@@ -129,6 +141,7 @@ abstract contract Queue is LiquidityManagement, IQueue {
             : fillUntil(
                 $,
                 $.withdrawQueue,
+                TransactionQueue.REDEEM_REQUEST_TYPE,
                 _markClaimableWithdraw,
                 convertToShares(tradeVolume)
             );
@@ -147,7 +160,8 @@ abstract contract Queue is LiquidityManagement, IQueue {
         uint256 n = queue.length();
 
         for (n; n > 0; --n) {
-            Transaction memory data = queue.pop($);
+            (bool active, Transaction memory data) = queue.pop($);
+            if (!active) continue;
             claim($, data.controller, data.amount, false);
         }
     }
@@ -155,6 +169,7 @@ abstract contract Queue is LiquidityManagement, IQueue {
     function fillUntil(
         Storage storage $,
         DoubleEndedQueue.Bytes32Deque storage queue,
+        uint8 requestType,
         function(Storage storage, address, uint256, bool) claim,
         uint256 remainder
     ) internal {
@@ -163,7 +178,9 @@ abstract contract Queue is LiquidityManagement, IQueue {
         while (remainder > 0) {
             if (length == 0) revert PartialFillFailure();
 
-            Transaction memory data = queue.pop($);
+            (bool active, Transaction memory data) = queue.pop($);
+            --length;
+            if (!active) continue;
             if (data.amount >= remainder) {
                 /// @dev Base case, occurs exactly once at the last processed element
                 claim($, data.controller, remainder, false);
@@ -171,6 +188,7 @@ abstract contract Queue is LiquidityManagement, IQueue {
                 _insertHeadWithNewAmount(
                     $,
                     queue,
+                    requestType,
                     data,
                     data.amount - remainder
                 );
@@ -180,7 +198,6 @@ abstract contract Queue is LiquidityManagement, IQueue {
                 claim($, data.controller, data.amount, false);
                 remainder -= data.amount;
             }
-            length--;
         }
     }
 
@@ -232,11 +249,12 @@ abstract contract Queue is LiquidityManagement, IQueue {
     function _insertHeadWithNewAmount(
         Storage storage $,
         DoubleEndedQueue.Bytes32Deque storage queue,
+        uint8 requestType,
         Transaction memory data,
         uint256 newAmount
     ) private {
         data.amount = newAmount;
-        bytes32 newHash = queue.pushFront(data);
+        bytes32 newHash = queue.pushFront(requestType, data);
 
         $.transactionRegistry[newHash] = data;
     }
@@ -245,7 +263,10 @@ abstract contract Queue is LiquidityManagement, IQueue {
         Storage storage $,
         IVault.Transaction memory data
     ) internal {
-        bytes32 element = $.withdrawQueue.push(data);
+        bytes32 element = $.withdrawQueue.push(
+            TransactionQueue.REDEEM_REQUEST_TYPE,
+            data
+        );
         $.transactionRegistry[element] = data;
         $.totalWithdrawQueueShares += data.amount;
         $.ledger[data.controller].pendingSharesOut += data.amount;
@@ -257,7 +278,10 @@ abstract contract Queue is LiquidityManagement, IQueue {
         VaultBase.Transaction memory data
     ) internal {
         console.log("Pushing to deposit queue amount: %e", data.amount);
-        bytes32 element = $.depositQueue.push(data);
+        bytes32 element = $.depositQueue.push(
+            TransactionQueue.DEPOSIT_REQUEST_TYPE,
+            data
+        );
         $.transactionRegistry[element] = data;
         $.totalDepositQueueAssets += data.amount;
         $.ledger[data.controller].pendingAssetsIn += data.amount;
