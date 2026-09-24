@@ -47,6 +47,9 @@ The ERC 7540 spec defines that a user set operator should be able to perform req
 
 Note for auditor: A `controller` could not be used, as the 7540 spec clearly defines either a user or a controller can perform a clain, never both. The controller spec should not be violated as users may automate or delegate their request lifecycles, we opted to make Spark an Operator instead.
 
+Note: PAU goes through the wrapper for operators
+Note: Deposits directly enter savings vault, processQueue withdraws them from savings vault. This way they earn yield
+
 
 ### `processQueue` reverts if Trade Volume exceeds liquidity
 The curator can define `tradeVolume`, the amount of volume in base asset units that both queues should consume.
@@ -58,3 +61,8 @@ The liquidity is determined by the total pending request value of the queue + to
 The curator defines exactly how much volume should be traded between the deposit and withdraw queues, and iteration occurs until this volume is fulfilled.
 
 Note for auditor: It has already been discussed that a minimum deposit + withdraw amount must be defined, to prevent users bloating queue length.
+
+## Cancellations only for deposits
+A user, controller, Operator and Vault Manager can cancel a deposit request as long as it has NOT been processed a.ka it can only be cancelled while it is pending.
+
+A withdraw cannot be cancelled, once a user enters a queue they can only exit after fulfillment. This is agreed upon with Spark.
