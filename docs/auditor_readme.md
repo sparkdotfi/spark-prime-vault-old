@@ -1,23 +1,24 @@
 ### Mint and Burns
 
-`totalAssets()` is not stored. It returns `convertToAssets(totalSupply())`, so it is
-self-consistent with the outstanding share supply by construction and cannot drift from
-what was deposited.
-
-Redeemed shares are burned, not retained. Shares leave the owner's custody on
+Redeemed shares are burned. Shares leave the owner's custody on
 `requestRedeem` and are escrowed by the vault while the request is Pending; they are
 burned at the moment the request becomes Claimable. Queue fills burn once for the whole
 batch, costing O(1) always. 
-The vault never holds share inventory, and `balanceOf(address(this)) == totalPendingWithdraws()` at all times.
+
+The vault never holds share inventory past the fulfillment lifecycle and invariant `balanceOf(address(this)) == totalPendingWithdraws()` should hold
 
 The Withdraw Queue is always processed before the Deposit Queue. Because the burn reduces supply, it also avails capacity allowing Deposit Queue claims to directly mint.
+
+`convertToAssets` is calculated by the index, which monotonically increases over time to track total input principle + yield. This means over time capacity will be reached, and newer deposits will be queued. At that point, `processQueue` must be called by the curator to fulfill deposit demand through withdraw demand.
+
+If no withdraw demand exists, curator may increase the vault capacity allowing for more `totalMintableShares`, and then call `processQueue`.
 
 Note that capacity tracks accrued yield, since the index feeds `convertToAssets`. A vault sitting at its capacity will start to queue deposits as the index climbs, and the curator must raise the capacity or call processQueue.
 
 ### `take()` has no solvency guard
 `take` transfers any amount up to the full base-asset balance, with no check against `claimableWithdrawTotal()`. These assets are already promised to users, and will result in revert with `Insolvency` at claim time. 
 
-The `take()` function is access controlled to the PAU, I'd still suggest adding some insolvency measures by preventing to dip into the claimable amounts. see `test_takeAfterMatching_makesVaultInsolvent`
+The `take()` function is access controlled to the PAU, It was suggested to Spark to add insolvency safe guards but it was decided they want full control via PAU over funds. `test_takeAfterMatching_makesVaultInsolvent`
 
 ### `setOperator` stores a single operator
 To simplify the model and allow Spark to rotate keys via the `AdministeredAgent`, a single Operator entry is permitted per user. This is set once by the user before they begin their Vault Journey, and Spark rotates it's keys that interact with the address in question.
