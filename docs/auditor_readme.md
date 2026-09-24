@@ -43,17 +43,18 @@ to them stay inside `claimableWithdrawTotal()`, which `availableLiquidAssets`
 subtracts. 
 
 ### `requestRedeem` and `requestDeposit` are Operator barred functions
-The ERC 7540 spec defines that a user set operator should be able to perform requests on behalf of the user, the contract violates this spec. The blast radius of this spec violation is Spark itself (as Spark is the only Operator that should ever be set). This is a known trade off in order to guarantee Spark can only perform claims on behalf of users.
+The ERC 7540 spec defines that a user set operator should be able to perform requests on behalf of the user, the contract violates this spec. The blast radius of this spec violation is Spark itself (as Spark is the only Operator that should ever be set). This is a known trade off in order to guarantee Spark can only perform claims on behalf of users, not requests.
 
-Note for auditor: A `controller` could not be used, as the 7540 spec clearly defines either a user or a controller can perform a clain, never both. The controller spec should not be violated as users may automated or delegate their request lifecycles, we opted to loosely follow Operator spec instead.
+Note for auditor: A `controller` could not be used, as the 7540 spec clearly defines either a user or a controller can perform a clain, never both. The controller spec should not be violated as users may automate or delegate their request lifecycles, we opted to make Spark an Operator instead.
 
 
-### `processQueue` reverts if capacity exceeds liquidity
-The curator can define a `capacity`, the amount of volume in base asset units that both queues should consume.
-The `capacity` cannot be larger than the minimum of total deposit liquidity and total withdraw liquidity.
-The liquidity is determined by the total pending value of the queue + total idle liquidity (that would have been instant claimed if no queues existed, once a queue exists, this idle liquidity is consumed by `processQueue`)
+### `processQueue` reverts if Trade Volume exceeds liquidity
+The curator can define `tradeVolume`, the amount of volume in base asset units that both queues should consume.
+The `tradeVolume` cannot be larger than the `min(total deposit liquidity, total withdraw liquidity)`.
+
+The liquidity is determined by the total pending request value of the queue + total idle liquidity (that would have been instant claimed if no queues existed, once a queue exists, this idle liquidity is consumed by `processQueue`)
 
 ## `processQueue` loop is bounded by capacity, not by elements
-The curator defines exactly how much volume should be traded between the deposit and withdraw queues, and iteration occurs until this volume is fulfilled or queue depletes. 
+The curator defines exactly how much volume should be traded between the deposit and withdraw queues, and iteration occurs until this volume is fulfilled.
 
 Note for auditor: It has already been discussed that a minimum deposit + withdraw amount must be defined, to prevent users bloating queue length.
