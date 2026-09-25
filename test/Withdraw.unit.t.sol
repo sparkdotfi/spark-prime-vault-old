@@ -598,7 +598,6 @@ contract RequestWithdrawUnitTests is QueueHelper {
         assertEq(savingsVault.balanceOf(address(vault)), backing);
 
         uint256 volume = vault.convertToAssets(vault.totalPendingWithdraws());
-        _absorbAccruedYield();
         vm.prank(rebalancer);
         vault.processQueue(volume);
 

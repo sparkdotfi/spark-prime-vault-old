@@ -93,7 +93,6 @@ contract QueueSolvencyTests is QueueHelper {
         );
 
         uint256 volume = _matchVolume();
-        _absorbAccruedYield();
         vm.prank(rebalancer);
         vault.processQueue(volume);
 
@@ -125,7 +124,6 @@ contract QueueSolvencyTests is QueueHelper {
         createDepositQueue(5, 50.001 ether + _drift(50 ether), defaultUsers());
 
         uint256 volume = vault.convertToAssets(vault.totalPendingWithdraws());
-        _absorbAccruedYield();
         vm.prank(rebalancer);
         vault.processQueue(volume);
 
@@ -135,11 +133,11 @@ contract QueueSolvencyTests is QueueHelper {
 
         /// cant sweep immediately because no liquidity
         vm.prank(rebalancer);
-        vm.expectRevert(IQueue.CapacityExceedsLiquidity.selector);
+        vm.expectRevert(IQueue.InputVolumeExceedsAvailableCapacity.selector);
         vault.processQueue(dust);
 
         // boost capacity to give liquidity
-        _setCapacity(vault.totalAssets() + 51 ether + dust);
+        _openCapacity(51 ether + dust);
 
         vm.prank(rebalancer);
         vault.processQueue(dust);
@@ -173,10 +171,9 @@ contract QueueSolvencyTests is QueueHelper {
 
         uint256 fullDemand = vault.convertToAssets(shares);
         vm.prank(rebalancer);
-        vm.expectRevert(IQueue.CapacityExceedsLiquidity.selector);
+        vm.expectRevert(IQueue.InputVolumeExceedsLiquidity.selector);
         vault.processQueue(fullDemand);
 
-        _absorbAccruedYield();
         vm.prank(rebalancer);
         vault.processQueue(20 ether);
         assertSolvent();
@@ -194,7 +191,7 @@ contract QueueSolvencyTests is QueueHelper {
         assertEq(assetsHeld(), 0, "no liquidity");
 
         vm.prank(rebalancer);
-        vm.expectRevert(IQueue.CapacityExceedsLiquidity.selector);
+        vm.expectRevert(IQueue.InputVolumeExceedsLiquidity.selector);
         vault.processQueue(1 ether);
 
         uint256 volume = vault.convertToAssets(shares);
@@ -223,7 +220,6 @@ contract QueueSolvencyTests is QueueHelper {
         createDepositQueue(3, 30 ether, defaultUsers());
 
         uint256 volume = savingsVault.previewRedeem(vault.totalPendingDeposits());
-        _absorbAccruedYield();
         vm.prank(rebalancer);
         vault.processQueue(volume);
 
@@ -262,6 +258,7 @@ contract QueueSolvencyTests is QueueHelper {
     function test_pendingEscrowIsHeldButNotDeliverable() public {
         _mintShares(1, 100 ether, defaultUsers());
         _drainLiquidity();
+        uint256 capacity = vault.availableCapacity();
 
         uint256 shares = createWithdrawQueue(
             1,
@@ -276,14 +273,9 @@ contract QueueSolvencyTests is QueueHelper {
         );
         assertEq(vault.balanceOf(user), 0, "no longer in owner custody");
         assertEq(
-            vault.totalMintableShares(),
-            0,
-            "mintable shares shouldnt increase"
-        );
-        assertEq(
-            vault.availableLiquidShares(),
-            0,
-            "liquid shares shouldnt increase"
+            vault.availableCapacity(),
+            capacity,
+            "capacity shouldnt increase"
         );
         assertSolvent();
     }
@@ -300,7 +292,6 @@ contract QueueSolvencyTests is QueueHelper {
         createDepositQueue(1, 101 ether, createOneUserList(userTwo));
 
         uint256 volume = vault.convertToAssets(shares);
-        _absorbAccruedYield();
         vm.prank(rebalancer);
         vault.processQueue(volume);
 
@@ -333,12 +324,12 @@ contract QueueSolvencyTests is QueueHelper {
             vault.balanceOf(user),
             defaultUsers()
         );
+        _closeCapacity();
         createDepositQueue(1, 101 ether, createOneUserList(userTwo));
 
-        assertEq(vault.availableLiquidShares(), 0, "escrow in pending");
+        assertEq(vault.availableCapacity(), 0, "escrow in pending");
 
         uint256 volume = vault.convertToAssets(shares);
-        _absorbAccruedYield();
         vm.prank(rebalancer);
         vault.processQueue(volume);
 
@@ -378,7 +369,7 @@ contract QueueSolvencyTests is QueueHelper {
     function test_fullRoundTripRestoresCapacity() public {
         assertEq(vault.availableCapacity(), MAXIMUM_VAULT_CAPACITY);
 
-        _depositAndClaim(user, 100 ether);
+        _claim(user, _fillCapacity(user));
         assertEq(vault.availableCapacity(), 0, "cap consumed");
 
         uint256 shares = vault.balanceOf(user);
@@ -457,7 +448,7 @@ contract QueueSolvencyTests is QueueHelper {
         _requestDeposit(userTwo, 100 ether);
         _accrueSavings(1_000);
         uint256 owed = savingsVault.previewRedeem(vault.totalPendingDeposits());
-        _setCapacity(vault.totalAssets() + 200 ether);
+        _openCapacity(200 ether);
 
         vm.prank(rebalancer);
         vault.processQueue(owed);
@@ -480,7 +471,7 @@ contract QueueSolvencyTests is QueueHelper {
         _requestDeposit(userThree, 70 ether + 7);
         _accrueSavings(1_000);
         uint256 volume = savingsVault.previewRedeem(vault.totalPendingDeposits());
-        _setCapacity(vault.totalAssets() + 200 ether);
+        _openCapacity(200 ether);
 
         vm.prank(rebalancer);
         vault.processQueue(volume);
@@ -497,7 +488,7 @@ contract QueueSolvencyTests is QueueHelper {
         _closeCapacity();
         _requestDeposit(userTwo, 100 ether);
         _accrueSavings(1_000);
-        _setCapacity(vault.totalAssets() + 200 ether);
+        _openCapacity(200 ether);
         uint256 queued = vault.totalPendingDeposits();
         uint256 consumed = savingsVault.previewWithdraw(50 ether);
 
@@ -515,7 +506,7 @@ contract QueueSolvencyTests is QueueHelper {
     function test_processQueue_redeemsSavingsOncePerCall() public {
         _closeCapacity();
         createDepositQueue(5, 50 ether, defaultUsers());
-        _setCapacity(vault.totalAssets() + 100 ether);
+        _openCapacity(100 ether);
         uint256 volume = savingsVault.previewRedeem(vault.totalPendingDeposits());
 
         vm.recordLogs();
@@ -581,7 +572,7 @@ contract QueueSolvencyTests is QueueHelper {
 
         vm.prank(rebalancer);
         uint256 unwound = vault.withdrawFromSavings(backing);
-        _setCapacity(vault.totalAssets() + 50 ether);
+        _openCapacity(50 ether);
 
         vm.prank(rebalancer);
         vm.expectRevert(
@@ -623,7 +614,6 @@ contract QueueSolvencyTests is QueueHelper {
         _accrueSavings(bps);
 
         uint256 volume = vault.convertToAssets(vault.totalPendingWithdraws());
-        _absorbAccruedYield();
         vm.prank(rebalancer);
         vault.processQueue(volume);
 
@@ -647,7 +637,6 @@ contract QueueSolvencyTests is QueueHelper {
         _accrueSavings(bps);
 
         uint256 volume = savingsVault.previewRedeem(vault.totalPendingDeposits());
-        _absorbAccruedYield();
         vm.prank(rebalancer);
         vault.processQueue(volume);
 
@@ -655,28 +644,10 @@ contract QueueSolvencyTests is QueueHelper {
         assertSolvent();
     }
 
-    function test_availableCapacity_reservesTheGrowingValueOfLockedShares()
-        public
-    {
-        _requestDeposit(user, 40 ether);
-        uint256 before = vault.availableCapacity();
-
-        vm.warp(block.timestamp + 365 days);
-        vm.prank(rebalancer);
-        vault.processQueue(0);
-
-        assertLt(vault.availableCapacity(), before);
-        assertApproxEqAbs(
-            vault.maxCapacity() - vault.availableCapacity(),
-            vault.convertToAssets(vault.maxMint(user)),
-            1
-        );
-    }
-
     function test_processQueue_locksSharesAtTheClaimableTransition() public {
         _closeCapacity();
         _requestDeposit(userTwo, 10 ether);
-        _setCapacity(vault.totalAssets() + 50 ether);
+        _openCapacity(50 ether);
         vm.warp(block.timestamp + 30 days);
         uint256 value = savingsVault.previewRedeem(vault.totalPendingDeposits());
 
@@ -715,7 +686,6 @@ contract QueueSolvencyTests is QueueHelper {
         _requestDeposit(userTwo, depositValue);
 
         uint256 volume = _matchVolume();
-        _absorbAccruedYield();
         vm.prank(rebalancer);
         vault.processQueue(volume);
 
@@ -730,83 +700,210 @@ contract QueueSolvencyTests is QueueHelper {
         assertSolvent();
     }
 
-    function test_cannot_processQueue_creditDepositsTheVaultCannotMint() public {
+    function test_cannot_processQueue_mintBeyondCapacity() public {
         _depositAndClaim(user, 50 ether);
-        _requestDeposit(userThree, 5 ether);
         _drainLiquidity();
         _requestRedeem(user, vault.convertToShares(10 ether));
-        _setCapacity(vault.totalAssets());
-        _requestDeposit(userTwo, 10 ether);
+        _closeCapacity();
+        _requestDeposit(userTwo, 30 ether);
+        _injectLiquidity(30 ether);
 
-        int256 overCommitted = vault.availableLiquidShares();
-        assertLt(overCommitted, -1);
-        assertGt(
-            int256(vault.totalPendingWithdraws()) + overCommitted,
-            0
+        uint256 volume = savingsVault.previewRedeem(
+            vault.totalPendingDeposits()
         );
+        uint256 burned = vault.totalPendingWithdraws();
 
-        uint256 volume = _matchVolume();
         vm.prank(rebalancer);
-        vm.expectPartialRevert(IQueue.ShareInvariantBroken.selector);
+        vm.expectRevert(IQueue.InputVolumeExceedsAvailableCapacity.selector);
         vault.processQueue(volume);
+
+        uint256 maxVolume = vault.maxTradeVolume();
+        assertEq(maxVolume, vault.convertToAssets(burned));
+
+        vm.prank(rebalancer);
+        vault.processQueue(maxVolume);
+
+        assertEq(vault.withdrawQueueLength(), 0);
+        assertSolvent();
     }
 
-    function testFuzz_requestDeposit_fillingTheCapacityNeverOverCommitsShares(
+    function test_fuzz_requestDeposit_cannotCauseInsolvency(
         uint256 index,
         uint256 capacity,
-        uint256 first
+        uint256 first,
+        uint256 second
     ) public {
         _deployCleanVault(MINIMUM_DEPOSIT, MINIMUM_WITHDRAW);
         vault.setIndexRate(bound(index, RAY, 10 * RAY));
         capacity = bound(capacity, 2 ether, 1_000 ether);
         _setCapacity(capacity);
         first = bound(first, 1 ether, capacity - 1 ether);
-
         _requestDeposit(user, first);
-        _requestDeposit(userTwo, vault.availableCapacity());
 
-        assertEq(vault.depositQueueLength(), 0);
-        assertGe(vault.availableLiquidShares(), 0);
+        uint256 value = _capacityValue();
+        second = bound(second, MINIMUM_DEPOSIT, 2 * value);
+        _requestDeposit(userTwo, second);
+
+        assertLe(vault.claimableDepositTotal(), vault.maxCapacity());
+        assertEq(vault.availableCapacity() == 0, second >= value);
+        assertEq(vault.depositQueueLength() == 1, second > value);
         assertGt(vault.maxMint(userTwo), 0);
-    }
-
-    function test_processQueue_trimLeavesNoLockedShareUnbacked() public {
-        _deployCleanVault(0, 0);
-        vault.setIndexRate((RAY * 7) / 4);
-        _depositAndClaim(user, 15_802_500);
-        _requestDeposit(userThree, 21);
-        assertEq(vault.balanceOf(user), 9_030_000);
-        assertEq(vault.maxMint(userThree), 12);
-
-        _setCapacity(15_802_520);
-        _drainLiquidity();
-        _requestRedeem(user, 6_908_342);
-        _requestDeposit(userTwo, 2_125);
-
-        vm.prank(rebalancer);
-        vault.processQueue(1_316);
-
-        assertLe(vault.maxDeposit(userTwo), 1_316);
         assertSolvent();
     }
 
-    function test_processQueue_revertsOnceAccruedYieldPushesAFullVaultOverItsCap()
+    function test_processQueue_fullVaultCapacityUnaffectedByIndexIncrease()
         public
     {
         _mintSharesTo(user, 50 ether);
         _drainLiquidity();
         _requestRedeem(user, vault.balanceOf(user));
         _closeCapacity();
+        uint256 index = vault.index();
         vm.warp(block.timestamp + 1 days);
         _requestDeposit(userTwo, 60 ether);
-        assertGt(vault.totalAssets(), vault.maxCapacity());
+
+        assertGt(vault.index(), index);
+        assertEq(vault.availableCapacity(), 0);
+        assertEq(
+            vault.totalSupply() + vault.claimableDepositTotal(),
+            vault.maxCapacity()
+        );
 
         uint256 volume = _matchVolume();
         vm.prank(rebalancer);
-        vm.expectPartialRevert(IQueue.ShareInvariantBroken.selector);
         vault.processQueue(volume);
 
-        _absorbAccruedYield();
+        assertEq(vault.withdrawQueueLength(), 0);
+        assertSolvent();
+    }
+
+    function test_cannot_processQueue_volumeAboveMaxTradeVolume() public {
+        _mintSharesTo(user, 50 ether);
+        _drainLiquidity();
+        _requestRedeem(user, vault.balanceOf(user));
+        _closeCapacity();
+        _requestDeposit(userTwo, 10 ether);
+        uint256 pending = vault.convertToAssets(vault.totalPendingWithdraws());
+        _injectLiquidity(2 * pending);
+
+        uint256 maxVolume = vault.maxTradeVolume();
+        assertEq(maxVolume, pending);
+
+        vm.prank(rebalancer);
+        vm.expectRevert(IQueue.InputVolumeExceedsAvailableCapacity.selector);
+        vault.processQueue(maxVolume + 1);
+
+        vm.prank(rebalancer);
+        vault.processQueue(maxVolume);
+
+        assertEq(vault.withdrawQueueLength(), 0);
+        assertEq(vault.depositQueueLength(), 0);
+        assertGt(vault.maxMint(userTwo), 0);
+        assertSolvent();
+    }
+
+    function test_processQueue_mintsUpToExactlyTheCapacity() public {
+        _deployCleanVault(MINIMUM_DEPOSIT, MINIMUM_WITHDRAW);
+        _closeCapacity();
+        _requestDeposit(user, 10 ether);
+        _setCapacity(10 ether - 1);
+
+        vm.prank(rebalancer);
+        vm.expectRevert(IQueue.InputVolumeExceedsAvailableCapacity.selector);
+        vault.processQueue(10 ether);
+
+        _setCapacity(10 ether);
+        vm.prank(rebalancer);
+        vault.processQueue(10 ether);
+
+        assertEq(vault.maxMint(user), 10 ether);
+        assertEq(vault.availableCapacity(), 0);
+        assertSolvent();
+    }
+
+    function test_cannot_processQueue_endAboveCapacity() public {
+        _depositAndClaim(user, 10 ether);
+        vault.setTotalClaimableDepositShares(
+            vault.maxCapacity() - vault.totalSupply() + 1
+        );
+
+        vm.prank(rebalancer);
+        vm.expectRevert(
+            abi.encodeWithSelector(IQueue.ShareInvariantBroken.selector, int256(-1))
+        );
+        vault.processQueue(0);
+    }
+
+    function test_maxTradeVolume_boundByAssetLiquidity() public {
+        _mintSharesTo(user, 50 ether);
+        _drainLiquidity();
+        _requestRedeem(user, vault.balanceOf(user));
+        _closeCapacity();
+        _requestDeposit(userTwo, 20 ether);
+
+        uint256 maxVolume = vault.maxTradeVolume();
+        assertEq(
+            maxVolume,
+            savingsVault.previewRedeem(vault.totalPendingDeposits())
+        );
+
+        vm.prank(rebalancer);
+        vm.expectRevert(IQueue.InputVolumeExceedsLiquidity.selector);
+        vault.processQueue(maxVolume + 1);
+
+        vm.prank(rebalancer);
+        vault.processQueue(maxVolume);
+
+        assertEq(vault.depositQueueLength(), 0);
+        assertSolvent();
+    }
+
+    function test_maxTradeVolume_boundByWithdrawsPlusCapacity() public {
+        _depositAndClaim(user, 50 ether);
+        _drainLiquidity();
+        _requestRedeem(user, vault.convertToShares(10 ether));
+        _closeCapacity();
+        _requestDeposit(userTwo, 30 ether);
+        _injectLiquidity(40 ether);
+
+        uint256 pending = vault.totalPendingWithdraws();
+        assertEq(vault.maxTradeVolume(), vault.convertToAssets(pending));
+
+        _openCapacity(5 ether);
+        uint256 maxVolume = vault.maxTradeVolume();
+        assertEq(
+            maxVolume,
+            vault.convertToAssets(pending + vault.availableCapacity())
+        );
+
+        vm.prank(rebalancer);
+        vault.processQueue(maxVolume);
+
+        assertEq(vault.withdrawQueueLength(), 0);
+        assertSolvent();
+    }
+
+    function testFuzz_processQueue_acceptsAnyVolumeUpToMaxTradeVolume(
+        uint256 index,
+        uint256 withdrawValue,
+        uint256 depositValue,
+        uint256 idle,
+        uint256 room,
+        uint256 volume,
+        uint256 elapsed
+    ) public {
+        vault.setIndexRate(bound(index, RAY, 10 * RAY));
+        _mintSharesTo(user, bound(withdrawValue, 1 ether, 50 ether));
+        _drainLiquidity();
+        _requestRedeem(user, vault.balanceOf(user));
+        _closeCapacity();
+        _requestDeposit(userTwo, bound(depositValue, 1 ether, 80 ether));
+        _injectLiquidity(bound(idle, 0, 50 ether));
+        _openCapacity(bound(room, 0, 50 ether));
+
+        volume = bound(volume, 0, vault.maxTradeVolume());
+        vm.warp(block.timestamp + bound(elapsed, 0, 30 days));
+
         vm.prank(rebalancer);
         vault.processQueue(volume);
         assertSolvent();
@@ -818,7 +915,7 @@ contract QueueSolvencyTests is QueueHelper {
         _closeCapacity();
         _requestDeposit(user, 10 ether);
         _requestDeposit(userTwo, 10 ether);
-        _setCapacity(vault.totalAssets() + 50 ether);
+        _openCapacity(50 ether);
 
         vm.prank(rebalancer);
         vault.processQueue(10 ether + 1);
@@ -838,7 +935,7 @@ contract QueueSolvencyTests is QueueHelper {
         deal(address(baseAsset), address(savingsVault), 11e19 - 1);
         assertEq(savingsVault.previewWithdraw(volume), 5e19);
         assertEq(savingsVault.previewRedeem(5e19), volume + 1);
-        _setCapacity(vault.totalAssets() + 200 ether);
+        _openCapacity(200 ether);
 
         vm.prank(rebalancer);
         vault.processQueue(volume);

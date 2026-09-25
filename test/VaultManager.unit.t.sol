@@ -32,17 +32,11 @@ contract VaultManagerUnitTests is QueueHelper {
         _deployVault();
     }
 
-    function test_cannot_setCapacity_overTotalAssets() public {
-        _fundAndDeposit(vault, user, baseAsset, 100 ether);
-
-        vm.prank(user);
-        vault.deposit(100 ether, user);
-
-        assertApproxEqAbs(
-            vault.totalAssets(),
-            100 ether,
-            vault.convertToAssets(1) + 1
-        );
+    function test_cannot_setCapacity_belowCommitedSharesPlusMinted() public {
+        _depositAndClaim(user, 50 ether);
+        _requestDeposit(userTwo, 10 ether);
+        uint256 committed = vault.totalSupply() + vault.claimableDepositTotal();
+        assertGt(vault.claimableDepositTotal(), 0);
 
         vm.prank(vaultManager);
         vm.expectRevert(
@@ -52,7 +46,11 @@ contract VaultManagerUnitTests is QueueHelper {
                     .selector
             )
         );
-        vault.setCapacity(50 ether);
+        vault.setCapacity(committed - 1);
+
+        vm.prank(vaultManager);
+        vault.setCapacity(committed);
+        assertEq(vault.availableCapacity(), 0);
     }
 
     function test_depositToSavings() public {
