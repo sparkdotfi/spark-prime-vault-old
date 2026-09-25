@@ -33,7 +33,7 @@ abstract contract LiquidityManagement is
         Storage storage $ = getStorage();
         shares =
             int256(totalMintableShares()) -
-            int256(convertToShares($.totalClaimableDeposits));
+            int256($.totalClaimableDepositShares);
     }
 
     function totalMintableShares() public view returns (uint256) {
