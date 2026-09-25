@@ -10,6 +10,7 @@ import {USDC} from "../mocks/USDC.sol";
 import {SavingsVault} from "../mocks/SavingsVault.sol";
 import {IVault} from "src/interfaces/IVault.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 abstract contract QueueHelper is Test {
     VaultHandler internal vault;
@@ -27,13 +28,24 @@ abstract contract QueueHelper is Test {
     address internal userThree = makeAddr("userThree");
     address internal userFour = makeAddr("userFour");
     address internal victim = makeAddr("victim");
+    address internal savingsWhale = makeAddr("savings_whale");
 
     uint256 internal constant ROUNDING_DUST = 1e12;
+    uint256 internal constant ACCRUAL_DRIFT = 1e14;
     uint256 constant TEN_PERCENT_APY = 1000000003022265980097387650;
     uint256 constant RAY = 1e27;
     uint256 constant MAXIMUM_VAULT_CAPACITY = 100 ether;
     uint256 constant MINIMUM_DEPOSIT = 0.01 ether;
     uint256 constant MINIMUM_WITHDRAW = 0.01 ether;
+
+    uint256 constant FIXTURE_INDEX = 1_173_458_912_345_678_901_234_567_891;
+    uint256 constant FIXTURE_SAVINGS_PRICE_BPS = 537;
+    uint256 constant FIXTURE_BLOCK_TIME = 12;
+    uint256 constant SAVINGS_WHALE_DEPOSIT = 1_000_000 ether;
+    uint256 constant SAVINGS_GROWTH_DIVISOR_PER_BLOCK = 1e8;
+
+    uint256 internal blockTime;
+    bool internal savingsGrows;
 
     bytes32 constant DEFAULT_ADMIN_ROLE = 0x00;
     bytes32 constant LIQUIDITY_MANAGER_ROLE =
@@ -44,20 +56,34 @@ abstract contract QueueHelper is Test {
         0xd1473398bb66596de5d1ea1fc8e303ff2ac23265adc9144b1b52065dc4f0934b;
 
     function _deployVault() internal {
-        baseAsset = new USDC();
-        savingsVault = new SavingsVault(baseAsset);
-
-        vault = VaultDeployer.deploy(
-            baseAsset,
-            savingsVault,
-            admin,
-            vaultManager,
-            liquidityManager,
-            rebalancer
-        );
+        _deployVaultWithMinimums(MINIMUM_DEPOSIT, MINIMUM_WITHDRAW);
     }
 
     function _deployVaultWithMinimums(
+        uint256 minimumDeposit,
+        uint256 minimumWithdraw
+    ) internal {
+        _deployCleanVault(minimumDeposit, minimumWithdraw);
+
+        vault.setIndexRate(vm.envOr("FIXTURE_INDEX", FIXTURE_INDEX));
+        blockTime = vm.envOr("FIXTURE_BLOCK_TIME", FIXTURE_BLOCK_TIME);
+
+        uint256 bps = vm.envOr(
+            "FIXTURE_SAVINGS_PRICE_BPS",
+            FIXTURE_SAVINGS_PRICE_BPS
+        );
+        if (bps == 0) return;
+
+        deal(address(baseAsset), savingsWhale, SAVINGS_WHALE_DEPOSIT);
+        vm.startPrank(savingsWhale);
+        baseAsset.approve(address(savingsVault), SAVINGS_WHALE_DEPOSIT);
+        savingsVault.deposit(SAVINGS_WHALE_DEPOSIT, savingsWhale);
+        vm.stopPrank();
+        _accrueSavings(bps);
+        savingsGrows = true;
+    }
+
+    function _deployCleanVault(
         uint256 minimumDeposit,
         uint256 minimumWithdraw
     ) internal {
@@ -76,6 +102,20 @@ abstract contract QueueHelper is Test {
             MAXIMUM_VAULT_CAPACITY,
             TEN_PERCENT_APY
         );
+        blockTime = 0;
+        savingsGrows = false;
+    }
+
+    function _nextBlock() internal {
+        vm.roll(block.number + 1);
+        vm.warp(block.timestamp + blockTime);
+        if (!savingsGrows) return;
+        uint256 held = baseAsset.balanceOf(address(savingsVault));
+        deal(
+            address(baseAsset),
+            address(savingsVault),
+            held + held / SAVINGS_GROWTH_DIVISOR_PER_BLOCK
+        );
     }
 
     function defaultUsers() internal view returns (address[] memory users) {
@@ -93,22 +133,47 @@ abstract contract QueueHelper is Test {
     }
 
     function _requestDeposit(address _user, uint256 amount) internal {
+        _nextBlock();
         _fund(_user, amount);
         vm.prank(_user);
         vault.requestDeposit(amount, _user, _user);
     }
 
     function _claim(address _user, uint256 amount) internal {
+        _nextBlock();
         vm.prank(_user);
         vault.deposit(amount, _user);
     }
 
     function _depositAndClaim(address _user, uint256 amount) internal {
-        _requestDeposit(_user, amount);
+        _nextBlock();
+        _ensureInstantCapacity(amount);
+        _fund(_user, amount);
+        vm.prank(_user);
+        vault.requestDeposit(amount, _user, _user);
         _claim(_user, amount);
     }
 
+    function _ensureInstantCapacity(uint256 amount) internal {
+        uint256 index = vault.previewIndex();
+        uint256 committed = Math.mulDiv(
+            vault.totalSupply(),
+            index,
+            RAY,
+            Math.Rounding.Ceil
+        ) +
+            Math.mulDiv(
+                vault.claimableDepositTotal(),
+                index,
+                RAY,
+                Math.Rounding.Ceil
+            );
+        if (vault.maxCapacity() < committed + amount)
+            _setCapacity(committed + amount);
+    }
+
     function _requestRedeem(address _user, uint256 shares) internal {
+        _nextBlock();
         vm.prank(_user);
         vault.requestRedeem(shares, _user, _user);
     }
@@ -125,6 +190,33 @@ abstract contract QueueHelper is Test {
     /// @dev force the capacity to current assets to force deposit queues
     function _closeCapacity() internal {
         _setCapacity(vault.totalAssets());
+    }
+
+    function _absorbAccruedYield() internal {
+        if (vault.totalAssets() > vault.maxCapacity()) _closeCapacity();
+    }
+
+    function _drift(uint256 amount) internal view returns (uint256) {
+        return
+            (amount * (ACCRUAL_DRIFT + blockTime * 1e13)) /
+            1e18 +
+            ROUNDING_DUST;
+    }
+
+    function _coverRedemption(uint256 shares) internal {
+        uint256 owed = vault.convertToAssets(shares);
+        owed += _drift(owed);
+        int256 liquid = vault.availableLiquidAssets();
+        uint256 held = liquid > 0 ? uint256(liquid) : 0;
+        if (owed > held) _injectLiquidity(owed - held);
+    }
+
+    function _matchVolume() internal view returns (uint256) {
+        return
+            Math.min(
+                vault.convertToAssets(vault.totalPendingWithdraws()),
+                savingsVault.previewRedeem(vault.totalPendingDeposits())
+            );
     }
 
     /// @dev Curator pulls out all liquidity to force withdraw queues
@@ -196,6 +288,15 @@ abstract contract QueueHelper is Test {
         }
     }
 
+    function _accrueSavings(uint256 bps) internal {
+        uint256 held = baseAsset.balanceOf(address(savingsVault));
+        deal(
+            address(baseAsset),
+            address(savingsVault),
+            (held * (10_000 + bps)) / 10_000
+        );
+    }
+
     function assetsHeld() internal view returns (uint256) {
         return baseAsset.balanceOf(address(vault));
     }
@@ -205,7 +306,7 @@ abstract contract QueueHelper is Test {
     }
 
     function sharesOwed() internal view returns (uint256) {
-        return vault.convertToShares(vault.claimableDepositTotal());
+        return vault.claimableDepositTotal();
     }
 
     function sharesDeliverable() internal view returns (uint256) {
@@ -229,11 +330,19 @@ abstract contract QueueHelper is Test {
             vault.totalPendingWithdraws(),
             "ESCROW: vault holds shares beyond pending redeem escrow"
         );
+        assertGe(
+            savingsVault.balanceOf(address(vault)),
+            vault.totalPendingDeposits(),
+            "UNBACKED: deposit queue exceeds the savings position"
+        );
     }
 
     function assertInsolvent() internal view {
         assertTrue(
-            assetsOwed() > assetsHeld() || sharesOwed() > sharesDeliverable(),
+            assetsOwed() > assetsHeld() ||
+                sharesOwed() > sharesDeliverable() ||
+                savingsVault.balanceOf(address(vault)) <
+                vault.totalPendingDeposits(),
             "expected insolvency, vault is solvent"
         );
     }
@@ -244,6 +353,7 @@ abstract contract QueueHelper is Test {
         IERC20 asset,
         uint256 amount
     ) internal {
+        _nextBlock();
         vm.startPrank(_user);
         deal(address(asset), _user, amount);
         asset.approve(address(vault), amount);
@@ -256,6 +366,7 @@ abstract contract QueueHelper is Test {
         address _user,
         uint256 amount
     ) internal {
+        _nextBlock();
         vm.startPrank(_user);
         vault.deposit(amount, _user);
         vm.stopPrank();

@@ -38,9 +38,9 @@ contract VaultHandler is Vault {
         $.operators[user] = value ? operator : address(0);
     }
 
-    function setTotalClaimableDeposits(uint256 value) external {
+    function setTotalClaimableDepositShares(uint256 value) external {
         Storage storage $ = getStorage();
-        $.totalClaimableDeposits = value;
+        $.totalClaimableDepositShares = value;
     }
 
     function setTotalClaimableWithdrawAssets(uint256 value) external {
@@ -58,16 +58,6 @@ contract VaultHandler is Vault {
         Storage storage $ = getStorage();
         data.nonce = ++$.nonces[data.controller];
         _pushToWithdrawQueue($, data);
-    }
-
-    function fillDepositQueue() external {
-        Storage storage $ = getStorage();
-        fillUnbounded($, $.depositQueue, _markClaimableDeposit);
-    }
-
-    function fillUntilDepositQueue(uint256 capacity) external {
-        Storage storage $ = getStorage();
-        fillUntil($, $.depositQueue, _markClaimableDeposit, capacity);
     }
 
     function fillWithdrawQueue() external {

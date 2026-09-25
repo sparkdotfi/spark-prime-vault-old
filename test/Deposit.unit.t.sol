@@ -11,6 +11,7 @@ import {USDC} from "./mocks/USDC.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {console} from "forge-std/console.sol";
 import {QueueHelper} from "./utils/QueueHelper.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 contract RequestDepositUnitTests is QueueHelper {
 
@@ -121,10 +122,14 @@ contract RequestDepositUnitTests is QueueHelper {
         assertEq(100 ether, vault.maxDeposit(user)); /// Only 100 ether (max vault capacity) immedietely claimable
         uint256 shares = vault.convertToShares(100 ether);
 
-        assertEq(vault.totalPendingDeposits(), 100 ether); /// My remaining 100 ether should be pending (total value of queue)
+        assertApproxEqAbs(
+            savingsVault.previewRedeem(vault.totalPendingDeposits()),
+            100 ether,
+            ROUNDING_DUST
+        ); /// My remaining 100 ether should be pending (total value of queue)
 
         VaultHandler.Transaction memory data = vault.depositQueueHead();
-        assertEq(data.amount, 100 ether);
+        assertEq(data.amount, vault.totalPendingDeposits());
         assertEq(data.controller, user);
         assertEq(data.nonce, 1);
 
@@ -146,6 +151,7 @@ contract RequestDepositUnitTests is QueueHelper {
         assertApproxEqAbs(shares, vault.convertToShares(100 ether), 1 wei);
     }
     function _fundAndDeposit(address _user, uint256 amount) internal {
+        _nextBlock();
         vm.startPrank(_user);
 
         deal(address(baseAsset), _user, amount);
@@ -182,10 +188,15 @@ contract RequestDepositUnitTests is QueueHelper {
         vault.requestDeposit(10 ether, user, user);
 
         assertEq(0, vault.maxDeposit(user), "Max deposit zero"); /// Nothing immediately claimable
-        assertEq(vault.totalPendingDeposits(), 10 ether, "pending deposits"); /// My remaining 10 ether should be pending (total value of queue)
+        assertApproxEqAbs(
+            savingsVault.previewRedeem(vault.totalPendingDeposits()),
+            10 ether,
+            ROUNDING_DUST,
+            "pending deposits"
+        ); /// My remaining 10 ether should be pending (total value of queue)
 
         VaultHandler.Transaction memory data = vault.depositQueueHead();
-        assertEq(data.amount, 10 ether);
+        assertEq(data.amount, vault.totalPendingDeposits());
         assertEq(data.controller, user);
         assertEq(data.nonce, 1);
     }
@@ -221,14 +232,15 @@ contract RequestDepositUnitTests is QueueHelper {
         vault.requestDeposit(10 ether, user, user);
 
         assertEq(0, vault.maxDeposit(user), "max deposit is zero"); /// Nothing immediately claimable
-        assertEq(
-            vault.totalPendingDeposits(),
+        assertApproxEqAbs(
+            savingsVault.previewRedeem(vault.totalPendingDeposits()),
             10 ether,
+            ROUNDING_DUST,
             "total pending deposits is 10 ether (only user in queue)"
         );
 
         VaultHandler.Transaction memory data = vault.depositQueueHead();
-        assertEq(data.amount, 10 ether, "amount matches queue");
+        assertEq(data.amount, vault.totalPendingDeposits(), "amount matches queue");
         assertEq(data.controller, user, "controller is user");
         assertEq(data.nonce, 1, "nonce is 1");
     }
@@ -308,9 +320,11 @@ contract RequestDepositUnitTests is QueueHelper {
         _deployVaultWithMinimums(0, 0);
 
         assertEq(vault.minimumDeposit(), 0);
-        _requestDeposit(user, 1 wei);
+        uint256 smallest = vault.convertToAssetsRounded(2, Math.Rounding.Ceil);
+        _requestDeposit(user, smallest);
 
-        assertEq(vault.maxDeposit(user), 1 wei);
+        assertEq(vault.maxDeposit(user), smallest);
+        assertGt(vault.maxMint(user), 0);
     }
 
     function test_mint_claimsAgainstAClaimableBalance() public {
@@ -323,7 +337,7 @@ contract RequestDepositUnitTests is QueueHelper {
         assertEq(assets, 40 ether);
         assertEq(vault.balanceOf(user), shares);
         assertEq(vault.maxDeposit(user), 0);
-        assertEq(vault.totalAssets(), 40 ether);
+        assertEq(vault.totalAssets(), vault.convertToAssets(shares));
     }
 
     function test_mint_partiallyConsumesTheClaimableBalance() public {
@@ -331,10 +345,15 @@ contract RequestDepositUnitTests is QueueHelper {
         uint256 shares = vault.convertToShares(10 ether);
 
         vm.prank(user);
-        vault.mint(shares, user);
+        uint256 assets = vault.mint(shares, user);
 
         assertEq(vault.balanceOf(user), shares);
-        assertEq(vault.maxDeposit(user), 30 ether);
+        assertEq(vault.maxDeposit(user), 40 ether - assets);
+        assertApproxEqAbs(
+            vault.maxDeposit(user),
+            30 ether,
+            vault.convertToAssets(1) + 1
+        );
     }
 
     function test_mint_withExplicitController() public {
@@ -363,13 +382,14 @@ contract RequestDepositUnitTests is QueueHelper {
     function test_cannot_mint_beyondClaimableBalance() public {
         _requestDeposit(user, 10 ether);
         uint256 shares = vault.convertToShares(20 ether);
+        uint256 locked = vault.maxMint(user);
 
         vm.prank(user);
         vm.expectRevert(
             abi.encodeWithSelector(
                 IVault.InsufficientClaimableBalance.selector,
-                20 ether,
-                10 ether
+                shares,
+                locked
             )
         );
         vault.mint(shares, user);
@@ -406,7 +426,7 @@ contract RequestDepositUnitTests is QueueHelper {
         assertEq(shares, expected);
         assertEq(vault.balanceOf(user), expected);
         assertEq(vault.maxDeposit(user), 0);
-        assertEq(vault.totalAssets(), 40 ether);
+        assertEq(vault.totalAssets(), vault.convertToAssets(expected));
     }
 
     function test_cannot_depositWithReferralCode_asUnauthorizedCaller() public {
@@ -459,5 +479,226 @@ contract RequestDepositUnitTests is QueueHelper {
 
         vm.prank(user);
         vault.deposit(40 ether, userTwo, user, 3);
+    }
+
+    function test_requestDeposit_queuedAssetsAreHeldAsSavingsShares() public {
+        _closeCapacity();
+
+        _requestDeposit(user, 10 ether);
+        uint256 shares = savingsVault.balanceOf(address(vault));
+
+        assertEq(baseAsset.balanceOf(address(vault)), 0);
+        assertEq(vault.totalPendingDeposits(), shares);
+        assertEq(vault.depositQueueHead().amount, shares);
+        assertApproxEqAbs(savingsVault.previewRedeem(shares), 10 ether, 2);
+        assertEq(
+            vault.pendingDepositRequest(0, user),
+            savingsVault.convertToAssets(shares)
+        );
+    }
+
+    function test_requestDeposit_onlyTheQueuedRemainderIsSaved() public {
+        _setCapacity(30 ether);
+
+        _requestDeposit(user, 40 ether);
+        uint256 shares = savingsVault.balanceOf(address(vault));
+
+        assertEq(vault.maxDeposit(user), 30 ether);
+        assertEq(baseAsset.balanceOf(address(vault)), 30 ether);
+        assertEq(vault.totalPendingDeposits(), shares);
+        assertApproxEqAbs(savingsVault.previewRedeem(shares), 10 ether, 2);
+    }
+
+    function test_cannot_requestDeposit_whenTheQueuedRemainderBuysNoSavingsShares()
+        public
+    {
+        _depositAndClaim(user, 50 ether);
+        vm.prank(rebalancer);
+        vault.depositToSavings(50 ether);
+        _accrueSavings(1_000);
+
+        uint256 capacity = vault.availableCapacity();
+        _fund(userTwo, capacity + 1);
+
+        vm.prank(userTwo);
+        vm.expectRevert(
+            abi.encodeWithSelector(IVault.ShareConversionFailure.selector, 1)
+        );
+        vault.requestDeposit(capacity + 1, userTwo, userTwo);
+    }
+
+    function test_pendingDepositRequest_tracksSavingsYield() public {
+        _closeCapacity();
+        _requestDeposit(user, 100 ether);
+        uint256 shares = vault.totalPendingDeposits();
+
+        _accrueSavings(1_000);
+
+        assertEq(vault.totalPendingDeposits(), shares);
+        assertEq(
+            vault.pendingDepositRequest(0, user),
+            savingsVault.convertToAssets(shares)
+        );
+        assertGt(vault.pendingDepositRequest(0, user), 100 ether);
+    }
+
+    function test_deposit_claimTimingDoesNotChangeTheShares() public {
+        _requestDeposit(user, 50 ether);
+        uint256 locked = vault.maxMint(user);
+
+        vm.warp(block.timestamp + 365 days);
+
+        vm.prank(user);
+        uint256 shares = vault.deposit(50 ether, user);
+
+        assertEq(shares, locked);
+        assertEq(vault.balanceOf(user), locked);
+        assertGt(vault.convertToAssets(shares), 50 ether);
+    }
+
+    function test_deposit_partialClaimsUseTheFrozenRatio() public {
+        vault.setIndexRate((RAY * 10) / 3);
+        _requestDeposit(user, 50 ether);
+        uint256 locked = vault.maxMint(user);
+
+        vm.warp(block.timestamp + 365 days);
+
+        vm.startPrank(user);
+        uint256 first = vault.deposit(20 ether, user);
+        uint256 second = vault.deposit(vault.maxDeposit(user), user);
+        vm.stopPrank();
+
+        assertEq(first + second, locked);
+        assertEq(vault.maxMint(user), 0);
+        assertEq(vault.maxDeposit(user), 0);
+        assertEq(vault.claimableDepositTotal(), 0);
+    }
+
+    function testFuzz_mint_mintsExactlyTheRequestedShares(
+        uint256 index,
+        uint256 amount,
+        uint256 shares
+    ) public {
+        vault.setIndexRate(bound(index, RAY, 10 * RAY));
+        amount = bound(amount, MINIMUM_DEPOSIT, 50 ether);
+        _requestDeposit(user, amount);
+        uint256 locked = vault.maxMint(user);
+        shares = bound(shares, 1, locked);
+
+        vm.prank(user);
+        uint256 assets = vault.mint(shares, user);
+
+        assertEq(vault.balanceOf(user), shares);
+        assertEq(vault.maxDeposit(user), amount - assets);
+        assertEq(vault.maxMint(user), locked - shares);
+
+        uint256 rest = vault.maxMint(user);
+        if (rest > 0) {
+            vm.prank(user);
+            vault.mint(rest, user);
+        }
+
+        assertEq(vault.balanceOf(user), locked);
+        assertEq(vault.maxDeposit(user), 0);
+        assertEq(vault.maxMint(user), 0);
+    }
+
+    function testFuzz_deposit_fullClaimLeavesNothingBehind(
+        uint256 index,
+        uint256 amount,
+        uint256 part
+    ) public {
+        vault.setIndexRate(bound(index, RAY, 10 * RAY));
+        amount = bound(amount, MINIMUM_DEPOSIT, 50 ether);
+        _requestDeposit(user, amount);
+        uint256 locked = vault.maxMint(user);
+        uint256 smallest = (amount + locked - 1) / locked;
+        part = bound(part, smallest, amount);
+
+        vm.startPrank(user);
+        vault.deposit(part, user);
+        if (vault.maxDeposit(user) > 0)
+            vault.deposit(vault.maxDeposit(user), user);
+        vm.stopPrank();
+
+        assertEq(vault.balanceOf(user), locked);
+        assertEq(vault.maxDeposit(user), 0);
+        assertEq(vault.maxMint(user), 0);
+        assertEq(vault.claimableDepositTotal(), 0);
+    }
+
+    function test_cannot_mint_asUnauthorizedCaller() public {
+        _requestDeposit(user, 40 ether);
+        uint256 shares = vault.maxMint(user);
+
+        vm.prank(userTwo);
+        vm.expectRevert(
+            abi.encodeWithSelector(IVault.UnauthorizedCaller.selector, userTwo)
+        );
+        vault.mint(shares, userTwo, user);
+    }
+
+    function test_cannot_mint_asOperatorToAnotherReceiver() public {
+        _requestDeposit(user, 40 ether);
+        vault.setOperatorForUser(user, operator, true);
+        uint256 shares = vault.maxMint(user);
+
+        vm.prank(operator);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IVault.OperatorMaliciousAction.selector,
+                operator,
+                user
+            )
+        );
+        vault.mint(shares, operator, user);
+    }
+
+    function test_cannot_mint_zeroShares() public {
+        _requestDeposit(user, 40 ether);
+
+        vm.prank(user);
+        vm.expectRevert(ISparkPrimeVault.ZeroValueProvided.selector);
+        vault.mint(0, user);
+    }
+
+    function test_mint_roundsTheAssetsInTheVaultsFavour() public {
+        _deployCleanVault(MINIMUM_DEPOSIT, MINIMUM_WITHDRAW);
+        vault.setIndexRate((RAY * 10) / 3);
+        _requestDeposit(user, 10 ether);
+        assertEq(vault.maxMint(user), 3 ether);
+
+        vm.prank(user);
+        uint256 assets = vault.mint(1, user);
+
+        assertEq(assets, 4);
+        assertEq(vault.maxDeposit(user), 10 ether - 4);
+    }
+
+    function test_requestDeposit_neverCreditsCapacityTooSmallForAShare()
+        public
+    {
+        _deployCleanVault(MINIMUM_DEPOSIT, MINIMUM_WITHDRAW);
+        vault.setIndexRate((RAY * 3) / 2);
+        _requestDeposit(user, vault.availableCapacity());
+
+        assertEq(vault.availableCapacity(), 0);
+
+        _requestDeposit(userTwo, 10 ether);
+
+        assertEq(vault.maxDeposit(userTwo), 0);
+        assertEq(vault.depositQueueLength(), 1);
+    }
+
+    function test_cannot_requestDeposit_anAmountThatBuysNoShare() public {
+        _deployCleanVault(0, 0);
+        vault.setIndexRate((RAY * 3) / 2);
+        _fund(user, 1);
+
+        vm.prank(user);
+        vm.expectRevert(
+            abi.encodeWithSelector(IVault.ShareConversionFailure.selector, 1)
+        );
+        vault.requestDeposit(1, user, user);
     }
 }

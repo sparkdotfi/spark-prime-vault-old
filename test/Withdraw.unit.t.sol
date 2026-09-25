@@ -11,6 +11,7 @@ import {USDC} from "./mocks/USDC.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {console} from "forge-std/console.sol";
 import {QueueHelper} from "./utils/QueueHelper.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 contract RequestWithdrawUnitTests is QueueHelper {
     function setUp() public {
@@ -21,14 +22,10 @@ contract RequestWithdrawUnitTests is QueueHelper {
     function test_requestWithdraw_queueExists() public {
         uint256 depositAmount = 50 ether;
 
-        _fundAndDeposit(vault, user, baseAsset, depositAmount);
-        _claimDeposit(vault, user, depositAmount);
+        _depositAndClaim(user, depositAmount);
+        _depositAndClaim(userTwo, depositAmount);
 
-        _fundAndDeposit(vault, userTwo, baseAsset, depositAmount);
-        _claimDeposit(vault, userTwo, depositAmount);
-
-        vm.prank(liquidityManager);
-        vault.take(2 * depositAmount); // Take out both users deposited baseAssets a.k.a all the vaults liquidity
+        _drainLiquidity(); // Take out both users deposited baseAssets a.k.a all the vaults liquidity
 
         uint256 shares = vault.convertToShares(depositAmount);
 
@@ -39,11 +36,7 @@ contract RequestWithdrawUnitTests is QueueHelper {
 
         assertEq(vault.withdrawQueueLength(), 2);
         assertEq(vault.withdrawQueueHead().controller, user);
-        assertApproxEqAbs(
-            vault.totalPendingWithdraws(),
-            2 * depositAmount,
-            ROUNDING_DUST
-        ); // Both users queued
+        assertEq(vault.totalPendingWithdraws(), 2 * shares); // Both users queued
 
         assertEq(vault.maxRedeem(user), 0);
         assertEq(vault.maxRedeem(userTwo), 0);
@@ -53,14 +46,10 @@ contract RequestWithdrawUnitTests is QueueHelper {
     function test_requestWithdraw_noQueue_vaultInsolvent() public {
         uint256 depositAmount = 50 ether;
 
-        _fundAndDeposit(vault, user, baseAsset, depositAmount);
-        _claimDeposit(vault, user, depositAmount);
+        _depositAndClaim(user, depositAmount);
+        _depositAndClaim(userTwo, depositAmount);
 
-        _fundAndDeposit(vault, userTwo, baseAsset, depositAmount);
-        _claimDeposit(vault, userTwo, depositAmount);
-
-        vm.prank(liquidityManager);
-        vault.take(2 * depositAmount); // Take out both users deposited baseAssets a.k.a all the vaults liquidity
+        _drainLiquidity(); // Take out both users deposited baseAssets a.k.a all the vaults liquidity
 
         /// No Withdraw queue exists yet but the user should immediately be queued because the vault is insolvent.
         uint256 shares = vault.convertToShares(depositAmount);
@@ -68,7 +57,7 @@ contract RequestWithdrawUnitTests is QueueHelper {
         vault.requestRedeem(shares, user, user);
 
         IVault.Transaction memory data = vault.withdrawQueueHead();
-        assertApproxEqAbs(data.amount, depositAmount, ROUNDING_DUST);
+        assertEq(data.amount, shares);
         assertEq(data.controller, user);
     }
 
@@ -129,7 +118,11 @@ contract RequestWithdrawUnitTests is QueueHelper {
         assertApproxEqAbs(instantClaimableValue, 5 ether, ROUNDING_DUST); // 5 ether is instantly claimable
 
         IVault.Transaction memory data = vault.withdrawQueueHead();
-        assertApproxEqAbs(data.amount, 5 ether, ROUNDING_DUST); // The remaining 5 ether is queued
+        assertApproxEqAbs(
+            vault.convertToAssets(data.amount),
+            5 ether,
+            ROUNDING_DUST
+        ); // The remaining 5 ether is queued
         assertEq(data.controller, user);
 
         uint256 balanceBefore = baseAsset.balanceOf(user);
@@ -146,14 +139,11 @@ contract RequestWithdrawUnitTests is QueueHelper {
         uint256 userDeposit = 50 ether;
         uint256 userTwoDeposit = 50 ether;
 
-        _fundAndDeposit(vault, user, baseAsset, userDeposit);
-        _claimDeposit(vault, user, vault.maxDeposit(user));
-        _fundAndDeposit(vault, userTwo, baseAsset, userTwoDeposit);
-        _claimDeposit(vault, userTwo, vault.maxDeposit(userTwo));
+        _depositAndClaim(user, userDeposit);
+        _depositAndClaim(userTwo, userTwoDeposit);
 
         // Force Withdraw Queue by removing liqudity
-        vm.prank(liquidityManager);
-        vault.take(userDeposit + userTwoDeposit);
+        _drainLiquidity();
 
         vm.startPrank(user);
         uint256 shares = vault.convertToShares(50 ether);
@@ -200,7 +190,10 @@ contract RequestWithdrawUnitTests is QueueHelper {
         _depositAndClaim(user, 50 ether);
         _drainLiquidity();
 
-        uint256 shares = vault.convertToShares(MINIMUM_WITHDRAW);
+        uint256 shares = vault.convertToSharesRounded(
+            MINIMUM_WITHDRAW,
+            Math.Rounding.Ceil
+        );
 
         vm.prank(user);
         vault.requestRedeem(shares, user, user);
@@ -305,6 +298,8 @@ contract RequestWithdrawUnitTests is QueueHelper {
     function _claimableRedeemer(uint256 amount) internal returns (uint256) {
         _depositAndClaim(user, amount);
         uint256 shares = vault.balanceOf(user);
+        _nextBlock();
+        _coverRedemption(shares);
         vm.prank(user);
         vault.requestRedeem(shares, user, user);
         return vault.maxRedeem(user);
@@ -313,13 +308,14 @@ contract RequestWithdrawUnitTests is QueueHelper {
     function test_withdraw_claimsAssets() public {
         uint256 claimable = _claimableRedeemer(50 ether);
         uint256 claimValue = vault.maxWithdraw(user);
+        uint256 held = baseAsset.balanceOf(address(vault));
 
         vm.prank(user);
         uint256 burned = vault.withdraw(claimValue, user, user);
 
         assertEq(burned, claimable);
         assertEq(baseAsset.balanceOf(user), claimValue);
-        assertEq(baseAsset.balanceOf(address(vault)), 50 ether - claimValue);
+        assertEq(baseAsset.balanceOf(address(vault)), held - claimValue);
         assertEq(vault.maxRedeem(user), 0);
         assertEq(vault.maxWithdraw(user), 0);
         assertEq(vault.balanceOf(address(vault)), 0);
@@ -329,9 +325,10 @@ contract RequestWithdrawUnitTests is QueueHelper {
     function test_withdraw_FullClaim_NoSharesLeftBehind() public {
         _depositAndClaim(user, 50 ether);
         uint256 shares = vault.balanceOf(user);
+        _coverRedemption(shares);
         _requestRedeem(user, shares);
 
-        vault.setIndexRate((RAY * 10) / 3);
+        vault.setIndexRate((vault.index() * 10) / 3);
         _injectLiquidity(vault.maxWithdraw(user));
 
         uint256 claimValue = vault.maxWithdraw(user);
@@ -406,7 +403,8 @@ contract RequestWithdrawUnitTests is QueueHelper {
 
     function test_withdraw_partialLeavesTheRemainderClaimable() public {
         uint256 claimable = _claimableRedeemer(50 ether);
-        uint256 half = vault.maxWithdraw(user) / 2;
+        uint256 owed = vault.maxWithdraw(user);
+        uint256 half = owed / 2;
 
         vm.prank(user);
         vault.withdraw(half, user, user);
@@ -414,21 +412,21 @@ contract RequestWithdrawUnitTests is QueueHelper {
         assertEq(baseAsset.balanceOf(user), half);
         assertEq(
             vault.maxRedeem(user),
-            claimable - vault.convertToShares(half)
+            claimable - Math.mulDiv(claimable, half, owed, Math.Rounding.Ceil)
         );
     }
 
     function test_cannot_withdraw_beyondClaimableAmount() public {
-        uint256 claimable = _claimableRedeemer(50 ether);
-        uint256 tooMuch = vault.maxWithdraw(user) + 1 ether;
-        uint256 requested = vault.convertToShares(tooMuch);
+        _claimableRedeemer(50 ether);
+        uint256 owed = vault.maxWithdraw(user);
+        uint256 tooMuch = owed + 1 ether;
 
         vm.prank(user);
         vm.expectRevert(
             abi.encodeWithSelector(
                 ISparkPrimeVault.InsufficientClaimableAmount.selector,
-                requested,
-                claimable
+                tooMuch,
+                owed
             )
         );
         vault.withdraw(tooMuch, user, user);
@@ -457,9 +455,8 @@ contract RequestWithdrawUnitTests is QueueHelper {
     }
 
     function test_withdraw_emitsErc4626Withdraw() public {
-        _claimableRedeemer(50 ether);
+        uint256 burned = _claimableRedeemer(50 ether);
         uint256 claimValue = vault.maxWithdraw(user);
-        uint256 burned = vault.convertToShares(claimValue);
 
         vm.expectEmit(address(vault));
         emit IERC4626.Withdraw(user, user, user, claimValue, burned);
@@ -555,6 +552,7 @@ contract RequestWithdrawUnitTests is QueueHelper {
         _depositAndClaim(user, 50 ether);
         uint256 shares = vault.balanceOf(user);
         uint256 supply = vault.totalSupply();
+        _coverRedemption(shares);
 
         vm.prank(user);
         vault.requestRedeem(shares, user, user);
@@ -562,12 +560,13 @@ contract RequestWithdrawUnitTests is QueueHelper {
         assertEq(vault.balanceOf(address(vault)), 0);
         assertEq(vault.totalSupply(), supply - shares);
         assertEq(vault.maxRedeem(user), shares);
-        assertEq(vault.maxWithdraw(user), 50 ether);
+        assertEq(vault.maxWithdraw(user), vault.convertToAssets(shares));
     }
 
     function test_redeem_afterTheBurnLeavesNothingOutstanding() public {
         _depositAndClaim(user, 50 ether);
         uint256 shares = vault.balanceOf(user);
+        _coverRedemption(shares);
 
         vm.prank(user);
         vault.requestRedeem(shares, user, user);
@@ -583,5 +582,27 @@ contract RequestWithdrawUnitTests is QueueHelper {
         assertEq(vault.totalPendingWithdraws(), 0);
         assertEq(vault.claimableWithdrawTotal(), 0);
         assertEq(vault.availableCapacity(), MAXIMUM_VAULT_CAPACITY);
+    }
+
+    function test_requestRedeem_isNotPaidFromQueuedDeposits() public {
+        _depositAndClaim(user, 50 ether);
+        _drainLiquidity();
+        _closeCapacity();
+        _requestDeposit(userTwo, 11 ether);
+        uint256 backing = savingsVault.balanceOf(address(vault));
+
+        _requestRedeem(user, vault.convertToShares(10 ether));
+
+        assertEq(vault.maxWithdraw(user), 0);
+        assertEq(vault.withdrawQueueLength(), 1);
+        assertEq(savingsVault.balanceOf(address(vault)), backing);
+
+        uint256 volume = vault.convertToAssets(vault.totalPendingWithdraws());
+        _absorbAccruedYield();
+        vm.prank(rebalancer);
+        vault.processQueue(volume);
+
+        assertEq(vault.maxWithdraw(user), volume);
+        assertGe(baseAsset.balanceOf(address(vault)), volume);
     }
 }
