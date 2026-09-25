@@ -21,6 +21,7 @@ interface ILiquidityManagement {
     /// @dev Can be negative
     function availableLiquidAssets() external view returns (int256);
 
-    /// @notice Total spPRIME shares that can be minted (excludes what is locked for claimable deposits)
-    function availableLiquidShares() external view returns (int256);
+    /// @notice Largest `tradeVolume` processQueue accepts. In base Assets.
+    /// @dev min(availableLiquidAssets + deposit queue value, convertToAssets(totalPendingWithdraws + availableCapacity))
+    function maxTradeVolume() external view returns (uint256);
 }

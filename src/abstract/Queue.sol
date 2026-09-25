@@ -35,7 +35,7 @@ abstract contract Queue is LiquidityManagement, IQueue {
         shares = $.totalDepositQueueSavingsShares;
     }
 
-    function _pendingDepositValue() internal view returns (uint256 assets) {
+    function _depositQueueValuation() internal view returns (uint256 assets) {
         Storage storage $ = getStorage();
         uint256 shares = $.totalDepositQueueSavingsShares;
         assets = shares == 0 ? 0 : $.savingsVault.previewRedeem(shares);
@@ -93,17 +93,6 @@ abstract contract Queue is LiquidityManagement, IQueue {
         Storage storage $ = getStorage();
         InterestLib.accrueInterest($);
 
-        int256 liquidAssets = availableLiquidAssets() +
-            _pendingDepositValue().toInt256();
-        uint256 totalAssetLiquidity = uint256(
-            liquidAssets > 0 ? liquidAssets : int256(0)
-        );
-
-        int256 liquidShares = availableLiquidShares();
-
-        uint256 totalShareLiquidity = totalPendingWithdraws() +
-            uint256(liquidShares > 0 ? liquidShares : int256(0));
-
         /// We can only ever eat uptil the smaller queue
 
         /// baseAsset = 100
@@ -111,15 +100,16 @@ abstract contract Queue is LiquidityManagement, IQueue {
         /// tradeVolume = 200
 
         /// TODO: Send examples of each use case to Lucas via Slack
-        if (
-            tradeVolume >
-            Math.min(totalAssetLiquidity, convertToAssets(totalShareLiquidity))
-        ) revert CapacityExceedsLiquidity();
+        if (tradeVolume > availableDepositLiquidity())
+            revert InputVolumeExceedsLiquidity();
 
-        /// Process the Withdraw Queue first, burning all matched shares to increase totalMintableShares
+        if (tradeVolume > availableWithdrawLiquidity())
+            revert InputVolumeExceedsAvailableCapacity();
+
+        /// Process the Withdraw Queue first, burning all matched shares to increase availableCapacity
         _fillWithdrawQueue($, tradeVolume);
 
-        /// Process the Deposit Queue second, so every claim has access to totalMintableShares
+        /// Process the Deposit Queue second, so every claim has access to availableCapacity
         _fillDepositQueue($, tradeVolume);
 
         // Sanity Invariants: Never allow claims to exceed current balance resulting in debt
@@ -129,8 +119,40 @@ abstract contract Queue is LiquidityManagement, IQueue {
         if (assetsLeft < 0) revert AssetInvariantBroken(assetsLeft);
 
         /// Order Matching should never result in share insolvency
-        int256 sharesLeft = availableLiquidShares();
+        /// We should never go into negative shares after `processQueue`
+        int256 sharesLeft = $.maximumCapacity.toInt256() -
+            (totalSupply() + $.totalClaimableDepositShares).toInt256();
         if (sharesLeft < 0) revert ShareInvariantBroken(sharesLeft);
+    }
+
+    /// @dev We can only eat as much as the smaller queue
+    function maxTradeVolume() public view returns (uint256) {
+        return
+            Math.min(availableDepositLiquidity(), availableWithdrawLiquidity());
+    }
+
+    /// @dev Vaults liquid baseAssets + baseAssets deposited from deposit queue into savings vault
+    function availableDepositLiquidity()
+        internal
+        view
+        returns (uint256 valueInBaseAssets)
+    {
+        int256 liquidAssets = availableLiquidAssets() +
+            _depositQueueValuation().toInt256();
+        valueInBaseAssets = uint256(
+            liquidAssets > 0 ? liquidAssets : int256(0)
+        );
+    }
+
+    /// @dev Total withdraw queue shares + shares left to mint until availableCapacity
+    function availableWithdrawLiquidity()
+        internal
+        view
+        returns (uint256 valueInBaseAssets)
+    {
+        valueInBaseAssets = convertToAssets(
+            totalPendingWithdraws() + availableCapacity()
+        );
     }
 
     function _fillWithdrawQueue(
@@ -156,39 +178,39 @@ abstract contract Queue is LiquidityManagement, IQueue {
         Storage storage $,
         uint256 tradeVolume
     ) internal {
-        uint256 queuedBefore = $.totalDepositQueueSavingsShares;
-        uint256 queueValue = _pendingDepositValue();
+        uint256 totalSavingsSharesInQueue = $.totalDepositQueueSavingsShares;
+        uint256 queueValue = _depositQueueValuation();
+
         bool fillAll = tradeVolume >= queueValue;
 
         uint256 shares = fillAll
-            ? queuedBefore
+            ? totalSavingsSharesInQueue
             : $.savingsVault.previewWithdraw(tradeVolume);
-        uint256 credit = _fitToMintableShares(
-            fillAll ? queueValue : tradeVolume
-        );
+        uint256 credit = fillAll ? queueValue : tradeVolume;
 
+        /// Get the price per share from Savings Vault once and store it
         SAVINGS_VAULT_PRICE_PER_SHARE.asUint256().tstore(
             shares == 0 ? 0 : Math.mulDiv(credit, InterestLib.RAY, shares)
         );
 
+        /// Process the deposit Queues, every entry uses the same price per share
         fillAll
             ? fillUnbounded($, $.depositQueue, _markClaimableDeposit)
             : fillUntil($, $.depositQueue, _markClaimableDeposit, shares);
 
+        /// Reset after we're done
         SAVINGS_VAULT_PRICE_PER_SHARE.asUint256().tstore(0);
 
-        uint256 matched = queuedBefore - $.totalDepositQueueSavingsShares;
-        if (matched > 0)
-            $.savingsVault.redeem(matched, address(this), address(this));
-    }
+        uint256 processedSavingsShares = totalSavingsSharesInQueue -
+            $.totalDepositQueueSavingsShares;
 
-    function _fitToMintableShares(
-        uint256 assets
-    ) internal view returns (uint256) {
-        int256 room = availableLiquidShares();
-        if (room >= 0 && convertToShares(assets) == uint256(room) + 1)
-            return convertToAssets(uint256(room));
-        return assets;
+        /// Pull all processed depositor funds out of savings vault
+        if (processedSavingsShares > 0)
+            $.savingsVault.redeem(
+                processedSavingsShares,
+                address(this),
+                address(this)
+            );
     }
 
     /// @dev Iterate over entire queue and eat until EOF

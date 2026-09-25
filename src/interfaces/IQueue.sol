@@ -22,14 +22,16 @@ interface IQueue {
 
     function withdrawQueueLength() external view returns (uint256);
 
-    error CapacityExceedsLiquidity();
+    error InputVolumeExceedsLiquidity();
+
+    error InputVolumeExceedsAvailableCapacity();
 
     error PartialFillFailure();
 
     /// @notice Post Process Queue invariant: the vault owes more base asset than it holds
     error AssetInvariantBroken(int256 available);
 
-    /// @notice Post Process Queue invariant: the vault owes more shares than it can deliver
+    /// @notice Post Process Queue invariant: minted plus locked spPRIME shares exceeded maximumCapacity
     error ShareInvariantBroken(int256 available);
 
     function depositQueueHead()
