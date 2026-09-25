@@ -15,10 +15,14 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {
     ReentrancyGuardTransient
 } from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
+import {
+    PausableUpgradeable
+} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 
 abstract contract VaultBase is
     ERC4626Upgradeable,
     ReentrancyGuardTransient,
+    PausableUpgradeable,
     IVault
 {
     bytes32 constant LIQUIDITY_MANAGER_ROLE =
@@ -46,9 +50,9 @@ abstract contract VaultBase is
         uint256 lastAccrualTimestamp;
         uint256 indexRate;
         // Queue Accounting
-        uint256 totalDepositQueueAssets;
+        uint256 totalDepositQueueSavingsShares;
         uint256 totalWithdrawQueueShares;
-        uint256 totalClaimableDeposits; //in base asset
+        uint256 totalClaimableDepositShares; //in spPRIME shares, frozen at match
         uint256 totalClaimableWithdrawAssets; //in base asset, frozen at match
     }
 
@@ -62,22 +66,24 @@ abstract contract VaultBase is
     }
 
     /** ERC 7540 overrides */
-    /// @dev We have no concept of requestIDs, therefore this is just a `maxDeposit`
-    /// @notice Wraps `maxDeposit` of ERC4626 to support ERC7540 spec
+    /// @dev We have no concept of requestIDs, therefore this is the controller's claimable balance
+    /// @notice Unlike `maxDeposit`, works when paused
     function claimableDepositRequest(
         uint256,
         address controller
     ) public view override returns (uint256 claimableAssets) {
-        claimableAssets = maxDeposit(controller);
+        Storage storage $ = getStorage();
+        claimableAssets = $.ledger[controller].assetsIn;
     }
 
-    /// @dev We have no concept of requestIDs, therefore just a `maxRedeem`
-    /// @notice Wraps `maxRedeem` of ERC4626 to support ERC7540 spec
+    /// @dev We have no concept of requestIDs, therefore this is the controller's claimable balance
+    /// @notice Unlike `maxRedeem`, works when paused
     function claimableRedeemRequest(
         uint256,
         address controller
     ) public view override returns (uint256 claimableShares) {
-        claimableShares = maxRedeem(controller);
+        Storage storage $ = getStorage();
+        claimableShares = $.ledger[controller].sharesOut;
     }
 
     /** ERC4626 overrides **/
@@ -91,6 +97,7 @@ abstract contract VaultBase is
         override(ERC4626Upgradeable, IERC4626)
         returns (uint256 claimableShares)
     {
+        if (paused()) return 0;
         Storage storage $ = getStorage();
         claimableShares = $.ledger[owner].sharesOut;
     }
@@ -104,6 +111,7 @@ abstract contract VaultBase is
         override(ERC4626Upgradeable, IERC4626)
         returns (uint256 claimableAssets)
     {
+        if (paused()) return 0;
         Storage storage $ = getStorage();
         claimableAssets = $.ledger[receiver].assetsIn;
     }
@@ -174,7 +182,7 @@ abstract contract VaultBase is
         return assets;
     }
 
-    /// @dev Overridden to return the maximum claimable amount, converted to shares
+    /// @dev Overridden to return the shares locked for the receiver's claimable deposits
     function maxMint(
         address receiver
     )
@@ -183,7 +191,9 @@ abstract contract VaultBase is
         override(ERC4626Upgradeable, IERC4626)
         returns (uint256 claimableShares)
     {
-        claimableShares = convertToShares(maxDeposit(receiver));
+        if (paused()) return 0;
+        Storage storage $ = getStorage();
+        claimableShares = $.ledger[receiver].sharesIn;
     }
 
     /// @dev Overriden to provide the value of maximum claim in base asset
@@ -195,6 +205,7 @@ abstract contract VaultBase is
         override(ERC4626Upgradeable, IERC4626)
         returns (uint256 claimValue)
     {
+        if (paused()) return 0;
         Storage storage $ = getStorage();
         claimValue = $.ledger[owner].assetsOut;
     }
@@ -231,10 +242,15 @@ abstract contract VaultBase is
 
     function availableCapacity() public view returns (uint256 available) {
         Storage storage $ = getStorage();
-        uint256 total = totalAssets();
+        uint256 total = _convertToAssets(totalSupply(), Math.Rounding.Ceil);
         available = $.maximumCapacity > total ? $.maximumCapacity - total : 0;
-        if ($.totalClaimableDeposits >= available) available = 0;
-        else available -= $.totalClaimableDeposits;
+        uint256 locked = _convertToAssets(
+            $.totalClaimableDepositShares,
+            Math.Rounding.Ceil
+        );
+        if (locked >= available) available = 0;
+        else available -= locked;
+        if (convertToShares(available) == 0) available = 0;
     }
 
     function previewDeposit(

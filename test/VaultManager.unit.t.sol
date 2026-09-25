@@ -19,6 +19,13 @@ import {console} from "forge-std/console.sol";
 import {Vm} from "forge-std/Vm.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {QueueHelper} from "./utils/QueueHelper.sol";
+import {InterestLib} from "src/libraries/InterestLib.sol";
+import {Vault} from "src/Vault.sol";
+import {SavingsVault} from "./mocks/SavingsVault.sol";
+import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import {
+    ERC1967Proxy
+} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract VaultManagerUnitTests is QueueHelper {
     function setUp() public {
@@ -31,7 +38,11 @@ contract VaultManagerUnitTests is QueueHelper {
         vm.prank(user);
         vault.deposit(100 ether, user);
 
-        assertEq(vault.totalAssets(), 100 ether);
+        assertApproxEqAbs(
+            vault.totalAssets(),
+            100 ether,
+            vault.convertToAssets(1) + 1
+        );
 
         vm.prank(vaultManager);
         vm.expectRevert(
@@ -46,13 +57,18 @@ contract VaultManagerUnitTests is QueueHelper {
 
     function test_depositToSavings() public {
         _depositAndClaim(user, 100 ether);
+        uint256 expected = savingsVault.previewDeposit(40 ether);
+        uint256 venueBefore = baseAsset.balanceOf(address(savingsVault));
 
         vm.prank(rebalancer);
         uint256 shares = vault.depositToSavings(40 ether);
 
-        assertEq(shares, savingsVault.convertToShares(40 ether));
+        assertEq(shares, expected);
         assertEq(baseAsset.balanceOf(address(vault)), 60 ether);
-        assertEq(baseAsset.balanceOf(address(savingsVault)), 40 ether);
+        assertEq(
+            baseAsset.balanceOf(address(savingsVault)),
+            venueBefore + 40 ether
+        );
         assertEq(savingsVault.balanceOf(address(vault)), shares);
     }
 
@@ -72,12 +88,14 @@ contract VaultManagerUnitTests is QueueHelper {
 
         vm.prank(rebalancer);
         uint256 shares = vault.depositToSavings(40 ether);
+        uint256 expected = savingsVault.previewRedeem(shares);
 
         vm.prank(rebalancer);
         uint256 assets = vault.withdrawFromSavings(shares);
 
-        assertEq(assets, 40 ether);
-        assertEq(baseAsset.balanceOf(address(vault)), 100 ether);
+        assertEq(assets, expected);
+        assertApproxEqAbs(assets, 40 ether, 2);
+        assertEq(baseAsset.balanceOf(address(vault)), 60 ether + assets);
         assertEq(savingsVault.balanceOf(address(vault)), 0);
     }
 
@@ -86,9 +104,10 @@ contract VaultManagerUnitTests is QueueHelper {
 
         vm.prank(rebalancer);
         uint256 shares = vault.depositToSavings(40 ether);
+        uint256 expected = savingsVault.previewRedeem(shares);
 
         vm.expectEmit(address(vault));
-        emit IRebalancer.SavingsWithdraw(shares, 40 ether);
+        emit IRebalancer.SavingsWithdraw(shares, expected);
 
         vm.prank(rebalancer);
         vault.withdrawFromSavings(shares);
@@ -97,14 +116,16 @@ contract VaultManagerUnitTests is QueueHelper {
     function test_savingsRoundTrip_isValuePreserving() public {
         _depositAndClaim(user, 100 ether);
         uint256 before = baseAsset.balanceOf(address(vault));
+        uint256 assetsBefore = vault.totalAssets();
 
         vm.startPrank(rebalancer);
         uint256 shares = vault.depositToSavings(before);
         vault.withdrawFromSavings(shares);
         vm.stopPrank();
 
-        assertEq(baseAsset.balanceOf(address(vault)), before);
-        assertEq(vault.totalAssets(), 100 ether);
+        assertApproxEqAbs(baseAsset.balanceOf(address(vault)), before, 2);
+        assertLe(baseAsset.balanceOf(address(vault)), before);
+        assertEq(vault.totalAssets(), assetsBefore);
     }
 
     function test_cannot_depositToSavings_withoutRebalancerRole() public {
@@ -167,24 +188,27 @@ contract VaultManagerUnitTests is QueueHelper {
     function test_depositToSavings_isInvisibleToAvailableLiquidAssets() public {
         _depositAndClaim(user, 100 ether);
         assertEq(vault.availableLiquidAssets(), int256(100 ether));
+        uint256 assetsBefore = vault.totalAssets();
 
         vm.prank(rebalancer);
         vault.depositToSavings(40 ether);
 
         assertEq(vault.availableLiquidAssets(), int256(60 ether));
-        assertEq(vault.totalAssets(), 100 ether);
-        assertEq(
+        assertEq(vault.totalAssets(), assetsBefore);
+        assertApproxEqAbs(
             baseAsset.balanceOf(address(vault)) +
                 savingsVault.convertToAssets(
                     savingsVault.balanceOf(address(vault))
                 ),
-            100 ether
+            100 ether,
+            2
         );
     }
 
     function test_depositToSavings_canStrandAClaimableRedeemer() public {
         _depositAndClaim(user, 100 ether);
         uint256 shares = vault.balanceOf(user);
+        _coverRedemption(shares);
 
         vm.prank(user);
         vault.requestRedeem(shares, user, user);
@@ -253,7 +277,10 @@ contract VaultManagerUnitTests is QueueHelper {
         );
         vault.requestRedeem(shares, user, user);
 
-        uint256 atMinimum = vault.convertToShares(5 ether);
+        uint256 atMinimum = vault.convertToSharesRounded(
+            5 ether,
+            Math.Rounding.Ceil
+        );
         vm.prank(user);
         vault.requestRedeem(atMinimum, user, user);
         assertEq(vault.withdrawQueueLength(), 1);
@@ -265,8 +292,10 @@ contract VaultManagerUnitTests is QueueHelper {
         vault.setMinimumWithdraw(0);
         vm.stopPrank();
 
-        _requestDeposit(user, 1 wei);
-        assertEq(vault.maxDeposit(user), 1 wei);
+        uint256 smallest = vault.convertToAssetsRounded(2, Math.Rounding.Ceil);
+        _requestDeposit(user, smallest);
+        assertEq(vault.maxDeposit(user), smallest);
+        assertGt(vault.maxMint(user), 0);
     }
 
     function test_cannot_setMinimumDeposit_withoutVaultManagerRole() public {
@@ -428,8 +457,8 @@ contract VaultManagerUnitTests is QueueHelper {
         vault.requestRedeem(shares, user, user);
         assertEq(vault.withdrawQueueLength(), 1);
 
-        _injectLiquidity(50 ether);
         uint256 volume = vault.convertToAssets(vault.totalPendingWithdraws());
+        _injectLiquidity(volume);
         _pause();
 
         vm.prank(rebalancer);
@@ -438,6 +467,40 @@ contract VaultManagerUnitTests is QueueHelper {
 
         vm.prank(liquidityManager);
         vault.take(1 ether);
+    }
+
+    function test_paused_maxViewsReportNothingClaimable() public {
+        _depositAndClaim(user, 50 ether);
+        uint256 half = vault.balanceOf(user) / 2;
+        _coverRedemption(half);
+        _requestRedeem(user, half);
+        _requestDeposit(user, 10 ether);
+
+        uint256 claimableAssets = vault.maxDeposit(user);
+        uint256 lockedShares = vault.maxMint(user);
+        uint256 claimableShares = vault.maxRedeem(user);
+        uint256 owed = vault.maxWithdraw(user);
+        assertGt(claimableAssets, 0);
+        assertGt(lockedShares, 0);
+        assertGt(claimableShares, 0);
+        assertGt(owed, 0);
+
+        _pause();
+
+        assertEq(vault.maxDeposit(user), 0);
+        assertEq(vault.maxMint(user), 0);
+        assertEq(vault.maxRedeem(user), 0);
+        assertEq(vault.maxWithdraw(user), 0);
+        assertEq(vault.claimableDepositRequest(0, user), claimableAssets);
+        assertEq(vault.claimableRedeemRequest(0, user), claimableShares);
+
+        vm.prank(admin);
+        vault.unpause();
+
+        assertEq(vault.maxDeposit(user), claimableAssets);
+        assertEq(vault.maxMint(user), lockedShares);
+        assertEq(vault.maxRedeem(user), claimableShares);
+        assertEq(vault.maxWithdraw(user), owed);
     }
 
     function test_paused_doesNotBlockSetOperator() public {
@@ -549,5 +612,88 @@ contract VaultManagerUnitTests is QueueHelper {
 
         assertEq(vault.convertToShares(10), 3);
         assertEq(vault.convertToAssets(1), 3);
+    }
+
+    function _initParams(
+        IERC4626 venue
+    ) internal view returns (IVault.InitParams memory) {
+        return
+            IVault.InitParams({
+                name: "spPrime Vault",
+                symbol: "spPRIME",
+                baseAsset: baseAsset,
+                savingsVault: venue,
+                minimumDeposit: MINIMUM_DEPOSIT,
+                minimumWithdraw: MINIMUM_WITHDRAW,
+                capacity: MAXIMUM_VAULT_CAPACITY,
+                ratePerSecond: TEN_PERCENT_APY,
+                admin: admin,
+                vaultManager: vaultManager,
+                liquidityManager: liquidityManager,
+                rebalancer: rebalancer
+            });
+    }
+
+    function test_cannot_initialize_withASavingsVaultForAnotherAsset() public {
+        IERC4626 venue = new SavingsVault(new USDC());
+        VaultHandler implementation = new VaultHandler();
+        IVault.InitParams memory params = _initParams(venue);
+
+        vm.expectRevert(IVault.AssetMismatch.selector);
+        new ERC1967Proxy(
+            address(implementation),
+            abi.encodeCall(Vault.initialize, (params))
+        );
+    }
+
+    function test_cannot_initialize_withoutASavingsVault() public {
+        VaultHandler implementation = new VaultHandler();
+        IVault.InitParams memory params = _initParams(IERC4626(address(0)));
+
+        vm.expectRevert();
+        new ERC1967Proxy(
+            address(implementation),
+            abi.encodeCall(Vault.initialize, (params))
+        );
+    }
+
+    function _rpowFloor(uint256 x, uint256 n) internal pure returns (uint256 z) {
+        z = n % 2 == 1 ? x : RAY;
+        for (n /= 2; n != 0; n /= 2) {
+            x = Math.mulDiv(x, x, RAY);
+            if (n % 2 == 1) z = Math.mulDiv(z, x, RAY);
+        }
+    }
+
+    function _rpowNearest(
+        uint256 x,
+        uint256 n
+    ) internal pure returns (uint256 z) {
+        z = n % 2 == 1 ? x : RAY;
+        for (n /= 2; n != 0; n /= 2) {
+            x = (x * x + RAY / 2) / RAY;
+            if (n % 2 == 1) z = (z * x + RAY / 2) / RAY;
+        }
+    }
+
+    function testFuzz_rpow_roundsDown(uint256 rate, uint256 elapsed) public pure {
+        rate = bound(rate, RAY, RAY + 1e19);
+        elapsed = bound(elapsed, 0, 10 * 365 days);
+
+        uint256 factor = InterestLib.rpow(rate, elapsed, RAY);
+
+        assertEq(factor, _rpowFloor(rate, elapsed));
+        assertLe(factor, _rpowNearest(rate, elapsed));
+    }
+
+    function test_rpow_compoundsTheConfiguredRate() public pure {
+        assertEq(InterestLib.rpow(TEN_PERCENT_APY, 0, RAY), RAY);
+        assertEq(InterestLib.rpow(TEN_PERCENT_APY, 1, RAY), TEN_PERCENT_APY);
+        assertEq(InterestLib.rpow(RAY, 365 days, RAY), RAY);
+        assertApproxEqRel(
+            InterestLib.rpow(TEN_PERCENT_APY, 365 days, RAY),
+            (RAY * 11) / 10,
+            1e9
+        );
     }
 }

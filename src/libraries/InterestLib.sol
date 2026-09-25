@@ -48,7 +48,6 @@ library InterestLib {
                 default {
                     z := x
                 }
-                let half := div(base, 2)
                 for {
                     n := div(n, 2)
                 } n {
@@ -58,21 +57,13 @@ library InterestLib {
                     if iszero(eq(div(xx, x), x)) {
                         revert(0, 0)
                     }
-                    let xxRound := add(xx, half)
-                    if lt(xxRound, xx) {
-                        revert(0, 0)
-                    }
-                    x := div(xxRound, base)
+                    x := div(xx, base)
                     if mod(n, 2) {
                         let zx := mul(z, x)
                         if and(iszero(iszero(x)), iszero(eq(div(zx, x), z))) {
                             revert(0, 0)
                         }
-                        let zxRound := add(zx, half)
-                        if lt(zxRound, zx) {
-                            revert(0, 0)
-                        }
-                        z := div(zxRound, base)
+                        z := div(zx, base)
                     }
                 }
             }

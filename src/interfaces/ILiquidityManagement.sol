@@ -17,11 +17,10 @@ interface ILiquidityManagement {
     function take(uint256 baseAmount) external;
 
     /// @notice Total amount of liquid USDC available for NEW withdraw request
-    /// @dev base asset balance + savings.previewWithdraw(spUSDC balance) - claimableWithdrawTotal
+    /// @dev base asset balance - claimableWithdrawTotal
     /// @dev Can be negative
     function availableLiquidAssets() external view returns (int256);
 
-    /// @notice Total amount of Spark Prime Shares available instantly for NEW deposit request
-    /// @dev balanceOf(address(this) + savings.convertToShares(claimableWithdrawTotal()) - claimableDepositTotal()
+    /// @notice Total spPRIME shares that can be minted (excludes what is locked for claimable deposits)
     function availableLiquidShares() external view returns (int256);
 }

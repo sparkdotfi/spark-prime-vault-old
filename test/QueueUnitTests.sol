@@ -23,22 +23,19 @@ contract QueueUnitTests is QueueHelper {
         _mintShares(10, 100 ether, users);
         _drainLiquidity();
 
-        uint256 shares = createWithdrawQueue(
-            10,
-            vault.convertToShares(100 ether),
-            users
-        );
+        createWithdrawQueue(10, vault.convertToShares(100 ether), users);
 
         _closeCapacity();
-        uint256 deposits = createDepositQueue(10, 100 ether, users);
+        createDepositQueue(10, 100 ether, users);
 
-        uint256 volume = Math.min(vault.convertToAssets(shares), deposits);
+        uint256 volume = _matchVolume();
 
+        _absorbAccruedYield();
         vm.prank(rebalancer);
         vault.processQueue(volume);
 
-        assertApproxEqAbs(vault.totalPendingDeposits(), 0, ROUNDING_DUST);
-        assertApproxEqAbs(vault.totalPendingWithdraws(), 0, ROUNDING_DUST);
+        assertApproxEqAbs(vault.totalPendingDeposits(), 0, _drift(volume));
+        assertApproxEqAbs(vault.totalPendingWithdraws(), 0, _drift(volume));
         assertSolvent();
     }
 
@@ -47,26 +44,27 @@ contract QueueUnitTests is QueueHelper {
         _ensureCapacity(vault.totalAssets() + 100 ether);
         _mintShares(5, 100 ether, users);
         _drainLiquidity();
-        uint256 shares = createWithdrawQueue(
-            5,
-            vault.convertToShares(100 ether),
-            users
-        );
+        createWithdrawQueue(5, vault.convertToShares(100 ether), users);
 
         _closeCapacity();
-        uint256 deposits = createDepositQueue(10, 100 ether, users);
+        createDepositQueue(10, 100 ether, users);
 
-        uint256 volume = Math.min(vault.convertToAssets(shares), deposits);
+        uint256 volume = _matchVolume();
 
+        _absorbAccruedYield();
         vm.prank(rebalancer);
         vault.processQueue(volume);
 
-        assertApproxEqAbs(vault.totalPendingDeposits(), 0, ROUNDING_DUST);
-        assertApproxEqAbs(vault.totalPendingWithdraws(), 0, ROUNDING_DUST);
-        assertApproxEqAbs(vault.claimableDepositTotal(), volume, ROUNDING_DUST);
+        assertApproxEqAbs(vault.totalPendingDeposits(), 0, _drift(volume));
+        assertApproxEqAbs(vault.totalPendingWithdraws(), 0, _drift(volume));
+        assertApproxEqAbs(
+            vault.claimableDepositTotal(),
+            vault.convertToShares(volume),
+            ROUNDING_DUST
+        );
         assertApproxEqAbs(
             vault.claimableWithdrawTotal(),
-            vault.convertToShares(volume),
+            volume,
             ROUNDING_DUST
         );
         assertSolvent();
@@ -91,28 +89,35 @@ contract QueueUnitTests is QueueHelper {
         );
         _closeCapacity();
         createDepositQueue(10, totalDepositValue, users);
+        uint256 depositValue = savingsVault.previewRedeem(
+            vault.totalPendingDeposits()
+        );
+        uint256 withdrawValue = vault.convertToAssets(
+            vault.totalPendingWithdraws()
+        );
 
+        _absorbAccruedYield();
         vm.prank(rebalancer);
         vault.processQueue(curatorCapacity);
 
         assertApproxEqAbs(
-            vault.totalPendingDeposits(),
-            totalDepositValue - curatorCapacity,
+            savingsVault.previewRedeem(vault.totalPendingDeposits()),
+            depositValue - curatorCapacity,
             ROUNDING_DUST
         );
         assertApproxEqAbs(
-            vault.totalPendingWithdraws(),
-            vault.convertToShares(totalWithdrawValue - curatorCapacity),
+            vault.convertToAssets(vault.totalPendingWithdraws()),
+            withdrawValue - curatorCapacity,
             ROUNDING_DUST
         );
         assertApproxEqAbs(
             vault.claimableDepositTotal(),
-            curatorCapacity,
+            vault.convertToShares(curatorCapacity),
             ROUNDING_DUST
         );
         assertApproxEqAbs(
             vault.claimableWithdrawTotal(),
-            vault.convertToShares(curatorCapacity),
+            curatorCapacity,
             ROUNDING_DUST
         );
         assertSolvent();
@@ -140,36 +145,46 @@ contract QueueUnitTests is QueueHelper {
         );
         _closeCapacity();
         createDepositQueue(10, totalDepositValue, users);
+        uint256 depositValue = savingsVault.previewRedeem(
+            vault.totalPendingDeposits()
+        );
+        uint256 withdrawValue = vault.convertToAssets(
+            vault.totalPendingWithdraws()
+        );
 
-        uint256 curatorCapacity = totalDepositValue;
+        uint256 curatorCapacity = depositValue;
+        _absorbAccruedYield();
         vm.prank(rebalancer);
         vault.processQueue(curatorCapacity);
 
         assertApproxEqAbs(
-            vault.totalPendingDeposits(),
-            totalDepositValue - curatorCapacity,
+            savingsVault.previewRedeem(vault.totalPendingDeposits()),
+            depositValue - curatorCapacity,
             ROUNDING_DUST
         );
         assertApproxEqAbs(
-            vault.totalPendingWithdraws(),
-            vault.convertToShares(totalWithdrawValue - curatorCapacity),
+            vault.convertToAssets(vault.totalPendingWithdraws()),
+            withdrawValue - curatorCapacity,
             ROUNDING_DUST
         );
         assertApproxEqAbs(
             vault.claimableDepositTotal(),
-            curatorCapacity,
+            vault.convertToShares(curatorCapacity),
             ROUNDING_DUST
         );
         assertApproxEqAbs(
             vault.claimableWithdrawTotal(),
-            vault.convertToShares(curatorCapacity),
+            curatorCapacity,
             ROUNDING_DUST
         );
         assertSolvent();
         assertEq(vault.depositQueueLength(), 0); // Deposits entirely fulfilled
         // Withdraws partially fulfilled
         assertLt(vault.withdrawQueueLength(), totalWithdrawers);
-        assertLt(vault.totalPendingWithdraws(), totalWithdrawValue);
+        assertLt(
+            vault.convertToAssets(vault.totalPendingWithdraws()),
+            totalWithdrawValue
+        );
     }
 
     /// @dev 15 depositors, 120 ether total. 5 withdrawers, 75 ether total. Curator wants 75 ether (totalWithdrawQueue) exchanged
@@ -192,36 +207,46 @@ contract QueueUnitTests is QueueHelper {
         );
         _closeCapacity();
         createDepositQueue(totalDepositors, totalDepositValue, users);
+        uint256 depositValue = savingsVault.previewRedeem(
+            vault.totalPendingDeposits()
+        );
+        uint256 withdrawValue = vault.convertToAssets(
+            vault.totalPendingWithdraws()
+        );
 
         uint256 curatorCapacity = vault.convertToAssets(queuedShares);
+        _absorbAccruedYield();
         vm.prank(rebalancer);
         vault.processQueue(curatorCapacity);
 
         assertApproxEqAbs(
-            vault.totalPendingDeposits(),
-            totalDepositValue - curatorCapacity,
+            savingsVault.previewRedeem(vault.totalPendingDeposits()),
+            depositValue - curatorCapacity,
             ROUNDING_DUST
         );
         assertApproxEqAbs(
-            vault.totalPendingWithdraws(),
-            vault.convertToShares(totalWithdrawValue - curatorCapacity),
+            vault.convertToAssets(vault.totalPendingWithdraws()),
+            withdrawValue - curatorCapacity,
             ROUNDING_DUST
         );
         assertApproxEqAbs(
             vault.claimableDepositTotal(),
-            curatorCapacity,
+            vault.convertToShares(curatorCapacity),
             ROUNDING_DUST
         );
         assertApproxEqAbs(
             vault.claimableWithdrawTotal(),
-            vault.convertToShares(curatorCapacity),
+            curatorCapacity,
             ROUNDING_DUST
         );
         assertSolvent();
         assertEq(vault.withdrawQueueLength(), 0); // Withdrawers entirely fulfilled
         // Depositors partially fulfilled
         assertLt(vault.depositQueueLength(), totalDepositors);
-        assertLt(vault.totalPendingDeposits(), totalDepositValue);
+        assertLt(
+            savingsVault.previewRedeem(vault.totalPendingDeposits()),
+            totalDepositValue
+        );
     }
 
     /// @dev 10 depositors, 100 ether total. 50 withdrawers, 200 ether total. There is no additional liquidity (mintable shares/idle base asset) Curator wants 200 ether in volume exchanged (non-symmetric)
