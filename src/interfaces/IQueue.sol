@@ -45,10 +45,10 @@ interface IQueue {
     /// @notice Fulfill any pending withdraw queue entries
     //function processQueue() external;
 
-    /// @notice Total number of base asset in vault balance waiting to be converted/exchanged to Spark Prime Shares
-    function totalPendingDeposits() external view returns (uint256 assets);
+    /// @notice Total Savings Vault shares currently in the deposit queue
+    function totalPendingDeposits() external view returns (uint256 shares);
 
-    /// @notice Total Spark Prime Shares of vault balance that is LOCKED and promised to claimers
+    /// @notice Total spPRIME shares locked for claimable deposits
     function claimableDepositTotal() external view returns (uint256);
 
     /// @notice Total number of Spark Prime Shares waiting to converted to base asset

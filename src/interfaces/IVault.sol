@@ -25,7 +25,8 @@ interface IVault is IERC7540 {
     struct Settlement {
         address beneficiary;
         uint256 assetsIn;
-        uint256 pendingAssetsIn;
+        uint256 sharesIn;
+        uint256 pendingSavingsShares;
         uint256 sharesOut;
         uint256 assetsOut;
         uint256 pendingSharesOut;
@@ -39,6 +40,8 @@ interface IVault is IERC7540 {
     }
 
     error DeltaMismatch();
+
+    error AssetMismatch();
 
     /// @notice Lazy accrual of continuous interest
     event AccruedInterest(uint256 newIndex, uint256 timestamp);

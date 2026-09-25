@@ -45,8 +45,6 @@ interface ISparkPrimeVault {
 
     error RequestNotQueued(address controller, uint256 nonce);
 
-    error InsufficientFreeLiquidity(uint256 requested, int256 available);
-
     /// @notice Returned when the vault fails cannot pay out owed shares/assets to a claimer
     error Insolvency();
 
