@@ -6,14 +6,10 @@ import {VaultBase} from "./VaultBase.sol";
 import {
     AccessControlUpgradeable
 } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
-import {
-    PausableUpgradeable
-} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 
 abstract contract VaultManagement is
     VaultBase,
     AccessControlUpgradeable,
-    PausableUpgradeable,
     IVaultManagement
 {
     function pause() public onlyRole(VAULT_MANAGER_ROLE) {
