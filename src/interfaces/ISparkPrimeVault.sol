@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {IVault} from "./IVault.sol";
+
 /**
  * @title ISparkPrimeVault
  * @notice Asynchronous ERC-7540 Vault with Admin set continuous rate
@@ -31,19 +33,28 @@ pragma solidity ^0.8.20;
  */
 
 interface ISparkPrimeVault {
-    /// @notice Emitted when the user claims their deposit
-    event DepositClaimed(address beneficary, uint256 amount, uint256 shares);
-
-    /// @notice Emitted when the user claims their withdraw
-    event WithdrawClaimed(address beneficary, uint256 amount, uint256 shares);
-
     /// @notice Emitted when the user performs deposit with a referral code
     event ReferralCode(address beneficary, uint256 code);
+
+    event DepositRequestCancelled(
+        address indexed controller,
+        address indexed owner,
+        uint256 nonce,
+        uint256 assets
+    );
+
+    error RequestNotQueued(address controller, uint256 nonce);
+
+    error InsufficientFreeLiquidity(uint256 requested, int256 available);
 
     /// @notice Returned when the vault fails cannot pay out owed shares/assets to a claimer
     error Insolvency();
 
     error ZeroValueProvided();
+    error MustExceedMinimumRequestAmount(uint256 amount);
+
+    error InsufficientClaimableAmount(uint256 requested, uint256 actual);
+    error InsufficientFunds();
 
     /// @notice Overload of ERC4626 deposit to allow Spark Referal Program support
     function deposit(
@@ -52,4 +63,13 @@ interface ISparkPrimeVault {
         address controller,
         uint256 referralCode
     ) external returns (uint256 shares);
+
+    function cancelDepositRequest(address controller, uint256 nonce) external;
+
+    function requestNonce(address controller) external view returns (uint256);
+
+    function queuedDepositRequest(
+        address controller,
+        uint256 nonce
+    ) external view returns (IVault.Transaction memory transaction);
 }

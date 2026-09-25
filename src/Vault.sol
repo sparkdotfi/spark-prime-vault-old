@@ -10,9 +10,6 @@ import {
 } from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
 
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
-import {
-    DoubleEndedQueue
-} from "@openzeppelin/contracts/utils/structs/DoubleEndedQueue.sol";
 import {TransactionQueue} from "./libraries/TransactionQueue.sol";
 import {InterestLib} from "./libraries/InterestLib.sol";
 import {VaultBase} from "./abstract/VaultBase.sol";
@@ -26,14 +23,20 @@ import {
 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {
+    AccessControlUpgradeable
+} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import {
+    IERC7540Operator
+} from "@openzeppelin/community-contracts/interfaces/IERC7540.sol";
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {console} from "forge-std/console.sol";
 contract Vault is
     Rebalancer,
-    LiquidityManagement,
+    //  LiquidityManagement,
     VaultManagement,
     Queue,
-    ISparkPrimeVault,
-    PausableUpgradeable
+    ISparkPrimeVault
 {
     //Withdraw Queue: Withdraw Requests that couldn't be fulfilled with availableLiquidAssets()
     //Deposit Queue: Requests that couldn't be fulfilled with availableCapacity()
@@ -61,7 +64,6 @@ contract Vault is
     //Test: If no withdraw queue exists,
 
     //Withdraw Claim Rules
-    //Test: Claimed amount is deducted from lockedShares
     //Test: If claim amount is greater than claimableWithdrawTotal(), always revert (Insolvency)
 
     //Deposit Queue Rules
@@ -70,10 +72,40 @@ contract Vault is
     // TransactionQueue Library
     //Fuzz Test: Encoding and Decoding should be a strict bi-directional match, for any input
 
-    using TransactionQueue for DoubleEndedQueue.Bytes32Deque;
+    using TransactionQueue for TransactionQueue.RequestQueue;
     using SafeERC20 for IERC20;
     using SafeCast for int256;
 
+    /// @dev type(IERC7575).interfaceId
+    bytes4 private constant ERC7575_INTERFACE_ID = 0x2f0a18c5;
+    /// @dev type(IERC7540Deposit).interfaceId
+    bytes4 private constant ERC7540_DEPOSIT_INTERFACE_ID = 0xce3bbe50;
+    /// @dev type(IERC7540Redeem).interfaceId
+    bytes4 private constant ERC7540_REDEEM_INTERFACE_ID = 0x620ee8e4;
+
+    constructor() {
+        _disableInitializers();
+    }
+    function initialize(InitParams calldata params) external initializer {
+        __ERC20_init(params.name, params.symbol);
+        __ERC4626_init(params.baseAsset);
+        __AccessControl_init();
+        __Pausable_init();
+
+        Storage storage $ = getStorage();
+        $.savingsVault = params.savingsVault;
+        $.maximumCapacity = params.capacity;
+        $.minimumDeposit = params.minimumDeposit;
+        $.minimumWithdraw = params.minimumWithdraw;
+        $.ratePerSecond = params.ratePerSecond;
+        $.indexRate = InterestLib.RAY;
+        $.lastAccrualTimestamp = block.timestamp;
+
+        _grantRole(DEFAULT_ADMIN_ROLE, params.admin);
+        _grantRole(VAULT_MANAGER_ROLE, params.vaultManager);
+        _grantRole(LIQUIDITY_MANAGER_ROLE, params.liquidityManager);
+        _grantRole(REBALANCER_ROLER, params.rebalancer);
+    }
     function pendingDepositRequest(
         uint256,
         address controller
@@ -113,7 +145,7 @@ contract Vault is
         uint256 assets,
         address receiver,
         address controller
-    ) public returns (uint256 shares) {
+    ) public whenNotPaused nonReentrant returns (uint256 shares) {
         Storage storage $ = getStorage();
         if (assets == 0) revert ZeroValueProvided();
 
@@ -133,41 +165,12 @@ contract Vault is
         shares = convertToShares(assets);
         if (shares == 0) revert ShareConversionFailure(assets);
 
-        console.log("USer assetsIn: %e", $.ledger[controller].assetsIn);
-        console.log("assets minused: %e", assets);
-
         $.ledger[controller].assetsIn -= assets;
-
-        // We can only mint shares if we're below capacity and transfer shares we own
-        // How much of that can we mint, and how much of that can we get from our idle balance
-
-        uint256 totalLiquidShares = this.balanceOf(address(this));
-
-        if (totalAssets() >= $.maximumCapacity) {
-            // we cant mint
-            if (totalLiquidShares < assets) revert Insolvency(); // Not enough withdraws have claimed to fill liquidity
-            transfer(receiver, assets);
-        } else {
-            // we can mint $.maximumCapacity - totalAssets()
-            uint256 mintableShares = convertToShares(
-                $.maximumCapacity - totalAssets()
-            );
-            console.log("Mintable Shares: %e", mintableShares);
-            console.log("Total Liquid Shares: %e", totalLiquidShares);
-            if (totalLiquidShares + mintableShares < shares)
-                revert Insolvency(); // Both vault owned shares and minting couldn't fulfill this request
-
-            uint256 fromLiquid = Math.min(shares, totalLiquidShares);
-            if (fromLiquid > 0) transfer(receiver, fromLiquid);
-
-            console.log("toMint = %e - %e", shares, fromLiquid);
-            uint256 toMint = shares - fromLiquid;
-            if (toMint > 0) super._mint(receiver, toMint);
-        }
-
         $.totalClaimableDeposits -= assets;
-        $.totalAssets += assets;
-        emit DepositClaimed(receiver, assets, shares);
+
+        _mint(receiver, shares);
+
+        emit Deposit(controller, receiver, assets, shares);
         return shares;
     }
 
@@ -175,42 +178,47 @@ contract Vault is
         uint256 assets,
         address controller,
         address owner
-    ) public returns (uint256) {
+    ) public whenNotPaused nonReentrant returns (uint256) {
         Storage storage $ = getStorage();
+        if (assets == 0) revert ZeroValueProvided();
+        if (assets < $.minimumDeposit)
+            revert MustExceedMinimumRequestAmount($.minimumDeposit);
         if (msg.sender != owner) revert UnauthorizedCaller(msg.sender);
 
+        InterestLib.accrueInterest($);
+
+        /// How many shares are available to mint (subtracting what we've committed to claimable deposits)
         uint256 capacity = availableCapacity();
-        IERC20 baseAsset = IERC20(asset());
-
-        console.log("Available capacity for this deposit: %e", capacity);
-        console.log("Deposit size: %e", assets);
-
-        baseAsset.safeTransferFrom(owner, address(this), assets);
-
-        emit DepositRequest(controller, owner, 0, msg.sender, assets);
 
         Transaction memory transaction = Transaction(
+            controller,
             owner,
             assets,
-            controller,
-            ++$.nonces[owner]
+            ++$.nonces[controller]
         );
-
         if (!$.depositQueue.isEmpty() || capacity == 0) {
+            /// If a queue exists, or there's no shares to mint: Immediately queue entire request
             _pushToDepositQueue($, transaction);
-            return 0;
-        }
-
-        if (assets > capacity) {
-            console.log("Assets greater than capacity");
-            _markClaimableDeposit($, owner, capacity, true);
+        } else if (assets > capacity) {
+            /// User request can be partially fulfilled instantly, remainder is queued
+            _markClaimableDeposit($, controller, capacity, true);
             transaction.amount -= capacity;
             _pushToDepositQueue($, transaction);
         } else {
-            console.log("Assets less than or equal to capacity");
-            _markClaimableDeposit($, owner, assets, true);
+            /// User request can be completed fulfilled instantly
+            _markClaimableDeposit($, controller, assets, true);
         }
 
+        /// Transfer baseAsset from user to vault and emit DepositRequest
+        IERC20 baseAsset = IERC20(asset());
+
+        uint256 before = baseAsset.balanceOf(address(this));
+        baseAsset.safeTransferFrom(owner, address(this), assets);
+
+        if (baseAsset.balanceOf(address(this)) - before != assets)
+            revert DeltaMismatch();
+
+        emit DepositRequest(controller, owner, 0, msg.sender, assets);
         return 0;
     }
 
@@ -227,10 +235,31 @@ contract Vault is
     function withdraw(
         uint256 assets,
         address receiver,
-        address owner
-    ) public override(ERC4626Upgradeable, IERC4626) returns (uint256 shares) {
-        return
-            convertToAssets(redeem(convertToShares(assets), receiver, owner));
+        address controller
+    )
+        public
+        override(ERC4626Upgradeable, IERC4626)
+        whenNotPaused
+        nonReentrant
+        returns (uint256 shares)
+    {
+        _authorizeClaim(receiver, controller);
+
+        Storage storage $ = getStorage();
+        Settlement storage settlement = $.ledger[controller];
+
+        if (assets > settlement.assetsOut)
+            revert InsufficientClaimableAmount(assets, settlement.assetsOut);
+
+        /// Calculate the amount owed to user, based on their sharesOut and assetsOut at `processQueue` time
+        shares = Math.mulDiv(
+            settlement.sharesOut,
+            assets,
+            settlement.assetsOut,
+            Math.Rounding.Ceil
+        );
+
+        _claimRedeem(receiver, controller, shares, assets);
     }
 
     function mint(
@@ -257,33 +286,51 @@ contract Vault is
         uint256 shares,
         address controller,
         address owner
-    ) public returns (uint256) {
+    ) public whenNotPaused nonReentrant returns (uint256) {
         Storage storage $ = getStorage();
+        if (shares == 0) revert ZeroValueProvided();
+        if (convertToAssets(shares) < $.minimumWithdraw)
+            revert MustExceedMinimumRequestAmount($.minimumWithdraw);
+
+        if (owner != msg.sender) revert UnauthorizedCaller(msg.sender);
+
         Transaction memory transaction = Transaction(
+            controller,
             owner,
             shares,
-            controller,
-            ++$.nonces[owner]
+            ++$.nonces[controller]
         );
 
-        $.lockedShares[owner] += shares;
+        emit RedeemRequest(controller, owner, 0, msg.sender, shares);
+
+        /// Vault locks the users shares by taking ownership of them
+        _transfer(owner, address(this), shares);
 
         InterestLib.accrueInterest($);
 
+        /// Amount of baseAsset the vault holds (subtracting amounts commited to claimable withdraws)
         int256 availableLiquidAssets = availableLiquidAssets();
 
+        /// If no assets/over-commited to claimers or queue already exists: Immediately queue entire request
         if (availableLiquidAssets <= 0 || !$.withdrawQueue.isEmpty()) {
             _pushToWithdrawQueue($, transaction);
         } else {
             uint256 requestedAmount = convertToAssets(shares);
             uint256 liquidAssets = availableLiquidAssets.toUint256();
 
+            /// Users entire request can be fulfilled using the vaults liquid assets, instant claimable
             if (liquidAssets >= requestedAmount) {
-                _markClaimableWithdraw($, owner, requestedAmount, true);
+                _markClaimableWithdraw($, controller, shares, true);
             } else {
-                _markClaimableWithdraw($, owner, liquidAssets, true);
-                transaction.amount -= convertToShares(liquidAssets);
-                _pushToWithdrawQueue($, transaction);
+                uint256 instantShares = convertToShares(liquidAssets);
+                /// We partially fill from liquidAssets if possible
+                if (instantShares > 0) {
+                    _markClaimableWithdraw($, controller, instantShares, true);
+                    transaction.amount -= instantShares;
+                }
+                /// We queue the remainder
+                if (transaction.amount > 0)
+                    _pushToWithdrawQueue($, transaction);
             }
         }
         return 0;
@@ -292,48 +339,131 @@ contract Vault is
     function redeem(
         uint256 shares,
         address receiver,
-        address owner
-    ) public override(ERC4626Upgradeable, IERC4626) returns (uint256 assets) {
-        require(msg.sender == owner || isOperator(owner, msg.sender));
+        address controller
+    )
+        public
+        override(ERC4626Upgradeable, IERC4626)
+        whenNotPaused
+        nonReentrant
+        returns (uint256 assets)
+    {
+        _authorizeClaim(receiver, controller);
 
         Storage storage $ = getStorage();
 
-        if ($.ledger[owner].sharesOut < shares) revert();
+        Settlement storage settlement = $.ledger[controller];
 
-        $.ledger[owner].sharesOut -= shares;
-        $.totalClaimableWithdraws -= shares;
+        if (settlement.sharesOut < shares)
+            revert InsufficientClaimableAmount(shares, settlement.sharesOut);
 
-        _transfer(owner, address(this), shares);
+        /// Calculate the amount owed to user, based on their sharesOut and assetsOut at `processQueue` time
+        assets = Math.mulDiv(
+            settlement.assetsOut,
+            shares,
+            settlement.sharesOut
+        );
 
-        //(IERC20(address(this)), owner, address(this), shares);
-
-        InterestLib.accrueInterest($);
-        assets = convertToAssets(shares);
-        IERC20 baseAsset = IERC20(asset());
-        uint256 liquidAssets = baseAsset.balanceOf(address(this));
-
-        if (assets > liquidAssets) revert();
-        baseAsset.safeTransfer(receiver, assets);
-
-        $.lockedShares[owner] -= shares;
-        emit WithdrawClaimed(receiver, assets, shares);
+        _claimRedeem(receiver, controller, shares, assets);
     }
 
-    /// @dev Prevent a Withdrawer from transferring their commited shares
-    /// @dev Exclude mints
-    function _update(
-        address from,
-        address to,
-        uint256 value
-    ) internal override {
+    function _authorizeClaim(
+        address receiver,
+        address controller
+    ) internal view {
+        if (controller != msg.sender && !isOperator(controller, msg.sender))
+            revert UnauthorizedCaller(msg.sender);
+        if (msg.sender != controller && receiver != controller)
+            revert OperatorMaliciousAction(receiver, controller);
+    }
+
+    function _claimRedeem(
+        address receiver,
+        address controller,
+        uint256 shares,
+        uint256 assets
+    ) internal {
         Storage storage $ = getStorage();
+        Settlement storage settlement = $.ledger[controller];
 
-        if (from != address(0) && to != address(this)) {
-            uint256 balanceRemaining = balanceOf(from) - value;
-            if ($.lockedShares[from] > balanceRemaining) revert();
-        }
+        settlement.sharesOut -= shares;
+        settlement.assetsOut -= assets;
+        $.totalClaimableWithdrawAssets -= assets;
 
-        super._update(from, to, value);
+        IERC20 baseAsset = IERC20(asset());
+        if (assets > baseAsset.balanceOf(address(this))) revert Insolvency();
+        baseAsset.safeTransfer(receiver, assets);
+
+        emit Withdraw(msg.sender, receiver, controller, assets, shares);
+    }
+
+    function cancelDepositRequest(
+        address controller,
+        uint256 nonce
+    ) external nonReentrant {
+        Storage storage $ = getStorage();
+        bytes32 element = TransactionQueue.key(controller, nonce);
+
+        (bool active, Transaction memory data) = TransactionQueue.tryGet(
+            $.depositQueue,
+            element
+        );
+        if (!active) revert RequestNotQueued(controller, nonce);
+        _authorizeCancel(controller, data.owner);
+
+        InterestLib.accrueInterest($);
+
+        uint256 assets = data.amount;
+
+        int256 free = availableLiquidAssets();
+        if (free < 0 || uint256(free) < assets)
+            revert InsufficientFreeLiquidity(assets, free);
+
+        delete $.depositQueue.entries[element];
+        $.totalDepositQueueAssets -= assets;
+        $.ledger[controller].pendingAssetsIn -= assets;
+
+        emit DepositRequestCancelled(controller, data.owner, nonce, assets);
+        emit DepositQueueValuation($.totalDepositQueueAssets);
+
+        IERC20(asset()).safeTransfer(data.owner, assets);
+    }
+
+    function _authorizeCancel(
+        address controller,
+        address owner
+    ) internal view {
+        if (
+            msg.sender != owner &&
+            msg.sender != controller &&
+            !isOperator(controller, msg.sender) &&
+            !hasRole(VAULT_MANAGER_ROLE, msg.sender)
+        ) revert UnauthorizedCaller(msg.sender);
+    }
+
+    function requestNonce(address controller) public view returns (uint256) {
+        Storage storage $ = getStorage();
+        return $.nonces[controller];
+    }
+
+    function queuedDepositRequest(
+        address controller,
+        uint256 nonce
+    ) public view returns (Transaction memory transaction) {
+        Storage storage $ = getStorage();
+        transaction = $.depositQueue.entries[
+            TransactionQueue.key(controller, nonce)
+        ];
+    }
+
+    function supportsInterface(
+        bytes4 interfaceId
+    ) public view override(AccessControlUpgradeable, IERC165) returns (bool) {
+        return
+            interfaceId == type(IERC7540Operator).interfaceId ||
+            interfaceId == ERC7575_INTERFACE_ID ||
+            interfaceId == ERC7540_DEPOSIT_INTERFACE_ID ||
+            interfaceId == ERC7540_REDEEM_INTERFACE_ID ||
+            super.supportsInterface(interfaceId);
     }
 
     function setOperator(
@@ -341,7 +471,12 @@ contract Vault is
         bool approved
     ) external returns (bool) {
         Storage storage $ = getStorage();
-        $.operators[msg.sender] = approved ? operator : address(0);
+        if (approved && operator == address(0)) revert ZeroValueProvided();
+        if (approved) $.operators[msg.sender] = operator;
+        else if ($.operators[msg.sender] == operator)
+            $.operators[msg.sender] = address(0);
+
+        emit OperatorSet(msg.sender, operator, approved);
         return true;
     }
 
@@ -349,6 +484,7 @@ contract Vault is
         address controller,
         address operator
     ) public view returns (bool status) {
+        if (operator == address(0)) return false;
         Storage storage $ = getStorage();
         status = $.operators[controller] == operator;
     }

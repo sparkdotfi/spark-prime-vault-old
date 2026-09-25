@@ -22,8 +22,15 @@ interface IQueue {
 
     function withdrawQueueLength() external view returns (uint256);
 
-    error CapacityOutOfBounds();
+    error CapacityExceedsLiquidity();
+
     error PartialFillFailure();
+
+    /// @notice Post Process Queue invariant: the vault owes more base asset than it holds
+    error AssetInvariantBroken(int256 available);
+
+    /// @notice Post Process Queue invariant: the vault owes more shares than it can deliver
+    error ShareInvariantBroken(int256 available);
 
     function depositQueueHead()
         external

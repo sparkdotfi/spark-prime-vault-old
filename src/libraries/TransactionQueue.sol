@@ -5,79 +5,88 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {
     DoubleEndedQueue
 } from "@openzeppelin/contracts/utils/structs/DoubleEndedQueue.sol";
-import {VaultBase} from "../abstract/VaultBase.sol";
 import {IVault} from "../interfaces/IVault.sol";
 library TransactionQueue {
     using SafeCast for uint256;
     using DoubleEndedQueue for DoubleEndedQueue.Bytes32Deque;
 
-    error DecodeFailed(bytes32 element);
     error QueueEmpty();
     error QueueFull(); // only when more than uint128 entries exceeded
 
-    function encodeTransaction(
-        IVault.Transaction memory transaction
-    ) internal pure returns (bytes32 element) {
-        element = keccak256(abi.encode(transaction));
+    struct RequestQueue {
+        DoubleEndedQueue.Bytes32Deque order;
+        mapping(bytes32 => IVault.Transaction) entries;
     }
 
-    function decodeTransaction(
-        VaultBase.Storage storage $,
+    function key(
+        address controller,
+        uint256 nonce
+    ) internal pure returns (bytes32 element) {
+        element = keccak256(abi.encode(controller, nonce));
+    }
+
+    function tryGet(
+        RequestQueue storage queue,
         bytes32 element
-    ) internal view returns (IVault.Transaction memory transaction) {
-        transaction = $.transactionRegistry[element];
-        if (transaction.beneficiary == address(0)) revert DecodeFailed(element);
+    ) internal view returns (bool active, IVault.Transaction memory transaction) {
+        transaction = queue.entries[element];
+        active = transaction.controller != address(0);
     }
 
     function front(
-        VaultBase.Storage storage $,
-        DoubleEndedQueue.Bytes32Deque storage queue
-    ) internal view returns (IVault.Transaction memory) {
-        (bool success, bytes32 value) = queue.tryFront();
-        if (!success) revert QueueEmpty();
-
-        return decodeTransaction($, value);
+        RequestQueue storage queue
+    ) internal view returns (IVault.Transaction memory transaction) {
+        uint256 n = queue.order.length();
+        for (uint256 i; i < n; ++i) {
+            bool active;
+            (active, transaction) = tryGet(queue, queue.order.at(i));
+            if (active) return transaction;
+        }
+        revert QueueEmpty();
     }
 
     function length(
-        DoubleEndedQueue.Bytes32Deque storage queue
+        RequestQueue storage queue
     ) internal view returns (uint256) {
-        return queue.length();
+        return queue.order.length();
     }
 
-    function isEmpty(
-        DoubleEndedQueue.Bytes32Deque storage queue
-    ) internal view returns (bool) {
-        return queue.empty();
+    function isEmpty(RequestQueue storage queue) internal view returns (bool) {
+        return queue.order.empty();
     }
 
     function pop(
-        DoubleEndedQueue.Bytes32Deque storage queue,
-        VaultBase.Storage storage $
-    ) internal returns (VaultBase.Transaction memory) {
-        (bool success, bytes32 value) = queue.tryPopFront();
+        RequestQueue storage queue
+    ) internal returns (bool active, IVault.Transaction memory data) {
+        (bool success, bytes32 value) = queue.order.tryPopFront();
         if (!success) revert QueueEmpty();
 
-        return decodeTransaction($, value);
+        (active, data) = tryGet(queue, value);
+
+        if (active) delete queue.entries[value];
     }
 
     function push(
-        DoubleEndedQueue.Bytes32Deque storage queue,
-        VaultBase.Transaction memory transaction
-    ) internal returns (bytes32 element) {
-        element = encodeTransaction(transaction);
+        RequestQueue storage queue,
+        IVault.Transaction memory transaction
+    ) internal {
+        bytes32 element = key(transaction.controller, transaction.nonce);
 
-        bool success = queue.tryPushBack(element);
+        bool success = queue.order.tryPushBack(element);
         if (!success) revert QueueFull();
+
+        queue.entries[element] = transaction;
     }
 
     function pushFront(
-        DoubleEndedQueue.Bytes32Deque storage queue,
-        VaultBase.Transaction memory transaction
-    ) internal returns (bytes32 element) {
-        element = encodeTransaction(transaction);
+        RequestQueue storage queue,
+        IVault.Transaction memory transaction
+    ) internal {
+        bytes32 element = key(transaction.controller, transaction.nonce);
 
-        bool success = queue.tryPushFront(element);
+        bool success = queue.order.tryPushFront(element);
         if (!success) revert QueueFull();
+
+        queue.entries[element] = transaction;
     }
 }

@@ -4,18 +4,17 @@ pragma solidity ^0.8.20;
 import {VaultBase} from "./VaultBase.sol";
 import {IVault} from "../interfaces/IVault.sol";
 import {IQueue} from "../interfaces/IQueue.sol";
-import {
-    DoubleEndedQueue
-} from "@openzeppelin/contracts/utils/structs/DoubleEndedQueue.sol";
 import {TransactionQueue} from "../libraries/TransactionQueue.sol";
+import {LiquidityManagement} from "./LiquidityManagement.sol";
 import {
     AccessControlUpgradeable
 } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
-
+import {InterestLib} from "../libraries/InterestLib.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {console} from "forge-std/console.sol";
 
-abstract contract Queue is VaultBase, AccessControlUpgradeable, IQueue {
-    using TransactionQueue for DoubleEndedQueue.Bytes32Deque;
+abstract contract Queue is LiquidityManagement, IQueue {
+    using TransactionQueue for TransactionQueue.RequestQueue;
 
     /// @notice The total share amount in the Withdraw Queue
     function totalPendingWithdraws() public view returns (uint256 shares) {
@@ -31,7 +30,7 @@ abstract contract Queue is VaultBase, AccessControlUpgradeable, IQueue {
 
     function claimableWithdrawTotal() public view returns (uint256) {
         Storage storage $ = getStorage();
-        return $.totalClaimableWithdraws;
+        return $.totalClaimableWithdrawAssets;
     }
 
     function claimableDepositTotal() public view returns (uint256) {
@@ -53,7 +52,7 @@ abstract contract Queue is VaultBase, AccessControlUpgradeable, IQueue {
         returns (Transaction memory transaction)
     {
         Storage storage $ = getStorage();
-        transaction = TransactionQueue.front($, $.withdrawQueue);
+        transaction = TransactionQueue.front($.withdrawQueue);
     }
 
     /// @notice Provides the number of requests present in the FIFO Deposit Queue
@@ -70,76 +69,118 @@ abstract contract Queue is VaultBase, AccessControlUpgradeable, IQueue {
         returns (Transaction memory transaction)
     {
         Storage storage $ = getStorage();
-        transaction = TransactionQueue.front($, $.depositQueue);
+        transaction = TransactionQueue.front($.depositQueue);
     }
 
     /// @notice Process pending deposits/withdrawals against eachother
-    /// @dev Trusts the planner/rebalancer for a reasonable `capacity` amount to bound the loop
-    function processQueue(uint256 capacity) public onlyRole(REBALANCER_ROLER) {
+    /// @dev Trusts the planner/rebalancer for a reasonable `tradeVolume` amount to bound the loop
+    function processQueue(
+        uint256 tradeVolume
+    ) public onlyRole(REBALANCER_ROLER) nonReentrant {
         Storage storage $ = getStorage();
+        InterestLib.accrueInterest($);
 
-        uint256 totalWithdrawValue = convertToAssets(totalPendingWithdraws());
-        uint256 totalDepositValue = totalPendingDeposits();
-        if (capacity > totalWithdrawValue || capacity > totalDepositValue)
-            revert CapacityOutOfBounds();
+        int256 liquidAssets = availableLiquidAssets();
+        uint256 totalAssetLiquidity = uint256(
+            liquidAssets > 0 ? liquidAssets : int256(0)
+        );
 
-        capacity == totalWithdrawValue
+        int256 liquidShares = availableLiquidShares();
+
+        uint256 totalShareLiquidity = totalPendingWithdraws() +
+            uint256(liquidShares > 0 ? liquidShares : int256(0));
+
+        /// We can only ever eat uptil the smaller queue
+
+        /// baseAsset = 100
+        /// shares = 500 ==> 400,
+        /// tradeVolume = 200
+
+        /// TODO: Send examples of each use case to Lucas via Slack
+        if (
+            tradeVolume >
+            Math.min(totalAssetLiquidity, convertToAssets(totalShareLiquidity))
+        ) revert CapacityExceedsLiquidity();
+
+        /// Process the Withdraw Queue first, burning all matched shares to increase totalMintableShares
+        _fillWithdrawQueue($, tradeVolume);
+
+        /// Process the Deposit Queue second, so every claim has access to totalMintableShares
+        tradeVolume >= totalPendingDeposits()
+            ? fillUnbounded($, $.depositQueue, _markClaimableDeposit)
+            : fillUntil($, $.depositQueue, _markClaimableDeposit, tradeVolume);
+
+        // Sanity Invariants: Never allow claims to exceed current balance resulting in debt
+
+        /// Order Matching should never result in base asset insolvency
+        int256 assetsLeft = availableLiquidAssets();
+        if (assetsLeft < 0) revert AssetInvariantBroken(assetsLeft);
+
+        /// Order Matching should never result in share insolvency
+        int256 sharesLeft = availableLiquidShares();
+        if (sharesLeft < 0) revert ShareInvariantBroken(sharesLeft);
+    }
+
+    function _fillWithdrawQueue(
+        Storage storage $,
+        uint256 tradeVolume
+    ) internal {
+        uint256 queuedBefore = $.totalWithdrawQueueShares;
+
+        tradeVolume >= convertToAssets(totalPendingWithdraws())
             ? fillUnbounded($, $.withdrawQueue, _markClaimableWithdraw)
             : fillUntil(
                 $,
                 $.withdrawQueue,
                 _markClaimableWithdraw,
-                convertToShares(capacity)
+                convertToShares(tradeVolume)
             );
 
-        capacity == totalDepositValue
-            ? fillUnbounded($, $.depositQueue, _markClaimableDeposit)
-            : fillUntil($, $.depositQueue, _markClaimableDeposit, capacity);
+        uint256 matched = queuedBefore - $.totalWithdrawQueueShares;
+        if (matched > 0) _burn(address(this), matched);
     }
 
     /// @dev Iterate over entire queue and eat until EOF
     function fillUnbounded(
         Storage storage $,
-        DoubleEndedQueue.Bytes32Deque storage queue,
+        TransactionQueue.RequestQueue storage queue,
         function(Storage storage, address, uint256, bool) claim
     ) internal {
+        console.log("FILL UNBOUNDED");
         uint256 n = queue.length();
 
         for (n; n > 0; --n) {
-            Transaction memory data = queue.pop($);
-            claim($, data.beneficiary, data.amount, false);
+            (bool active, Transaction memory data) = queue.pop();
+            if (!active) continue;
+            claim($, data.controller, data.amount, false);
         }
     }
     /// @dev Iterate queue and accumulate claims until we hit required capacity. Reverts on pre-mature EOF
     function fillUntil(
         Storage storage $,
-        DoubleEndedQueue.Bytes32Deque storage queue,
+        TransactionQueue.RequestQueue storage queue,
         function(Storage storage, address, uint256, bool) claim,
         uint256 remainder
     ) internal {
         uint256 length = queue.length();
-
+        console.log("FILL UNTIL: %e", remainder);
         while (remainder > 0) {
             if (length == 0) revert PartialFillFailure();
 
-            Transaction memory data = queue.pop($);
+            (bool active, Transaction memory data) = queue.pop();
+            --length;
+            if (!active) continue;
             if (data.amount >= remainder) {
                 /// @dev Base case, occurs exactly once at the last processed element
-                claim($, data.beneficiary, remainder, false);
-
-                _insertHeadWithNewAmount(
-                    $,
-                    queue,
-                    data,
-                    data.amount - remainder
-                );
+                claim($, data.controller, remainder, false);
+                if (data.amount == remainder) break;
+                _insertHeadWithNewAmount(queue, data, data.amount - remainder);
                 break;
             } else {
                 /// @dev Recursive case
-                claim($, data.beneficiary, data.amount, false);
+                claim($, data.controller, data.amount, false);
                 remainder -= data.amount;
             }
-            length--;
         }
     }
 
@@ -151,7 +192,9 @@ abstract contract Queue is VaultBase, AccessControlUpgradeable, IQueue {
     ) internal {
         console.log("Marking claimable assetsIn += %e", amount);
         $.ledger[owner].assetsIn += amount;
+        if (!instantClaim) $.ledger[owner].pendingAssetsIn -= amount;
         $.totalClaimableDeposits += amount;
+
         console.log(
             "Total deposit queue assets: %e",
             $.totalDepositQueueAssets
@@ -168,41 +211,40 @@ abstract contract Queue is VaultBase, AccessControlUpgradeable, IQueue {
         uint256 amount,
         bool instantClaim
     ) internal {
-        $.ledger[owner].sharesOut += amount;
-        $.totalClaimableWithdraws += amount;
-        console.log(
-            "Total withdraw queue assets: %e",
-            $.totalWithdrawQueueShares
-        );
+        uint256 assets = convertToAssets(amount);
 
-        console.log("Reducing by amount: %e", amount);
-        if (!instantClaim) $.totalWithdrawQueueShares -= amount;
-        emit ClaimableWithdraw(owner, $.ledger[owner].sharesOut);
+        $.ledger[owner].sharesOut += amount;
+        $.ledger[owner].assetsOut += assets;
+        $.totalClaimableWithdrawAssets += assets;
+
+        if (instantClaim) {
+            _burn(address(this), amount);
+        } else {
+            $.ledger[owner].pendingSharesOut -= amount;
+            $.totalWithdrawQueueShares -= amount;
+        }
+
+        emit ClaimableWithdraw(owner, $.ledger[owner].assetsOut);
     }
 
     /// @notice Cleans up void registry entries and links new data
     /// @dev Restricted usage to modify an existing element to head (partial fills).
     function _insertHeadWithNewAmount(
-        Storage storage $,
-        DoubleEndedQueue.Bytes32Deque storage queue,
+        TransactionQueue.RequestQueue storage queue,
         Transaction memory data,
         uint256 newAmount
     ) private {
-        delete $.transactionRegistry[TransactionQueue.encodeTransaction(data)];
-
         data.amount = newAmount;
-        bytes32 newHash = queue.pushFront(data);
-
-        $.transactionRegistry[newHash] = data;
+        queue.pushFront(data);
     }
 
     function _pushToWithdrawQueue(
         Storage storage $,
         IVault.Transaction memory data
     ) internal {
-        bytes32 element = $.withdrawQueue.push(data);
-        $.transactionRegistry[element] = data;
+        $.withdrawQueue.push(data);
         $.totalWithdrawQueueShares += data.amount;
+        $.ledger[data.controller].pendingSharesOut += data.amount;
         emit WithdrawQueueValuation($.totalWithdrawQueueShares);
     }
 
@@ -211,9 +253,9 @@ abstract contract Queue is VaultBase, AccessControlUpgradeable, IQueue {
         VaultBase.Transaction memory data
     ) internal {
         console.log("Pushing to deposit queue amount: %e", data.amount);
-        bytes32 element = $.depositQueue.push(data);
-        $.transactionRegistry[element] = data;
+        $.depositQueue.push(data);
         $.totalDepositQueueAssets += data.amount;
+        $.ledger[data.controller].pendingAssetsIn += data.amount;
         emit DepositQueueValuation($.totalDepositQueueAssets);
     }
 }

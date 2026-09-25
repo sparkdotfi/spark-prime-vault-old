@@ -6,12 +6,24 @@ import {VaultBase} from "./VaultBase.sol";
 import {
     AccessControlUpgradeable
 } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import {
+    PausableUpgradeable
+} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 
 abstract contract VaultManagement is
     VaultBase,
     AccessControlUpgradeable,
+    PausableUpgradeable,
     IVaultManagement
 {
+    function pause() public onlyRole(VAULT_MANAGER_ROLE) {
+        _pause();
+    }
+
+    function unpause() public onlyRole(DEFAULT_ADMIN_ROLE) {
+        _unpause();
+    }
+
     function setInterestRate(
         uint256 newRate
     ) public onlyRole(VAULT_MANAGER_ROLE) {
@@ -21,6 +33,21 @@ abstract contract VaultManagement is
         emit RateUpdated(oldRate, newRate);
     }
 
+    function setMinimumDeposit(
+        uint256 amount
+    ) public onlyRole(VAULT_MANAGER_ROLE) {
+        Storage storage $ = getStorage();
+        $.minimumDeposit = amount;
+        emit MinimumDepositUpdated(amount);
+    }
+
+    function setMinimumWithdraw(
+        uint256 amount
+    ) public onlyRole(VAULT_MANAGER_ROLE) {
+        Storage storage $ = getStorage();
+        $.minimumWithdraw = amount;
+        emit MinimumWithdrawUpdated(amount);
+    }
     function updateWithdrawFee(
         uint256 bps
     ) public onlyRole(VAULT_MANAGER_ROLE) {}
@@ -29,6 +56,9 @@ abstract contract VaultManagement is
         uint256 newCapacity
     ) public onlyRole(VAULT_MANAGER_ROLE) {
         Storage storage $ = getStorage();
+        if (newCapacity < totalAssets())
+            revert MaximumCapacityCannotExceedCurrentTotal();
+        emit CapacityUpdated($.maximumCapacity, newCapacity);
         $.maximumCapacity = newCapacity;
     }
 }

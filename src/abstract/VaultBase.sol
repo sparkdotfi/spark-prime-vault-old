@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {
-    DoubleEndedQueue
-} from "@openzeppelin/contracts/utils/structs/DoubleEndedQueue.sol";
 import {TransactionQueue} from "../libraries/TransactionQueue.sol";
 
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
@@ -15,9 +12,15 @@ import {
 import {InterestLib} from "../libraries/InterestLib.sol";
 import {console} from "forge-std/console.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-abstract contract VaultBase is ERC4626Upgradeable, IVault {
-    using TransactionQueue for DoubleEndedQueue.Bytes32Deque;
+import {
+    ReentrancyGuardTransient
+} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 
+abstract contract VaultBase is
+    ERC4626Upgradeable,
+    ReentrancyGuardTransient,
+    IVault
+{
     bytes32 constant LIQUIDITY_MANAGER_ROLE =
         0x77e60b99a50d27fb027f6912a507d956105b4148adab27a86d235c8bcca8fa2f; /// keccak256("LIQUIDITY_MANAGER_ROLE")
     bytes32 constant REBALANCER_ROLER =
@@ -28,24 +31,25 @@ abstract contract VaultBase is ERC4626Upgradeable, IVault {
     /// @custom:storage-location erc7201:sparkprime.vault.v1
     struct Storage {
         mapping(address => Settlement) ledger;
-        mapping(address => uint256) lockedShares;
         mapping(address => address) operators;
         mapping(address => uint256) nonces;
-        mapping(bytes32 => Transaction) transactionRegistry;
-        DoubleEndedQueue.Bytes32Deque withdrawQueue;
-        DoubleEndedQueue.Bytes32Deque depositQueue;
+        TransactionQueue.RequestQueue withdrawQueue;
+        TransactionQueue.RequestQueue depositQueue;
+        // Vault Management
         IERC20 baseAsset;
         IERC4626 savingsVault;
         uint256 maximumCapacity;
-        uint256 totalAssets;
+        uint256 minimumDeposit;
+        uint256 minimumWithdraw;
         // Interest Rate
         uint256 ratePerSecond;
         uint256 lastAccrualTimestamp;
         uint256 indexRate;
+        // Queue Accounting
         uint256 totalDepositQueueAssets;
         uint256 totalWithdrawQueueShares;
         uint256 totalClaimableDeposits; //in base asset
-        uint256 totalClaimableWithdraws; //in shares
+        uint256 totalClaimableWithdrawAssets; //in base asset, frozen at match
     }
 
     bytes32 constant STORAGE_SLOT =
@@ -53,7 +57,7 @@ abstract contract VaultBase is ERC4626Upgradeable, IVault {
 
     function getStorage() internal view returns (Storage storage $) {
         assembly {
-            $.slot := sload(STORAGE_SLOT)
+            $.slot := STORAGE_SLOT
         }
     }
 
@@ -143,7 +147,12 @@ abstract contract VaultBase is ERC4626Upgradeable, IVault {
     ) internal view override(ERC4626Upgradeable) returns (uint256) {
         Storage storage $ = getStorage();
         console.log("Converting to shares..");
-        uint256 shares = Math.mulDiv(assets, InterestLib.RAY, $.indexRate);
+        uint256 shares = Math.mulDiv(
+            assets,
+            InterestLib.RAY,
+            $.indexRate,
+            rounding
+        );
         console.log("shares = %e", shares);
         return shares;
     }
@@ -155,7 +164,12 @@ abstract contract VaultBase is ERC4626Upgradeable, IVault {
         Storage storage $ = getStorage();
 
         console.log("Converting to assets..");
-        uint256 assets = Math.mulDiv(shares, $.indexRate, InterestLib.RAY);
+        uint256 assets = Math.mulDiv(
+            shares,
+            $.indexRate,
+            InterestLib.RAY,
+            rounding
+        );
         console.log("assets = %e", assets);
         return assets;
     }
@@ -181,7 +195,8 @@ abstract contract VaultBase is ERC4626Upgradeable, IVault {
         override(ERC4626Upgradeable, IERC4626)
         returns (uint256 claimValue)
     {
-        claimValue = convertToAssets(maxRedeem(owner));
+        Storage storage $ = getStorage();
+        claimValue = $.ledger[owner].assetsOut;
     }
     function totalAssets()
         public
@@ -189,9 +204,7 @@ abstract contract VaultBase is ERC4626Upgradeable, IVault {
         override(ERC4626Upgradeable, IERC4626)
         returns (uint256)
     {
-        Storage storage $ = getStorage();
-        console.log("Total assets: %e", $.totalAssets);
-        return $.totalAssets;
+        return convertToAssets(totalSupply());
     }
     function lastAccrual() public view returns (uint256) {
         Storage storage $ = getStorage();
@@ -205,13 +218,25 @@ abstract contract VaultBase is ERC4626Upgradeable, IVault {
         Storage storage $ = getStorage();
         return $.maximumCapacity;
     }
+
+    function minimumDeposit() public view returns (uint256) {
+        Storage storage $ = getStorage();
+        return $.minimumDeposit;
+    }
+
+    function minimumWithdraw() public view returns (uint256) {
+        Storage storage $ = getStorage();
+        return $.minimumWithdraw;
+    }
+
     function availableCapacity() public view returns (uint256 available) {
         Storage storage $ = getStorage();
-        available = $.maximumCapacity - totalAssets();
-        console.log("maximumCap - totalAssets = %e", available);
+        uint256 total = totalAssets();
+        available = $.maximumCapacity > total ? $.maximumCapacity - total : 0;
         if ($.totalClaimableDeposits >= available) available = 0;
         else available -= $.totalClaimableDeposits;
     }
+
     function previewDeposit(
         uint256
     ) public pure override(ERC4626Upgradeable, IERC4626) returns (uint256) {

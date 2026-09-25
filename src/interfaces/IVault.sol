@@ -3,22 +3,43 @@ pragma solidity ^0.8.20;
 import {
     IERC7540
 } from "@openzeppelin/community-contracts/interfaces/IERC7540.sol";
+import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
+import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
 interface IVault is IERC7540 {
+    struct InitParams {
+        string name;
+        string symbol;
+        IERC20 baseAsset;
+        IERC4626 savingsVault;
+        uint256 minimumDeposit;
+        uint256 minimumWithdraw;
+        uint256 capacity;
+        uint256 ratePerSecond;
+        address admin;
+        address vaultManager;
+        address liquidityManager;
+        address rebalancer;
+    }
+
     struct Settlement {
         address beneficiary;
         uint256 assetsIn;
         uint256 pendingAssetsIn;
         uint256 sharesOut;
+        uint256 assetsOut;
         uint256 pendingSharesOut;
     }
 
     struct Transaction {
-        address beneficiary;
-        uint256 amount;
         address controller;
+        address owner;
+        uint256 amount;
         uint256 nonce;
     }
+
+    error DeltaMismatch();
+
     /// @notice Lazy accrual of continuous interest
     event AccruedInterest(uint256 newIndex, uint256 timestamp);
 

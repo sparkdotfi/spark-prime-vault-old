@@ -6,28 +6,27 @@ import {Vault} from "src/Vault.sol";
 import {IVault} from "src/interfaces/IVault.sol";
 import {USDC} from "./mocks/USDC.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
+import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 contract VaultHandler is Vault {
-    uint256 constant TEN_PERCENT_APY = 1000000003022265980097387650;
-    uint256 constant RAY = 1e27;
-    uint256 constant MAXIMUM_VAULT_CAPACITY = 100 ether;
-    constructor(
-        IERC20 baseAsset,
-        address rebalancer,
-        address vaultManager,
-        address liquidityManager
-    ) initializer {
-        _grantRole(VAULT_MANAGER_ROLE, vaultManager);
-        _grantRole(LIQUIDITY_MANAGER_ROLE, liquidityManager);
-        _grantRole(REBALANCER_ROLER, rebalancer);
+    function convertToSharesRounded(
+        uint256 assets,
+        Math.Rounding rounding
+    ) external view returns (uint256) {
+        return _convertToShares(assets, rounding);
+    }
 
-        __ERC20_init("spPRIME Vault", "spPRIME");
-        __ERC4626_init(baseAsset);
+    function convertToAssetsRounded(
+        uint256 shares,
+        Math.Rounding rounding
+    ) external view returns (uint256) {
+        return _convertToAssets(shares, rounding);
+    }
 
+    function setIndexRate(uint256 value) external {
         Storage storage $ = getStorage();
-        $.maximumCapacity = MAXIMUM_VAULT_CAPACITY;
-        $.indexRate = RAY;
-        $.ratePerSecond = TEN_PERCENT_APY;
+        $.indexRate = value;
     }
 
     function setOperatorForUser(
@@ -44,20 +43,20 @@ contract VaultHandler is Vault {
         $.totalClaimableDeposits = value;
     }
 
-    function setTotalClaimableWithdraws(uint256 value) external {
+    function setTotalClaimableWithdrawAssets(uint256 value) external {
         Storage storage $ = getStorage();
-        $.totalClaimableWithdraws = value;
+        $.totalClaimableWithdrawAssets = value;
     }
 
     function pushToDepositQueue(IVault.Transaction memory data) external {
         Storage storage $ = getStorage();
-        data.nonce = ++$.nonces[data.beneficiary];
+        data.nonce = ++$.nonces[data.controller];
         _pushToDepositQueue($, data);
     }
 
     function pushToWithdrawQueue(IVault.Transaction memory data) external {
         Storage storage $ = getStorage();
-        data.nonce = ++$.nonces[data.beneficiary];
+        data.nonce = ++$.nonces[data.controller];
         _pushToWithdrawQueue($, data);
     }
 
