@@ -27,24 +27,6 @@ abstract contract LiquidityManagement is
         IERC20(asset()).safeTransfer(msg.sender, baseAmount);
     }
 
-    /// @notice Calculates how many shares the vault can allocate for deposits
-    /// @return shares Available SP Prime Tokens
-    function availableLiquidShares() public view returns (int256 shares) {
-        Storage storage $ = getStorage();
-        shares =
-            int256(totalMintableShares()) -
-            int256($.totalClaimableDepositShares);
-    }
-
-    function totalMintableShares() public view returns (uint256) {
-        Storage storage $ = getStorage();
-        uint256 total = totalAssets();
-        return
-            total >= $.maximumCapacity
-                ? 0
-                : convertToShares($.maximumCapacity - total);
-    }
-
     /// @notice Calculates how many assets the vault can allocate for withdrawals
     /// @dev It is the Rebalancers responsibility to convert Savings Vault shares back to base asset for them to be considered instant liquidty
     /// @return totalBaseAssets Instant Withdrawal Liquidity

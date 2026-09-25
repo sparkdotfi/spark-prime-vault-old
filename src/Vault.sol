@@ -188,7 +188,10 @@ contract Vault is
         if (convertToShares(assets) == 0) revert ShareConversionFailure(assets);
 
         /// How many shares are available to mint (subtracting what we've committed to claimable deposits)
-        uint256 capacity = availableCapacity();
+        uint256 capacity = _convertToAssets(
+            availableCapacity(),
+            Math.Rounding.Ceil
+        );
 
         Transaction memory transaction = Transaction(
             controller,
