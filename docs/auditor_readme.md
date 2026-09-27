@@ -1,6 +1,12 @@
 ### Settlement Ledger
 A `Settlement` entry exists for all participating users. It is the users accounting ledger, and is used by helper view functions as well as the core accounting logic for mint/burning/queuing. 
 
+### Transaction
+An element in the FIFO queue is represented as a `Transaction` object. The queue is represented as a `TransactionQueue`, with it's own library `TransactionLob` built on-top of the OpenZeppelin Double-Ended Queue. 
+
+### Interest 
+Skys default interest rate model is mirrored, compounding rate per-second. It is not possible to set the value below `1 RAY` i.e negative rate. 
+
 ### Deposits 
 #### Request Deposit
 When a deposit queue does not exist and available capacity exists (diff between totalSupply and maximumCapacity), we can mark a `requestDeposit` amount as claimable immediately. 
@@ -219,4 +225,3 @@ A withdraw cannot be cancelled, once a user enters a queue they can only exit af
 A user, controller, Operator and Vault Manager can cancel a deposit request as long as it has NOT been processed a.ka it can only be cancelled while it is pending.
 
 The refund comes from unwinding entry's savings share amount which accounts for their principle + yield.
-
