@@ -24,11 +24,11 @@ interface IVault is IERC7540 {
 
     struct Settlement {
         address beneficiary;
-        uint256 assetsIn;
-        uint256 sharesIn;
+        uint256 depositedAssets;
+        uint256 sharesOwed;
         uint256 pendingSavingsShares;
-        uint256 sharesOut;
-        uint256 assetsOut;
+        uint256 withdrawnShares;
+        uint256 assetsOwed;
         uint256 pendingSharesOut;
     }
 

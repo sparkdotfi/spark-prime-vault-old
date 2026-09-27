@@ -263,7 +263,7 @@ abstract contract Queue is LiquidityManagement, IQueue {
         uint256 amount,
         bool instantClaim
     ) internal {
-        uint256 assets = instantClaim
+        uint256 baseAssets = instantClaim
             ? amount
             : Math.mulDiv(
                 amount,
@@ -271,11 +271,11 @@ abstract contract Queue is LiquidityManagement, IQueue {
                 InterestLib.RAY
             );
 
-        uint256 shares = convertToShares(assets);
-        if (shares == 0) assets = 0;
+        uint256 shares = convertToShares(baseAssets);
+        if (shares == 0) baseAssets = 0;
 
-        $.ledger[owner].assetsIn += assets;
-        $.ledger[owner].sharesIn += shares;
+        $.ledger[owner].depositedAssets += baseAssets;
+        $.ledger[owner].sharesOwed += shares;
 
         if (!instantClaim) {
             $.ledger[owner].pendingSavingsShares -= amount;
@@ -283,7 +283,7 @@ abstract contract Queue is LiquidityManagement, IQueue {
         }
 
         $.totalClaimableDepositShares += shares;
-        emit ClaimableDeposit(owner, $.ledger[owner].assetsIn);
+        emit ClaimableDeposit(owner, $.ledger[owner].depositedAssets);
     }
 
     function _markClaimableWithdraw(
@@ -294,8 +294,8 @@ abstract contract Queue is LiquidityManagement, IQueue {
     ) internal {
         uint256 assets = convertToAssets(amount);
 
-        $.ledger[owner].sharesOut += amount;
-        $.ledger[owner].assetsOut += assets;
+        $.ledger[owner].withdrawnShares += amount;
+        $.ledger[owner].assetsOwed += assets;
         $.totalClaimableWithdrawAssets += assets;
 
         if (instantClaim) {
@@ -305,7 +305,7 @@ abstract contract Queue is LiquidityManagement, IQueue {
             $.totalWithdrawQueueShares -= amount;
         }
 
-        emit ClaimableWithdraw(owner, $.ledger[owner].assetsOut);
+        emit ClaimableWithdraw(owner, $.ledger[owner].assetsOwed);
     }
 
     /// @notice Cleans up void registry entries and links new data
