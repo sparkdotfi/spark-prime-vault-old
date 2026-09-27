@@ -242,9 +242,9 @@ abstract contract VaultBase is
 
     function availableCapacity() public view returns (uint256 available) {
         Storage storage $ = getStorage();
-        uint256 committed = totalSupply() + $.totalClaimableDepositShares;
-        available = $.maximumCapacity > committed
-            ? $.maximumCapacity - committed
+        uint256 supply = totalSupply();
+        available = $.maximumCapacity > supply
+            ? $.maximumCapacity - supply
             : 0;
     }
 

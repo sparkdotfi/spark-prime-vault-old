@@ -121,7 +121,7 @@ abstract contract Queue is LiquidityManagement, IQueue {
         /// Order Matching should never result in share insolvency
         /// We should never go into negative shares after `processQueue`
         int256 sharesLeft = $.maximumCapacity.toInt256() -
-            (totalSupply() + $.totalClaimableDepositShares).toInt256();
+            totalSupply().toInt256();
         if (sharesLeft < 0) revert ShareInvariantBroken(sharesLeft);
     }
 
@@ -179,6 +179,7 @@ abstract contract Queue is LiquidityManagement, IQueue {
         uint256 tradeVolume
     ) internal {
         uint256 totalSavingsSharesInQueue = $.totalDepositQueueSavingsShares;
+        uint256 claimableBefore = $.totalClaimableDepositShares;
         uint256 queueValue = _depositQueueValuation();
 
         bool fillAll = tradeVolume >= queueValue;
@@ -200,6 +201,9 @@ abstract contract Queue is LiquidityManagement, IQueue {
 
         /// Reset after we're done
         SAVINGS_VAULT_PRICE_PER_SHARE.asUint256().tstore(0);
+
+        uint256 minted = $.totalClaimableDepositShares - claimableBefore;
+        if (minted > 0) _mint(address(this), minted);
 
         uint256 processedSavingsShares = totalSavingsSharesInQueue -
             $.totalDepositQueueSavingsShares;
@@ -283,6 +287,7 @@ abstract contract Queue is LiquidityManagement, IQueue {
         }
 
         $.totalClaimableDepositShares += shares;
+        if (instantClaim) _mint(address(this), shares);
         emit ClaimableDeposit(owner, $.ledger[owner].depositedAssets);
     }
 

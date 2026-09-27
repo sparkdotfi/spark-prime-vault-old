@@ -434,7 +434,7 @@ contract Vault is
         settlement.sharesOwed -= shares;
         $.totalClaimableDepositShares -= shares;
 
-        _mint(receiver, shares);
+        _transfer(address(this), receiver, shares);
 
         emit Deposit(controller, receiver, assets, shares);
     }

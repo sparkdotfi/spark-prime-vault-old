@@ -20,7 +20,7 @@ interface IVaultManagement {
 
     event MinimumWithdrawUpdated(uint256 amount);
 
-    /// @notice Thrown when VAULT_MANAGER attempts to set maximumCapacity < totalSupply + claimableDepositTotal
+    /// @notice Thrown when VAULT_MANAGER attempts to set maximumCapacity < totalSupply
     error MaximumCapacityCannotExceedCurrentTotal();
 
     /// @notice Thrown when VAULT_MANAGER attempts to set a per-second rate below RAY (a negative rate)
