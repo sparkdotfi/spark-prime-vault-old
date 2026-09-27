@@ -32,6 +32,22 @@ abstract contract VaultManagement is
         emit RateUpdated(oldRate, newRate);
     }
 
+    function setTotalAssets(
+        uint256 newTotalAssets
+    ) public onlyRole(VAULT_MANAGER_ROLE) {
+        Storage storage $ = getStorage();
+
+        InterestLib.accrueInterest($);
+
+        uint256 oldTotalAssets = totalAssets();
+        uint256 cappedAssets = convertToAssets(totalSupply());
+
+        if (newTotalAssets > cappedAssets) revert TotalAssetsExceedIndexValue();
+        $.totalLoss = cappedAssets - newTotalAssets;
+
+        emit TotalAssetsUpdated(oldTotalAssets, newTotalAssets);
+    }
+
     function setMinimumDeposit(
         uint256 amount
     ) public onlyRole(VAULT_MANAGER_ROLE) {

@@ -58,6 +58,9 @@ interface IVault is IERC7540 {
     /// @dev based in 1e27 (RAY math), 1e27 = 0% APR
     function interestRate() external view returns (uint256);
 
+    /// @notice Loss recorded by setTotalAssets, subtracted from convertToAssets(totalSupply()) in totalAssets()
+    function totalLoss() external view returns (uint256);
+
     /// @notice Maximum spPRIME total supply, including shares escrowed by vault for pending redeems and claimable deposits
     function maxCapacity() external view returns (uint256);
 

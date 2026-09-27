@@ -554,6 +554,116 @@ contract VaultManagerUnitTests is QueueHelper {
         assertEq(vault.previewIndex(), accrued);
     }
 
+    function test_setTotalAssets_reportsTheLoss() public {
+        _depositAndClaim(user, 50 ether);
+        uint256 indexValue = vault.totalAssets();
+        uint256 held = vault.convertToAssets(vault.balanceOf(user));
+        uint256 target = (indexValue * 9) / 10;
+
+        vm.prank(vaultManager);
+        vault.setTotalAssets(target);
+
+        assertEq(vault.totalAssets(), target);
+        assertEq(vault.totalLoss(), indexValue - target);
+        assertEq(vault.convertToAssets(vault.balanceOf(user)), held);
+    }
+
+    function test_setTotalAssets_keepsTrackingSupplyAndInterest() public {
+        _depositAndClaim(user, 50 ether);
+        uint256 target = vault.totalAssets() / 2;
+        vm.prank(vaultManager);
+        vault.setTotalAssets(target);
+        uint256 loss = vault.totalLoss();
+
+        vm.warp(block.timestamp + 365 days);
+        _depositAndClaim(userTwo, 10 ether);
+
+        assertEq(vault.totalLoss(), loss);
+        assertEq(
+            vault.totalAssets(),
+            vault.convertToAssets(vault.totalSupply()) - loss
+        );
+        assertGt(vault.totalAssets(), target);
+    }
+
+    function test_setTotalAssets_accruesFirst() public {
+        _depositAndClaim(user, 50 ether);
+        vm.warp(block.timestamp + 30 days);
+        uint256 indexValue = Math.mulDiv(
+            vault.totalSupply(),
+            vault.previewIndex(),
+            RAY
+        );
+        uint256 target = indexValue / 2;
+
+        vm.prank(vaultManager);
+        vault.setTotalAssets(target);
+
+        assertEq(vault.lastAccrual(), block.timestamp);
+        assertEq(vault.totalLoss(), indexValue - target);
+        assertEq(vault.totalAssets(), target);
+    }
+
+    function test_setTotalAssets_canClearTheLoss() public {
+        _depositAndClaim(user, 50 ether);
+        uint256 indexValue = vault.totalAssets();
+
+        vm.startPrank(vaultManager);
+        vault.setTotalAssets(indexValue / 2);
+        vault.setTotalAssets(indexValue);
+        vm.stopPrank();
+
+        assertEq(vault.totalLoss(), 0);
+        assertEq(vault.totalAssets(), indexValue);
+    }
+
+    function test_cannot_setTotalAssets_aboveTheIndexValue() public {
+        _depositAndClaim(user, 50 ether);
+        uint256 indexValue = vault.totalAssets();
+
+        vm.prank(vaultManager);
+        vm.expectRevert(IVaultManagement.TotalAssetsExceedIndexValue.selector);
+        vault.setTotalAssets(indexValue + 1);
+    }
+
+    function test_cannot_setTotalAssets_withoutVaultManagerRole() public {
+        _depositAndClaim(user, 50 ether);
+        uint256 target = vault.totalAssets() / 2;
+
+        vm.prank(rebalancer);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector,
+                rebalancer,
+                VAULT_MANAGER_ROLE
+            )
+        );
+        vault.setTotalAssets(target);
+    }
+
+    function test_setTotalAssets_emitsTotalAssetsUpdated() public {
+        _depositAndClaim(user, 50 ether);
+        uint256 current = vault.totalAssets();
+
+        vm.expectEmit(address(vault));
+        emit IVaultManagement.TotalAssetsUpdated(current, current / 2);
+        vm.prank(vaultManager);
+        vault.setTotalAssets(current / 2);
+    }
+
+    function test_cannot_totalAssets_underflow() public {
+        _depositAndClaim(user, 50 ether);
+        vm.prank(vaultManager);
+        vault.setTotalAssets(0);
+        assertEq(vault.totalAssets(), 0);
+
+        uint256 shares = vault.balanceOf(user) / 2;
+        _coverRedemption(shares);
+        _requestRedeem(user, shares);
+
+        assertEq(vault.totalAssets(), 0);
+    }
+
     function test_setCapacity_emitsCapacityUpdated() public {
         uint256 old = vault.maxCapacity();
 
@@ -627,7 +737,11 @@ contract VaultManagerUnitTests is QueueHelper {
             3,
             "floor"
         );
-        assertEq(vault.convertToAssetsRounded(1, Math.Rounding.Ceil), 4, "ceil");
+        assertEq(
+            vault.convertToAssetsRounded(1, Math.Rounding.Ceil),
+            4,
+            "ceil"
+        );
     }
 
     function test_publicConvertersStillFloor() public {
@@ -698,10 +812,7 @@ contract VaultManagerUnitTests is QueueHelper {
         rate = bound(rate, RAY, RAY + 1e19);
         elapsed = bound(elapsed, 0, 10 * 365 days);
 
-        assertEq(
-            InterestLib._rpow(rate, elapsed),
-            _rpowNearest(rate, elapsed)
-        );
+        assertEq(InterestLib._rpow(rate, elapsed), _rpowNearest(rate, elapsed));
     }
 
     function test_rpow_compoundsTheConfiguredRate() public pure {

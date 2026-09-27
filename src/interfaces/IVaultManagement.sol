@@ -20,14 +20,24 @@ interface IVaultManagement {
 
     event MinimumWithdrawUpdated(uint256 amount);
 
+    /// @notice Emitted when VAULT_MANAGER sets totalAssets to reflect a loss
+    event TotalAssetsUpdated(uint256 oldTotalAssets, uint256 newTotalAssets);
+
     /// @notice Thrown when VAULT_MANAGER attempts to set maximumCapacity < totalSupply
     error MaximumCapacityCannotExceedCurrentTotal();
 
     /// @notice Thrown when VAULT_MANAGER attempts to set a per-second rate below RAY (a negative rate)
     error InterestRateBelowRay();
 
+    /// @notice Thrown when VAULT_MANAGER attempts to set totalAssets above convertToAssets(totalSupply())
+    error TotalAssetsExceedIndexValue();
+
     /// @notice Sets the per-second continiuous interest rate. VAULT_MANAGER only
     function setInterestRate(uint256 newRate) external;
+
+    /// @notice Set totalAssets to reflect a loss. VAULT_MANAGER only
+    /// @dev Records the loss as convertToAssets(totalSupply()) - newTotalAssets; the index and redemption values are unchanged
+    function setTotalAssets(uint256 newTotalAssets) external;
 
     /// @notice Set the fee on withdrawal from timestamp onwards. Existing requests are not affected.
     function updateWithdrawFee(uint256 bps) external;
