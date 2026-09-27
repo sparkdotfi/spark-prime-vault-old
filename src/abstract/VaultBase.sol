@@ -73,7 +73,7 @@ abstract contract VaultBase is
         address controller
     ) public view override returns (uint256 claimableAssets) {
         Storage storage $ = getStorage();
-        claimableAssets = $.ledger[controller].assetsIn;
+        claimableAssets = $.ledger[controller].depositedAssets;
     }
 
     /// @dev We have no concept of requestIDs, therefore this is the controller's claimable balance
@@ -83,7 +83,7 @@ abstract contract VaultBase is
         address controller
     ) public view override returns (uint256 claimableShares) {
         Storage storage $ = getStorage();
-        claimableShares = $.ledger[controller].sharesOut;
+        claimableShares = $.ledger[controller].withdrawnShares;
     }
 
     /** ERC4626 overrides **/
@@ -99,7 +99,7 @@ abstract contract VaultBase is
     {
         if (paused()) return 0;
         Storage storage $ = getStorage();
-        claimableShares = $.ledger[owner].sharesOut;
+        claimableShares = $.ledger[owner].withdrawnShares;
     }
 
     /// @dev Overridenn to provide maximum amount of claimable assets
@@ -113,7 +113,7 @@ abstract contract VaultBase is
     {
         if (paused()) return 0;
         Storage storage $ = getStorage();
-        claimableAssets = $.ledger[receiver].assetsIn;
+        claimableAssets = $.ledger[receiver].depositedAssets;
     }
     function interestRate() public view returns (uint256) {
         Storage storage $ = getStorage();
@@ -193,7 +193,7 @@ abstract contract VaultBase is
     {
         if (paused()) return 0;
         Storage storage $ = getStorage();
-        claimableShares = $.ledger[receiver].sharesIn;
+        claimableShares = $.ledger[receiver].sharesOwed;
     }
 
     /// @dev Overriden to provide the value of maximum claim in base asset
@@ -207,7 +207,7 @@ abstract contract VaultBase is
     {
         if (paused()) return 0;
         Storage storage $ = getStorage();
-        claimValue = $.ledger[owner].assetsOut;
+        claimValue = $.ledger[owner].assetsOwed;
     }
     function totalAssets()
         public
@@ -242,15 +242,10 @@ abstract contract VaultBase is
 
     function availableCapacity() public view returns (uint256 available) {
         Storage storage $ = getStorage();
-        uint256 total = _convertToAssets(totalSupply(), Math.Rounding.Ceil);
-        available = $.maximumCapacity > total ? $.maximumCapacity - total : 0;
-        uint256 locked = _convertToAssets(
-            $.totalClaimableDepositShares,
-            Math.Rounding.Ceil
-        );
-        if (locked >= available) available = 0;
-        else available -= locked;
-        if (convertToShares(available) == 0) available = 0;
+        uint256 supply = totalSupply();
+        available = $.maximumCapacity > supply
+            ? $.maximumCapacity - supply
+            : 0;
     }
 
     function previewDeposit(

@@ -43,6 +43,11 @@ contract VaultHandler is Vault {
         $.totalClaimableDepositShares = value;
     }
 
+    function setMaximumCapacity(uint256 value) external {
+        Storage storage $ = getStorage();
+        $.maximumCapacity = value;
+    }
+
     function setTotalClaimableWithdrawAssets(uint256 value) external {
         Storage storage $ = getStorage();
         $.totalClaimableWithdrawAssets = value;

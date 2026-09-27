@@ -22,14 +22,16 @@ interface IQueue {
 
     function withdrawQueueLength() external view returns (uint256);
 
-    error CapacityExceedsLiquidity();
+    error InputVolumeExceedsLiquidity();
+
+    error InputVolumeExceedsAvailableCapacity();
 
     error PartialFillFailure();
 
     /// @notice Post Process Queue invariant: the vault owes more base asset than it holds
     error AssetInvariantBroken(int256 available);
 
-    /// @notice Post Process Queue invariant: the vault owes more shares than it can deliver
+    /// @notice Post Process Queue invariant: spPRIME total supply exceeded maximumCapacity
     error ShareInvariantBroken(int256 available);
 
     function depositQueueHead()
@@ -48,7 +50,7 @@ interface IQueue {
     /// @notice Total Savings Vault shares currently in the deposit queue
     function totalPendingDeposits() external view returns (uint256 shares);
 
-    /// @notice Total spPRIME shares locked for claimable deposits
+    /// @notice Total spPRIME shares held in escrow for claimable deposits
     function claimableDepositTotal() external view returns (uint256);
 
     /// @notice Total number of Spark Prime Shares waiting to converted to base asset

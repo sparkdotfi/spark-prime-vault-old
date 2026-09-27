@@ -24,11 +24,11 @@ interface IVault is IERC7540 {
 
     struct Settlement {
         address beneficiary;
-        uint256 assetsIn;
-        uint256 sharesIn;
+        uint256 depositedAssets;
+        uint256 sharesOwed;
         uint256 pendingSavingsShares;
-        uint256 sharesOut;
-        uint256 assetsOut;
+        uint256 withdrawnShares;
+        uint256 assetsOwed;
         uint256 pendingSharesOut;
     }
 
@@ -58,11 +58,10 @@ interface IVault is IERC7540 {
     /// @dev based in 1e27 (RAY math), 1e27 = 0% APR
     function interestRate() external view returns (uint256);
 
-    /// @notice Total baseAsset amount allowed in the vault
+    /// @notice Maximum spPRIME total supply, including shares escrowed by vault for pending redeems and claimable deposits
     function maxCapacity() external view returns (uint256);
 
-    /// @notice Total baseAsset amount available before maximum capacity is reached
-    /// @dev Can be negative
+    /// @notice Number of spPRIME shares that can still be minted before maximumCapacity is reached
     function availableCapacity() external view returns (uint256);
 
     /// @notice Current interest rate index based off last accrual timestamp

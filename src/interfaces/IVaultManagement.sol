@@ -20,8 +20,11 @@ interface IVaultManagement {
 
     event MinimumWithdrawUpdated(uint256 amount);
 
-    /// @notice Thrown when VAULT_MANAGER attempts to set maximumCapacity < totalAssets
+    /// @notice Thrown when VAULT_MANAGER attempts to set maximumCapacity < totalSupply
     error MaximumCapacityCannotExceedCurrentTotal();
+
+    /// @notice Thrown when VAULT_MANAGER attempts to set a per-second rate below RAY (a negative rate)
+    error InterestRateBelowRay();
 
     /// @notice Sets the per-second continiuous interest rate. VAULT_MANAGER only
     function setInterestRate(uint256 newRate) external;
@@ -29,7 +32,7 @@ interface IVaultManagement {
     /// @notice Set the fee on withdrawal from timestamp onwards. Existing requests are not affected.
     function updateWithdrawFee(uint256 bps) external;
 
-    /// @notice Set Maximum Vault Capacity (totalAssets cap). VAULT_MANAGER only
+    /// @notice Set Maximum Vault Capacity (spPRIME shares cap). VAULT_MANAGER only
     function setCapacity(uint256 newCapacity) external;
 
     /// @notice Halts every user entry point. VAULT_MANAGER only

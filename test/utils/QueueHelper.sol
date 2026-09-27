@@ -155,21 +155,31 @@ abstract contract QueueHelper is Test {
     }
 
     function _ensureInstantCapacity(uint256 amount) internal {
-        uint256 index = vault.previewIndex();
-        uint256 committed = Math.mulDiv(
-            vault.totalSupply(),
-            index,
-            RAY,
-            Math.Rounding.Ceil
-        ) +
+        uint256 needed = vault.totalSupply() + _sharesFor(amount);
+        if (vault.maxCapacity() < needed) _setCapacity(needed);
+    }
+
+    function _sharesFor(uint256 assets) internal view returns (uint256) {
+        return
+            Math.mulDiv(assets, RAY, vault.previewIndex(), Math.Rounding.Ceil);
+    }
+
+    function _capacityValue() internal view returns (uint256) {
+        return
             Math.mulDiv(
-                vault.claimableDepositTotal(),
-                index,
+                vault.availableCapacity(),
+                vault.previewIndex(),
                 RAY,
                 Math.Rounding.Ceil
             );
-        if (vault.maxCapacity() < committed + amount)
-            _setCapacity(committed + amount);
+    }
+
+    function _fillCapacity(address _user) internal returns (uint256 amount) {
+        _nextBlock();
+        amount = _capacityValue();
+        _fund(_user, amount);
+        vm.prank(_user);
+        vault.requestDeposit(amount, _user, _user);
     }
 
     function _requestRedeem(address _user, uint256 shares) internal {
@@ -184,16 +194,17 @@ abstract contract QueueHelper is Test {
     }
 
     function _ensureCapacity(uint256 needed) internal {
-        if (vault.maxCapacity() < needed) _setCapacity(needed);
+        uint256 shares = _sharesFor(needed);
+        if (vault.maxCapacity() < shares) _setCapacity(shares);
+    }
+
+    function _openCapacity(uint256 assets) internal {
+        _setCapacity(vault.totalSupply() + _sharesFor(assets));
     }
 
     /// @dev force the capacity to current assets to force deposit queues
     function _closeCapacity() internal {
-        _setCapacity(vault.totalAssets());
-    }
-
-    function _absorbAccruedYield() internal {
-        if (vault.totalAssets() > vault.maxCapacity()) _closeCapacity();
+        _setCapacity(vault.totalSupply());
     }
 
     function _drift(uint256 amount) internal view returns (uint256) {
@@ -310,7 +321,9 @@ abstract contract QueueHelper is Test {
     }
 
     function sharesDeliverable() internal view returns (uint256) {
-        return vault.totalMintableShares();
+        uint256 held = vault.balanceOf(address(vault));
+        uint256 escrowed = vault.totalPendingWithdraws();
+        return held > escrowed ? held - escrowed : 0;
     }
 
     /// @notice The invariant: everything marked Claimable must be claimable.
@@ -327,8 +340,13 @@ abstract contract QueueHelper is Test {
         );
         assertEq(
             vault.balanceOf(address(vault)),
-            vault.totalPendingWithdraws(),
-            "ESCROW: vault holds shares beyond pending redeem escrow"
+            vault.totalPendingWithdraws() + vault.claimableDepositTotal(),
+            "ESCROW: vault holds exactly pending withdraw shares and claimable deposit shares"
+        );
+        assertLe(
+            vault.totalSupply(),
+            vault.maxCapacity(),
+            "CAPACITY: supply exceeds maximum capacity"
         );
         assertGe(
             savingsVault.balanceOf(address(vault)),

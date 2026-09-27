@@ -30,7 +30,6 @@ contract QueueUnitTests is QueueHelper {
 
         uint256 volume = _matchVolume();
 
-        _absorbAccruedYield();
         vm.prank(rebalancer);
         vault.processQueue(volume);
 
@@ -51,7 +50,6 @@ contract QueueUnitTests is QueueHelper {
 
         uint256 volume = _matchVolume();
 
-        _absorbAccruedYield();
         vm.prank(rebalancer);
         vault.processQueue(volume);
 
@@ -96,7 +94,6 @@ contract QueueUnitTests is QueueHelper {
             vault.totalPendingWithdraws()
         );
 
-        _absorbAccruedYield();
         vm.prank(rebalancer);
         vault.processQueue(curatorCapacity);
 
@@ -153,7 +150,6 @@ contract QueueUnitTests is QueueHelper {
         );
 
         uint256 curatorCapacity = depositValue;
-        _absorbAccruedYield();
         vm.prank(rebalancer);
         vault.processQueue(curatorCapacity);
 
@@ -215,7 +211,6 @@ contract QueueUnitTests is QueueHelper {
         );
 
         uint256 curatorCapacity = vault.convertToAssets(queuedShares);
-        _absorbAccruedYield();
         vm.prank(rebalancer);
         vault.processQueue(curatorCapacity);
 
@@ -268,7 +263,7 @@ contract QueueUnitTests is QueueHelper {
         uint256 curatorCapacity = totalWithdrawValue; // I'm requesting an non-symmetric amount
         vm.prank(rebalancer);
         vm.expectRevert(
-            abi.encodeWithSelector(IQueue.CapacityExceedsLiquidity.selector)
+            abi.encodeWithSelector(IQueue.InputVolumeExceedsLiquidity.selector)
         );
         vault.processQueue(curatorCapacity);
     }

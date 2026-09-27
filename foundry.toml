@@ -9,3 +9,6 @@ remappings = [
   "@openzeppelin/community-contracts/=lib/openzeppelin-community-contracts/contracts/",
   "src/=src/",
 ]
+
+[invariant]
+fail_on_revert = true

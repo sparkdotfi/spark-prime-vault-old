@@ -162,12 +162,19 @@ contract Vault is
 
         Settlement storage settlement = $.ledger[controller];
 
-        if (assets > settlement.assetsIn)
-            revert InsufficientClaimableBalance(assets, settlement.assetsIn);
+        if (assets > settlement.depositedAssets)
+            revert InsufficientClaimableBalance(
+                assets,
+                settlement.depositedAssets
+            );
 
         InterestLib.accrueInterest($);
 
-        shares = Math.mulDiv(settlement.sharesIn, assets, settlement.assetsIn);
+        shares = Math.mulDiv(
+            settlement.sharesOwed,
+            assets,
+            settlement.depositedAssets
+        );
         if (shares == 0) revert ShareConversionFailure(assets);
 
         _claimDeposit(receiver, controller, assets, shares);
@@ -188,7 +195,10 @@ contract Vault is
         if (convertToShares(assets) == 0) revert ShareConversionFailure(assets);
 
         /// How many shares are available to mint (subtracting what we've committed to claimable deposits)
-        uint256 capacity = availableCapacity();
+        uint256 capacity = _convertToAssets(
+            availableCapacity(),
+            Math.Rounding.Ceil
+        );
 
         Transaction memory transaction = Transaction(
             controller,
@@ -196,7 +206,7 @@ contract Vault is
             assets,
             ++$.nonces[controller]
         );
-        /// Transfer baseAsset from user to vault and emit DepositRequest
+        /// Transfer baseAsset from user to vaul
         IERC20 baseAsset = IERC20(asset());
 
         uint256 before = baseAsset.balanceOf(address(this));
@@ -222,6 +232,7 @@ contract Vault is
         return 0;
     }
 
+    /// @dev Deposit baseAssets into Savings Vault and push to deposit queue
     function _queueDeposit(
         Storage storage $,
         Transaction memory transaction
@@ -265,14 +276,14 @@ contract Vault is
         Storage storage $ = getStorage();
         Settlement storage settlement = $.ledger[controller];
 
-        if (assets > settlement.assetsOut)
-            revert InsufficientClaimableAmount(assets, settlement.assetsOut);
+        if (assets > settlement.assetsOwed)
+            revert InsufficientClaimableAmount(assets, settlement.assetsOwed);
 
-        /// Calculate the amount owed to user, based on their sharesOut and assetsOut at `processQueue` time
+        /// Calculate the amount owed to user, based on their withdrawnShares and assetsOwed at `processQueue` time
         shares = Math.mulDiv(
-            settlement.sharesOut,
+            settlement.withdrawnShares,
             assets,
-            settlement.assetsOut,
+            settlement.assetsOwed,
             Math.Rounding.Ceil
         );
 
@@ -291,15 +302,15 @@ contract Vault is
 
         Settlement storage settlement = $.ledger[controller];
 
-        if (shares > settlement.sharesIn)
-            revert InsufficientClaimableBalance(shares, settlement.sharesIn);
+        if (shares > settlement.sharesOwed)
+            revert InsufficientClaimableBalance(shares, settlement.sharesOwed);
 
         InterestLib.accrueInterest($);
 
         assets = Math.mulDiv(
-            settlement.assetsIn,
+            settlement.depositedAssets,
             shares,
-            settlement.sharesIn,
+            settlement.sharesOwed,
             Math.Rounding.Ceil
         );
 
@@ -384,14 +395,17 @@ contract Vault is
 
         Settlement storage settlement = $.ledger[controller];
 
-        if (settlement.sharesOut < shares)
-            revert InsufficientClaimableAmount(shares, settlement.sharesOut);
+        if (settlement.withdrawnShares < shares)
+            revert InsufficientClaimableAmount(
+                shares,
+                settlement.withdrawnShares
+            );
 
-        /// Calculate the amount owed to user, based on their sharesOut and assetsOut at `processQueue` time
+        /// Calculate the amount owed to user, based on their withdrawnShares and assetsOwed at `processQueue` time
         assets = Math.mulDiv(
-            settlement.assetsOut,
+            settlement.assetsOwed,
             shares,
-            settlement.sharesOut
+            settlement.withdrawnShares
         );
 
         _claimRedeem(receiver, controller, shares, assets);
@@ -416,11 +430,11 @@ contract Vault is
         Storage storage $ = getStorage();
         Settlement storage settlement = $.ledger[controller];
 
-        settlement.assetsIn -= assets;
-        settlement.sharesIn -= shares;
+        settlement.depositedAssets -= assets;
+        settlement.sharesOwed -= shares;
         $.totalClaimableDepositShares -= shares;
 
-        _mint(receiver, shares);
+        _transfer(address(this), receiver, shares);
 
         emit Deposit(controller, receiver, assets, shares);
     }
@@ -434,8 +448,8 @@ contract Vault is
         Storage storage $ = getStorage();
         Settlement storage settlement = $.ledger[controller];
 
-        settlement.sharesOut -= shares;
-        settlement.assetsOut -= assets;
+        settlement.withdrawnShares -= shares;
+        settlement.assetsOwed -= assets;
         $.totalClaimableWithdrawAssets -= assets;
 
         IERC20 baseAsset = IERC20(asset());
@@ -477,10 +491,7 @@ contract Vault is
         emit DepositQueueValuation($.totalDepositQueueSavingsShares);
     }
 
-    function _authorizeCancel(
-        address controller,
-        address owner
-    ) internal view {
+    function _authorizeCancel(address controller, address owner) internal view {
         if (
             msg.sender != owner &&
             msg.sender != controller &&

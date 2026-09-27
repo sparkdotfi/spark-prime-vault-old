@@ -32,17 +32,11 @@ contract VaultManagerUnitTests is QueueHelper {
         _deployVault();
     }
 
-    function test_cannot_setCapacity_overTotalAssets() public {
-        _fundAndDeposit(vault, user, baseAsset, 100 ether);
-
-        vm.prank(user);
-        vault.deposit(100 ether, user);
-
-        assertApproxEqAbs(
-            vault.totalAssets(),
-            100 ether,
-            vault.convertToAssets(1) + 1
-        );
+    function test_cannot_setCapacity_belowCommitedSharesPlusMinted() public {
+        _depositAndClaim(user, 50 ether);
+        _requestDeposit(userTwo, 10 ether);
+        uint256 committed = vault.totalSupply();
+        assertGt(vault.claimableDepositTotal(), 0);
 
         vm.prank(vaultManager);
         vm.expectRevert(
@@ -52,7 +46,11 @@ contract VaultManagerUnitTests is QueueHelper {
                     .selector
             )
         );
-        vault.setCapacity(50 ether);
+        vault.setCapacity(committed - 1);
+
+        vm.prank(vaultManager);
+        vault.setCapacity(committed);
+        assertEq(vault.availableCapacity(), 0);
     }
 
     function test_depositToSavings() public {
@@ -531,6 +529,31 @@ contract VaultManagerUnitTests is QueueHelper {
         vault.redeem(claimable, user, user);
     }
 
+    function test_cannot_setInterestRate_belowRay() public {
+        vm.prank(vaultManager);
+        vm.expectRevert(IVaultManagement.InterestRateBelowRay.selector);
+        vault.setInterestRate(RAY - 1);
+
+        vm.prank(vaultManager);
+        vault.setInterestRate(RAY);
+        assertEq(vault.interestRate(), RAY);
+    }
+
+    function test_setInterestRate_accruesAtTheOldRateFirst() public {
+        vm.warp(block.timestamp + 365 days);
+        uint256 accrued = vault.previewIndex();
+        assertGt(accrued, vault.index());
+
+        vm.prank(vaultManager);
+        vault.setInterestRate(RAY);
+
+        assertEq(vault.index(), accrued);
+        assertEq(vault.lastAccrual(), block.timestamp);
+
+        vm.warp(block.timestamp + 365 days);
+        assertEq(vault.previewIndex(), accrued);
+    }
+
     function test_setCapacity_emitsCapacityUpdated() public {
         uint256 old = vault.maxCapacity();
 
@@ -657,14 +680,6 @@ contract VaultManagerUnitTests is QueueHelper {
         );
     }
 
-    function _rpowFloor(uint256 x, uint256 n) internal pure returns (uint256 z) {
-        z = n % 2 == 1 ? x : RAY;
-        for (n /= 2; n != 0; n /= 2) {
-            x = Math.mulDiv(x, x, RAY);
-            if (n % 2 == 1) z = Math.mulDiv(z, x, RAY);
-        }
-    }
-
     function _rpowNearest(
         uint256 x,
         uint256 n
@@ -676,22 +691,27 @@ contract VaultManagerUnitTests is QueueHelper {
         }
     }
 
-    function testFuzz_rpow_roundsDown(uint256 rate, uint256 elapsed) public pure {
+    function testFuzz_rpow_roundsToNearestLikeSky(
+        uint256 rate,
+        uint256 elapsed
+    ) public pure {
         rate = bound(rate, RAY, RAY + 1e19);
         elapsed = bound(elapsed, 0, 10 * 365 days);
 
-        uint256 factor = InterestLib.rpow(rate, elapsed, RAY);
-
-        assertEq(factor, _rpowFloor(rate, elapsed));
-        assertLe(factor, _rpowNearest(rate, elapsed));
+        assertEq(
+            InterestLib._rpow(rate, elapsed),
+            _rpowNearest(rate, elapsed)
+        );
     }
 
     function test_rpow_compoundsTheConfiguredRate() public pure {
-        assertEq(InterestLib.rpow(TEN_PERCENT_APY, 0, RAY), RAY);
-        assertEq(InterestLib.rpow(TEN_PERCENT_APY, 1, RAY), TEN_PERCENT_APY);
-        assertEq(InterestLib.rpow(RAY, 365 days, RAY), RAY);
+        assertEq(InterestLib._rpow(TEN_PERCENT_APY, 0), RAY);
+        assertEq(InterestLib._rpow(TEN_PERCENT_APY, 1), TEN_PERCENT_APY);
+        assertEq(InterestLib._rpow(RAY, 365 days), RAY);
+        assertEq(InterestLib._rpow(0, 0), RAY);
+        assertEq(InterestLib._rpow(0, 365 days), 0);
         assertApproxEqRel(
-            InterestLib.rpow(TEN_PERCENT_APY, 365 days, RAY),
+            InterestLib._rpow(TEN_PERCENT_APY, 365 days),
             (RAY * 11) / 10,
             1e9
         );

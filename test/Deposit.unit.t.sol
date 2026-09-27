@@ -14,16 +14,12 @@ import {QueueHelper} from "./utils/QueueHelper.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 contract RequestDepositUnitTests is QueueHelper {
-
-
     function setUp() public {
         _deployVault();
     }
     /// @dev If older deposit claims consume the available liquidity, a new requestor shoudn't be able to request and claim instant liquidty
     function test_cannot_claimDeposit_WhenOlderClaimsNotSettled() public {
-        uint256 userDepositSize = vault.availableCapacity();
-
-        _fundAndDeposit(vault, user, baseAsset, userDepositSize); // user gets instant claim, but they never settle it
+        uint256 userDepositSize = _fillCapacity(user); // user gets instant claim, but they never settle it
         _fundAndDeposit(vault, userTwo, baseAsset, userDepositSize); // should go directly to queue, nothing instant claimable
 
         vm.prank(userTwo);
@@ -38,8 +34,7 @@ contract RequestDepositUnitTests is QueueHelper {
     }
 
     function test_claimDeposit() public {
-        uint256 userDepositSize = vault.availableCapacity();
-        _fundAndDeposit(vault, user, baseAsset, userDepositSize);
+        uint256 userDepositSize = _fillCapacity(user);
         // The user claims all the funds this time
         vm.startPrank(user);
         vault.deposit(userDepositSize, user);
@@ -112,6 +107,8 @@ contract RequestDepositUnitTests is QueueHelper {
 
     /// @dev When vault has available capacity, but not as much as user needs. Partial instant claim, remainder queued
     function test_belowCapacity_partialInstantClaim_remainderQueued() public {
+        _openCapacity(100 ether);
+        uint256 instant = _capacityValue();
         vm.startPrank(user);
         deal(address(baseAsset), user, 200 ether);
         assertEq(vault.availableCapacity(), vault.maxCapacity());
@@ -119,14 +116,14 @@ contract RequestDepositUnitTests is QueueHelper {
         baseAsset.approve(address(vault), 200 ether);
         vault.requestDeposit(200 ether, user, user);
 
-        assertEq(100 ether, vault.maxDeposit(user)); /// Only 100 ether (max vault capacity) immedietely claimable
-        uint256 shares = vault.convertToShares(100 ether);
+        assertEq(instant, vault.maxDeposit(user)); /// Only max vault capacity immedietely claimable
+        uint256 shares = vault.convertToShares(instant);
 
         assertApproxEqAbs(
             savingsVault.previewRedeem(vault.totalPendingDeposits()),
-            100 ether,
+            200 ether - instant,
             ROUNDING_DUST
-        ); /// My remaining 100 ether should be pending (total value of queue)
+        ); /// My remaining ether should be pending (total value of queue)
 
         VaultHandler.Transaction memory data = vault.depositQueueHead();
         assertEq(data.amount, vault.totalPendingDeposits());
@@ -138,17 +135,17 @@ contract RequestDepositUnitTests is QueueHelper {
             abi.encodeWithSelector(
                 IVault.InsufficientClaimableBalance.selector,
                 200 ether,
-                100 ether
+                instant
             )
         );
         vault.deposit(200 ether, user);
 
         /// Because the vault is over capacity, and no withdraw queue exists to fulfill, I cannot claim my 100 ether.
         /// @dev Curator must rebalance
-        vault.deposit(100 ether, user);
+        vault.deposit(instant, user);
 
         shares = vault.balanceOf(user);
-        assertApproxEqAbs(shares, vault.convertToShares(100 ether), 1 wei);
+        assertEq(shares, vault.maxCapacity());
     }
     function _fundAndDeposit(address _user, uint256 amount) internal {
         _nextBlock();
@@ -160,6 +157,22 @@ contract RequestDepositUnitTests is QueueHelper {
         vault.requestDeposit(amount, _user, _user);
 
         vm.stopPrank();
+    }
+
+    function test_deposit_transfersSharesToVault() public {
+        _requestDeposit(user, 10 ether);
+        uint256 shares = vault.maxMint(user);
+        uint256 supply = vault.totalSupply();
+        assertEq(vault.balanceOf(address(vault)), shares);
+
+        vm.expectEmit(address(vault));
+        emit IERC20.Transfer(address(vault), user, shares);
+        vm.prank(user);
+        vault.deposit(10 ether, user);
+
+        assertEq(vault.balanceOf(user), shares);
+        assertEq(vault.balanceOf(address(vault)), 0);
+        assertEq(vault.totalSupply(), supply);
     }
 
     function test_claimable_reducesAvailableCapacity() public {
@@ -176,7 +189,7 @@ contract RequestDepositUnitTests is QueueHelper {
         public
     {
         // A previous user has eat all the available capacity
-        _fundAndDeposit(makeAddr("CapacityEater"), vault.availableCapacity());
+        _fillCapacity(makeAddr("CapacityEater"));
 
         vm.startPrank(user);
         deal(address(baseAsset), user, 10 ether);
@@ -206,9 +219,7 @@ contract RequestDepositUnitTests is QueueHelper {
     {
         // A previous user has eat all the available capacity
         address capacityEater = makeAddr("CapacityEater");
-        uint256 totalVaultCapacity = vault.availableCapacity();
-
-        _fundAndDeposit(capacityEater, totalVaultCapacity);
+        uint256 totalVaultCapacity = _fillCapacity(capacityEater);
 
         assertEq(
             vault.maxDeposit(capacityEater),
@@ -240,7 +251,11 @@ contract RequestDepositUnitTests is QueueHelper {
         );
 
         VaultHandler.Transaction memory data = vault.depositQueueHead();
-        assertEq(data.amount, vault.totalPendingDeposits(), "amount matches queue");
+        assertEq(
+            data.amount,
+            vault.totalPendingDeposits(),
+            "amount matches queue"
+        );
         assertEq(data.controller, user, "controller is user");
         assertEq(data.nonce, 1, "nonce is 1");
     }
@@ -434,10 +449,7 @@ contract RequestDepositUnitTests is QueueHelper {
 
         vm.prank(userTwo);
         vm.expectRevert(
-            abi.encodeWithSelector(
-                IVault.UnauthorizedCaller.selector,
-                userTwo
-            )
+            abi.encodeWithSelector(IVault.UnauthorizedCaller.selector, userTwo)
         );
         vault.deposit(40 ether, userTwo, user, 7);
     }
@@ -498,15 +510,22 @@ contract RequestDepositUnitTests is QueueHelper {
     }
 
     function test_requestDeposit_onlyTheQueuedRemainderIsSaved() public {
-        _setCapacity(30 ether);
-
-        _requestDeposit(user, 40 ether);
+        _openCapacity(30 ether);
+        _nextBlock();
+        uint256 instant = _capacityValue();
+        _fund(user, 40 ether);
+        vm.prank(user);
+        vault.requestDeposit(40 ether, user, user);
         uint256 shares = savingsVault.balanceOf(address(vault));
 
-        assertEq(vault.maxDeposit(user), 30 ether);
-        assertEq(baseAsset.balanceOf(address(vault)), 30 ether);
+        assertEq(vault.maxDeposit(user), instant);
+        assertEq(baseAsset.balanceOf(address(vault)), instant);
         assertEq(vault.totalPendingDeposits(), shares);
-        assertApproxEqAbs(savingsVault.previewRedeem(shares), 10 ether, 2);
+        assertApproxEqAbs(
+            savingsVault.previewRedeem(shares),
+            40 ether - instant,
+            2
+        );
     }
 
     function test_cannot_requestDeposit_whenTheQueuedRemainderBuysNoSavingsShares()
@@ -517,7 +536,7 @@ contract RequestDepositUnitTests is QueueHelper {
         vault.depositToSavings(50 ether);
         _accrueSavings(1_000);
 
-        uint256 capacity = vault.availableCapacity();
+        uint256 capacity = _capacityValue();
         _fund(userTwo, capacity + 1);
 
         vm.prank(userTwo);
@@ -675,19 +694,21 @@ contract RequestDepositUnitTests is QueueHelper {
         assertEq(vault.maxDeposit(user), 10 ether - 4);
     }
 
-    function test_requestDeposit_neverCreditsCapacityTooSmallForAShare()
+    function test_requestDeposit_instantlyCreditsTheLastShareOfCapacity()
         public
     {
         _deployCleanVault(MINIMUM_DEPOSIT, MINIMUM_WITHDRAW);
         vault.setIndexRate((RAY * 3) / 2);
-        _requestDeposit(user, vault.availableCapacity());
+        _setCapacity(1);
+        _requestDeposit(user, 10 ether);
 
+        assertEq(vault.maxMint(user), 1);
+        assertEq(vault.maxDeposit(user), 2);
         assertEq(vault.availableCapacity(), 0);
-
-        _requestDeposit(userTwo, 10 ether);
-
-        assertEq(vault.maxDeposit(userTwo), 0);
         assertEq(vault.depositQueueLength(), 1);
+
+        _claim(user, 2);
+        assertEq(vault.balanceOf(user), 1);
     }
 
     function test_cannot_requestDeposit_anAmountThatBuysNoShare() public {
