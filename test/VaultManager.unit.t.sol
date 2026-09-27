@@ -655,14 +655,6 @@ contract VaultManagerUnitTests is QueueHelper {
         );
     }
 
-    function _rpowFloor(uint256 x, uint256 n) internal pure returns (uint256 z) {
-        z = n % 2 == 1 ? x : RAY;
-        for (n /= 2; n != 0; n /= 2) {
-            x = Math.mulDiv(x, x, RAY);
-            if (n % 2 == 1) z = Math.mulDiv(z, x, RAY);
-        }
-    }
-
     function _rpowNearest(
         uint256 x,
         uint256 n
@@ -674,22 +666,27 @@ contract VaultManagerUnitTests is QueueHelper {
         }
     }
 
-    function testFuzz_rpow_roundsDown(uint256 rate, uint256 elapsed) public pure {
+    function testFuzz_rpow_roundsToNearestLikeSky(
+        uint256 rate,
+        uint256 elapsed
+    ) public pure {
         rate = bound(rate, RAY, RAY + 1e19);
         elapsed = bound(elapsed, 0, 10 * 365 days);
 
-        uint256 factor = InterestLib.rpow(rate, elapsed, RAY);
-
-        assertEq(factor, _rpowFloor(rate, elapsed));
-        assertLe(factor, _rpowNearest(rate, elapsed));
+        assertEq(
+            InterestLib._rpow(rate, elapsed),
+            _rpowNearest(rate, elapsed)
+        );
     }
 
     function test_rpow_compoundsTheConfiguredRate() public pure {
-        assertEq(InterestLib.rpow(TEN_PERCENT_APY, 0, RAY), RAY);
-        assertEq(InterestLib.rpow(TEN_PERCENT_APY, 1, RAY), TEN_PERCENT_APY);
-        assertEq(InterestLib.rpow(RAY, 365 days, RAY), RAY);
+        assertEq(InterestLib._rpow(TEN_PERCENT_APY, 0), RAY);
+        assertEq(InterestLib._rpow(TEN_PERCENT_APY, 1), TEN_PERCENT_APY);
+        assertEq(InterestLib._rpow(RAY, 365 days), RAY);
+        assertEq(InterestLib._rpow(0, 0), RAY);
+        assertEq(InterestLib._rpow(0, 365 days), 0);
         assertApproxEqRel(
-            InterestLib.rpow(TEN_PERCENT_APY, 365 days, RAY),
+            InterestLib._rpow(TEN_PERCENT_APY, 365 days),
             (RAY * 11) / 10,
             1e9
         );
