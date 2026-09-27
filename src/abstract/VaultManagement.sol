@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import {IVaultManagement} from "../interfaces/IVaultManagement.sol";
 import {VaultBase} from "./VaultBase.sol";
+import {InterestLib} from "../libraries/InterestLib.sol";
 import {
     AccessControlUpgradeable
 } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
@@ -23,7 +24,9 @@ abstract contract VaultManagement is
     function setInterestRate(
         uint256 newRate
     ) public onlyRole(VAULT_MANAGER_ROLE) {
+        if (newRate < InterestLib.RAY) revert InterestRateBelowRay();
         Storage storage $ = getStorage();
+        InterestLib.accrueInterest($);
         uint256 oldRate = $.ratePerSecond;
         $.ratePerSecond = newRate;
         emit RateUpdated(oldRate, newRate);

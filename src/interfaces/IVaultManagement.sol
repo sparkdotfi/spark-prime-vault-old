@@ -23,6 +23,9 @@ interface IVaultManagement {
     /// @notice Thrown when VAULT_MANAGER attempts to set maximumCapacity < totalSupply + claimableDepositTotal
     error MaximumCapacityCannotExceedCurrentTotal();
 
+    /// @notice Thrown when VAULT_MANAGER attempts to set a per-second rate below RAY (a negative rate)
+    error InterestRateBelowRay();
+
     /// @notice Sets the per-second continiuous interest rate. VAULT_MANAGER only
     function setInterestRate(uint256 newRate) external;
 
