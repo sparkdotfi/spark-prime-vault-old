@@ -2,10 +2,23 @@
 A `Settlement` entry exists for all participating users. It is the users accounting ledger, and is used by helper view functions as well as the core accounting logic for mint/burning/queuing. 
 
 ### Transaction
-An element in the FIFO queue is represented as a `Transaction` object. The queue is represented as a `TransactionQueue`, with it's own library `TransactionLob` built on-top of the OpenZeppelin Double-Ended Queue. 
+An element in the FIFO queue is represented as a `Transaction` object. The queue is represented as a `TransactionQueue`, with it's own library `TransactionLib` built on-top of the OpenZeppelin Double-Ended Queue. 
 
 ### Interest 
 Skys default interest rate model is mirrored, compounding rate per-second. It is not possible to set the value below `1 RAY` i.e negative rate. 
+
+
+### Actors
+The Spark Planner orchestrates. Entry-point can be either the planner directly or the PAU. From my understanding, the FLC PAU can only ever transfer funds to this vault via normal ERC20 transfer. The contract is agnostic to the existence of an FLC.
+
+## SPARK PAU 
+The Spark PAU is responsible for extracting and injecting funds via `take` and `ERC20.transfer`:
+ `LIQUIDITY_MANAGER` (see `ILiquidityManagement`)
+
+## Spark Automated Software (Planner)
+The Spark Planner is responsible for Adjusting Interest Rates, Unrestrictedly moving idle funds to/from Spark Savings Vault and executing order-matching
+Acts as the `REBALANCER` (see `IRebalancer`)
+Acts as the `VAULT_MANAGER` (see `IVaultManagement`)
 
 ### Deposits 
 #### Request Deposit
