@@ -155,22 +155,13 @@ abstract contract QueueHelper is Test {
     }
 
     function _ensureInstantCapacity(uint256 amount) internal {
-        uint256 needed = _committedShares() + _sharesFor(amount);
+        uint256 needed = vault.totalSupply() + _sharesFor(amount);
         if (vault.maxCapacity() < needed) _setCapacity(needed);
-    }
-
-    function _committedShares() internal view returns (uint256) {
-        return vault.totalSupply() + vault.claimableDepositTotal();
     }
 
     function _sharesFor(uint256 assets) internal view returns (uint256) {
         return
-            Math.mulDiv(
-                assets,
-                RAY,
-                vault.previewIndex(),
-                Math.Rounding.Ceil
-            );
+            Math.mulDiv(assets, RAY, vault.previewIndex(), Math.Rounding.Ceil);
     }
 
     function _capacityValue() internal view returns (uint256) {
@@ -208,12 +199,12 @@ abstract contract QueueHelper is Test {
     }
 
     function _openCapacity(uint256 assets) internal {
-        _setCapacity(_committedShares() + _sharesFor(assets));
+        _setCapacity(vault.totalSupply() + _sharesFor(assets));
     }
 
     /// @dev force the capacity to current assets to force deposit queues
     function _closeCapacity() internal {
-        _setCapacity(_committedShares());
+        _setCapacity(vault.totalSupply());
     }
 
     function _drift(uint256 amount) internal view returns (uint256) {
@@ -330,9 +321,9 @@ abstract contract QueueHelper is Test {
     }
 
     function sharesDeliverable() internal view returns (uint256) {
-        uint256 supply = vault.totalSupply();
-        uint256 cap = vault.maxCapacity();
-        return cap > supply ? cap - supply : 0;
+        uint256 held = vault.balanceOf(address(vault));
+        uint256 escrowed = vault.totalPendingWithdraws();
+        return held > escrowed ? held - escrowed : 0;
     }
 
     /// @notice The invariant: everything marked Claimable must be claimable.
@@ -349,8 +340,13 @@ abstract contract QueueHelper is Test {
         );
         assertEq(
             vault.balanceOf(address(vault)),
-            vault.totalPendingWithdraws(),
-            "ESCROW: vault holds shares beyond pending redeem escrow"
+            vault.totalPendingWithdraws() + vault.claimableDepositTotal(),
+            "ESCROW: vault holds exactly pending withdraw shares and claimable deposit shares"
+        );
+        assertLe(
+            vault.totalSupply(),
+            vault.maxCapacity(),
+            "CAPACITY: supply exceeds maximum capacity"
         );
         assertGe(
             savingsVault.balanceOf(address(vault)),

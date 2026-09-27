@@ -32,11 +32,8 @@ contract CapacityInvariantTests is QueueHelper {
         );
     }
 
-    function invariant_mintedAndLockedSharesNeverExceedTheCap() public view {
-        assertLe(
-            vault.totalSupply() + vault.claimableDepositTotal(),
-            vault.maxCapacity()
-        );
+    function invariant_totalSupplyNeverExceedsMaxCapacity() public view {
+        assertLe(vault.totalSupply(), vault.maxCapacity());
     }
 
     function invariant_solvent() public view {
@@ -47,8 +44,7 @@ contract CapacityInvariantTests is QueueHelper {
         address[] memory actors = handler.getActors();
         for (uint256 i; i < actors.length; ++i) {
             assertTrue(
-                vault.maxDeposit(actors[i]) == 0 ||
-                    vault.maxMint(actors[i]) > 0
+                vault.maxDeposit(actors[i]) == 0 || vault.maxMint(actors[i]) > 0
             );
         }
     }

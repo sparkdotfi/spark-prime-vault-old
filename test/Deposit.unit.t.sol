@@ -14,8 +14,6 @@ import {QueueHelper} from "./utils/QueueHelper.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 contract RequestDepositUnitTests is QueueHelper {
-
-
     function setUp() public {
         _deployVault();
     }
@@ -161,6 +159,22 @@ contract RequestDepositUnitTests is QueueHelper {
         vm.stopPrank();
     }
 
+    function test_deposit_transfersSharesToVault() public {
+        _requestDeposit(user, 10 ether);
+        uint256 shares = vault.maxMint(user);
+        uint256 supply = vault.totalSupply();
+        assertEq(vault.balanceOf(address(vault)), shares);
+
+        vm.expectEmit(address(vault));
+        emit IERC20.Transfer(address(vault), user, shares);
+        vm.prank(user);
+        vault.deposit(10 ether, user);
+
+        assertEq(vault.balanceOf(user), shares);
+        assertEq(vault.balanceOf(address(vault)), 0);
+        assertEq(vault.totalSupply(), supply);
+    }
+
     function test_claimable_reducesAvailableCapacity() public {
         // A previous user has eat all the available capacity
         address capacityEater = makeAddr("CapacityEater");
@@ -237,7 +251,11 @@ contract RequestDepositUnitTests is QueueHelper {
         );
 
         VaultHandler.Transaction memory data = vault.depositQueueHead();
-        assertEq(data.amount, vault.totalPendingDeposits(), "amount matches queue");
+        assertEq(
+            data.amount,
+            vault.totalPendingDeposits(),
+            "amount matches queue"
+        );
         assertEq(data.controller, user, "controller is user");
         assertEq(data.nonce, 1, "nonce is 1");
     }
@@ -431,10 +449,7 @@ contract RequestDepositUnitTests is QueueHelper {
 
         vm.prank(userTwo);
         vm.expectRevert(
-            abi.encodeWithSelector(
-                IVault.UnauthorizedCaller.selector,
-                userTwo
-            )
+            abi.encodeWithSelector(IVault.UnauthorizedCaller.selector, userTwo)
         );
         vault.deposit(40 ether, userTwo, user, 7);
     }

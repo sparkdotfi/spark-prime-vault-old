@@ -145,7 +145,7 @@ contract CapacityHandler is QueueHelper {
     }
 
     function setCapacity(uint256 room) external {
-        _setCapacity(_committedShares() + bound(room, 0, 200 ether));
+        _setCapacity(vault.totalSupply() + bound(room, 0, 200 ether));
     }
 
     function injectLiquidity(uint256 amount) external {

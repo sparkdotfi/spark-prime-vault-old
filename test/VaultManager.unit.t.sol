@@ -35,7 +35,7 @@ contract VaultManagerUnitTests is QueueHelper {
     function test_cannot_setCapacity_belowCommitedSharesPlusMinted() public {
         _depositAndClaim(user, 50 ether);
         _requestDeposit(userTwo, 10 ether);
-        uint256 committed = vault.totalSupply() + vault.claimableDepositTotal();
+        uint256 committed = vault.totalSupply();
         assertGt(vault.claimableDepositTotal(), 0);
 
         vm.prank(vaultManager);
