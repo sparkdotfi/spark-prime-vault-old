@@ -16,7 +16,7 @@ The Spark PAU is responsible for extracting and injecting funds via `take` and `
  `LIQUIDITY_MANAGER` (see `ILiquidityManagement`)
 
 ## Spark Automated Software (Planner)
-The Spark Planner is responsible for Adjusting Interest Rates, Unrestrictedly moving idle funds to/from Spark Savings Vault and executing order-matching
+The Spark Planner is responsible for Adjusting Interest Rates, Lowering totalAssets to reflect a realized loss, Unrestrictedly moving idle funds to/from Spark Savings Vault and executing order-matching
 Acts as the `REBALANCER` (see `IRebalancer`)
 Acts as the `VAULT_MANAGER` (see `IVaultManagement`)
 
