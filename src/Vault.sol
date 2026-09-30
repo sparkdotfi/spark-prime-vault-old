@@ -186,7 +186,7 @@ contract Vault is
         address owner
     ) public whenNotPaused nonReentrant returns (uint256) {
         Storage storage $ = getStorage();
-        if (assets == 0) revert ZeroValueProvided();
+        if (assets == 0 || controller == address(0)) revert ZeroValueProvided();
         if (assets < $.minimumDeposit)
             revert MustExceedMinimumRequestAmount($.minimumDeposit);
         if (msg.sender != owner) revert UnauthorizedCaller(msg.sender);
@@ -330,7 +330,7 @@ contract Vault is
         address owner
     ) public whenNotPaused nonReentrant returns (uint256) {
         Storage storage $ = getStorage();
-        if (shares == 0) revert ZeroValueProvided();
+        if (shares == 0 || controller == address(0)) revert ZeroValueProvided();
         if (convertToAssets(shares) < $.minimumWithdraw)
             revert MustExceedMinimumRequestAmount($.minimumWithdraw);
 
@@ -477,7 +477,7 @@ contract Vault is
 
         uint256 shares = data.amount;
 
-        delete $.depositQueue.entries[element];
+        $.depositQueue.cancel(element);
         $.totalDepositQueueSavingsShares -= shares;
         $.ledger[controller].pendingSavingsShares -= shares;
 

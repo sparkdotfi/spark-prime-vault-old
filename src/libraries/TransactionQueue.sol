@@ -16,6 +16,7 @@ library TransactionQueue {
     struct RequestQueue {
         DoubleEndedQueue.Bytes32Deque order;
         mapping(bytes32 => IVault.Transaction) entries;
+        uint256 cancelled;
     }
 
     function key(
@@ -28,7 +29,11 @@ library TransactionQueue {
     function tryGet(
         RequestQueue storage queue,
         bytes32 element
-    ) internal view returns (bool active, IVault.Transaction memory transaction) {
+    )
+        internal
+        view
+        returns (bool active, IVault.Transaction memory transaction)
+    {
         transaction = queue.entries[element];
         active = transaction.controller != address(0);
     }
@@ -52,7 +57,7 @@ library TransactionQueue {
     }
 
     function isEmpty(RequestQueue storage queue) internal view returns (bool) {
-        return queue.order.empty();
+        return queue.order.length() == queue.cancelled;
     }
 
     function pop(
@@ -64,6 +69,32 @@ library TransactionQueue {
         (active, data) = tryGet(queue, value);
 
         if (active) delete queue.entries[value];
+        else --queue.cancelled;
+    }
+
+    function cancel(RequestQueue storage queue, bytes32 element) internal {
+        delete queue.entries[element];
+        ++queue.cancelled;
+    }
+
+    function sanitize(
+        RequestQueue storage queue,
+        uint256 maxIterations
+    ) internal returns (uint256 removed) {
+        uint256 n = queue.order.length();
+        if (maxIterations < n) n = maxIterations;
+
+        bytes32[] memory activeRequests = new bytes32[](n);
+        uint256 kept;
+        for (uint256 i; i < n && removed < queue.cancelled; ++i) {
+            bytes32 element = queue.order.popFront();
+            (bool active, ) = tryGet(queue, element);
+            if (active) activeRequests[kept++] = element;
+            else ++removed;
+        }
+
+        while (kept > 0) queue.order.pushFront(activeRequests[--kept]);
+        queue.cancelled -= removed;
     }
 
     function push(

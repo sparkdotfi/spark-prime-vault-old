@@ -71,7 +71,8 @@ abstract contract Queue is LiquidityManagement, IQueue {
     /// @notice Provides the number of requests present in the FIFO Deposit Queue
     function depositQueueLength() public view returns (uint256) {
         Storage storage $ = getStorage();
-        return TransactionQueue.length($.depositQueue);
+        return
+            TransactionQueue.length($.depositQueue) - $.depositQueue.cancelled;
     }
 
     /// @notice Provides the first entry in the FIFO Deposit Queue
@@ -129,6 +130,13 @@ abstract contract Queue is LiquidityManagement, IQueue {
     function maxTradeVolume() public view returns (uint256) {
         return
             Math.min(availableDepositLiquidity(), availableWithdrawLiquidity());
+    }
+
+    function sanitizeDepositQueue(
+        uint256 maxIterations
+    ) external returns (uint256 removed) {
+        Storage storage $ = getStorage();
+        removed = $.depositQueue.sanitize(maxIterations);
     }
 
     /// @dev Vaults liquid baseAssets + baseAssets deposited from deposit queue into savings vault
