@@ -54,7 +54,6 @@ abstract contract VaultBase is
         uint256 totalWithdrawQueueShares;
         uint256 totalClaimableDepositShares; //in spPRIME shares, frozen at match
         uint256 totalClaimableWithdrawAssets; //in base asset, frozen at match
-        uint256 totalLoss;
     }
 
     bytes32 constant STORAGE_SLOT =
@@ -216,14 +215,7 @@ abstract contract VaultBase is
         override(ERC4626Upgradeable, IERC4626)
         returns (uint256)
     {
-        Storage storage $ = getStorage();
-        uint256 assets = convertToAssets(totalSupply());
-        return assets > $.totalLoss ? assets - $.totalLoss : 0;
-    }
-
-    function totalLoss() public view returns (uint256) {
-        Storage storage $ = getStorage();
-        return $.totalLoss;
+        return convertToAssets(totalSupply());
     }
     function lastAccrual() public view returns (uint256) {
         Storage storage $ = getStorage();

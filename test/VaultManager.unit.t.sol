@@ -560,30 +560,58 @@ contract VaultManagerUnitTests is QueueHelper {
         uint256 held = vault.convertToAssets(vault.balanceOf(user));
         uint256 target = (indexValue * 9) / 10;
 
+        _pause();
         vm.prank(vaultManager);
         vault.setTotalAssets(target);
 
         assertEq(vault.totalAssets(), target);
-        assertEq(vault.totalLoss(), indexValue - target);
-        assertEq(vault.convertToAssets(vault.balanceOf(user)), held);
+        assertApproxEqAbs(
+            vault.convertToAssets(vault.balanceOf(user)),
+            (held * 9) / 10,
+            1
+        );
     }
 
     function test_setTotalAssets_keepsTrackingSupplyAndInterest() public {
         _depositAndClaim(user, 50 ether);
         uint256 target = vault.totalAssets() / 2;
+        _pause();
         vm.prank(vaultManager);
         vault.setTotalAssets(target);
-        uint256 loss = vault.totalLoss();
+        vm.prank(admin);
+        vault.unpause();
 
         vm.warp(block.timestamp + 365 days);
         _depositAndClaim(userTwo, 10 ether);
 
-        assertEq(vault.totalLoss(), loss);
-        assertEq(
-            vault.totalAssets(),
-            vault.convertToAssets(vault.totalSupply()) - loss
-        );
         assertGt(vault.totalAssets(), target);
+        assertApproxEqAbs(
+            vault.convertToAssets(vault.balanceOf(user)),
+            vault.totalAssets() - 10 ether,
+            _drift(10 ether)
+        );
+    }
+
+    function test_setTotalAssets_sharesTheLossProRata() public {
+        _depositAndClaim(user, 50 ether);
+        _depositAndClaim(userTwo, 50 ether);
+        uint256 target = (vault.totalAssets() * 6) / 10;
+        _pause();
+        vm.prank(vaultManager);
+        vault.setTotalAssets(target);
+        vm.prank(admin);
+        vault.unpause();
+
+        uint256 shares = vault.balanceOf(user);
+        _coverRedemption(shares);
+        _requestRedeem(user, shares);
+
+        assertApproxEqAbs(vault.maxWithdraw(user), 30 ether, _drift(30 ether));
+        assertApproxEqAbs(
+            vault.convertToAssets(vault.balanceOf(userTwo)),
+            30 ether,
+            _drift(30 ether)
+        );
     }
 
     function test_setTotalAssets_accruesFirst() public {
@@ -596,34 +624,40 @@ contract VaultManagerUnitTests is QueueHelper {
         );
         uint256 target = indexValue / 2;
 
+        _pause();
         vm.prank(vaultManager);
         vault.setTotalAssets(target);
 
         assertEq(vault.lastAccrual(), block.timestamp);
-        assertEq(vault.totalLoss(), indexValue - target);
         assertEq(vault.totalAssets(), target);
-    }
-
-    function test_setTotalAssets_canClearTheLoss() public {
-        _depositAndClaim(user, 50 ether);
-        uint256 indexValue = vault.totalAssets();
-
-        vm.startPrank(vaultManager);
-        vault.setTotalAssets(indexValue / 2);
-        vault.setTotalAssets(indexValue);
-        vm.stopPrank();
-
-        assertEq(vault.totalLoss(), 0);
-        assertEq(vault.totalAssets(), indexValue);
     }
 
     function test_cannot_setTotalAssets_aboveTheIndexValue() public {
         _depositAndClaim(user, 50 ether);
         uint256 indexValue = vault.totalAssets();
 
+        _pause();
         vm.prank(vaultManager);
         vm.expectRevert(IVaultManagement.TotalAssetsExceedIndexValue.selector);
         vault.setTotalAssets(indexValue + 1);
+    }
+
+    function test_cannot_setTotalAssets_whenNotPaused() public {
+        _depositAndClaim(user, 50 ether);
+        uint256 target = vault.totalAssets() / 2;
+
+        vm.prank(vaultManager);
+        vm.expectRevert(PausableUpgradeable.ExpectedPause.selector);
+        vault.setTotalAssets(target);
+    }
+
+    function test_cannot_setTotalAssets_toZero() public {
+        _depositAndClaim(user, 50 ether);
+
+        _pause();
+        vm.prank(vaultManager);
+        vm.expectRevert(ISparkPrimeVault.ZeroValueProvided.selector);
+        vault.setTotalAssets(0);
     }
 
     function test_cannot_setTotalAssets_withoutVaultManagerRole() public {
@@ -645,24 +679,13 @@ contract VaultManagerUnitTests is QueueHelper {
         _depositAndClaim(user, 50 ether);
         uint256 current = vault.totalAssets();
 
+        _pause();
         vm.expectEmit(address(vault));
         emit IVaultManagement.TotalAssetsUpdated(current, current / 2);
         vm.prank(vaultManager);
         vault.setTotalAssets(current / 2);
     }
 
-    function test_cannot_totalAssets_underflow() public {
-        _depositAndClaim(user, 50 ether);
-        vm.prank(vaultManager);
-        vault.setTotalAssets(0);
-        assertEq(vault.totalAssets(), 0);
-
-        uint256 shares = vault.balanceOf(user) / 2;
-        _coverRedemption(shares);
-        _requestRedeem(user, shares);
-
-        assertEq(vault.totalAssets(), 0);
-    }
 
     function test_setCapacity_emitsCapacityUpdated() public {
         uint256 old = vault.maxCapacity();

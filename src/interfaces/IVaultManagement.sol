@@ -36,7 +36,7 @@ interface IVaultManagement {
     function setInterestRate(uint256 newRate) external;
 
     /// @notice Set totalAssets to reflect a loss. VAULT_MANAGER only
-    /// @dev Records the loss as convertToAssets(totalSupply()) - newTotalAssets; the index and redemption values are unchanged
+    /// @dev Scales the index by newTotalAssets / totalAssets(), so every conversion prices in the loss
     function setTotalAssets(uint256 newTotalAssets) external;
 
     /// @notice Set the fee on withdrawal from timestamp onwards. Existing requests are not affected.

@@ -2,8 +2,10 @@
 pragma solidity ^0.8.20;
 
 import {IVaultManagement} from "../interfaces/IVaultManagement.sol";
+import {ISparkPrimeVault} from "../interfaces/ISparkPrimeVault.sol";
 import {VaultBase} from "./VaultBase.sol";
 import {InterestLib} from "../libraries/InterestLib.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {
     AccessControlUpgradeable
 } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
@@ -34,16 +36,16 @@ abstract contract VaultManagement is
 
     function setTotalAssets(
         uint256 newTotalAssets
-    ) public onlyRole(VAULT_MANAGER_ROLE) {
+    ) public onlyRole(VAULT_MANAGER_ROLE) whenPaused {
+        if (newTotalAssets == 0) revert ISparkPrimeVault.ZeroValueProvided();
         Storage storage $ = getStorage();
 
         InterestLib.accrueInterest($);
 
         uint256 oldTotalAssets = totalAssets();
-        uint256 cappedAssets = convertToAssets(totalSupply());
-
-        if (newTotalAssets > cappedAssets) revert TotalAssetsExceedIndexValue();
-        $.totalLoss = cappedAssets - newTotalAssets;
+        if (newTotalAssets > oldTotalAssets)
+            revert TotalAssetsExceedIndexValue();
+        $.indexRate = Math.mulDiv($.indexRate, newTotalAssets, oldTotalAssets);
 
         emit TotalAssetsUpdated(oldTotalAssets, newTotalAssets);
     }
