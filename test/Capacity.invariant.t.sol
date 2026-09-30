@@ -13,7 +13,7 @@ contract CapacityInvariantTests is QueueHelper {
         savingsVault = handler.getSavingsVault();
         baseAsset = handler.getBaseAsset();
 
-        bytes4[] memory selectors = new bytes4[](11);
+        bytes4[] memory selectors = new bytes4[](12);
         selectors[0] = CapacityHandler.requestDeposit.selector;
         selectors[1] = CapacityHandler.claimDeposit.selector;
         selectors[2] = CapacityHandler.requestRedeem.selector;
@@ -25,6 +25,7 @@ contract CapacityInvariantTests is QueueHelper {
         selectors[8] = CapacityHandler.takeFreeLiquidity.selector;
         selectors[9] = CapacityHandler.warp.selector;
         selectors[10] = CapacityHandler.accrueSavings.selector;
+        selectors[11] = CapacityHandler.sanitizeDepositQueue.selector;
 
         targetContract(address(handler));
         targetSelector(
@@ -47,6 +48,13 @@ contract CapacityInvariantTests is QueueHelper {
                 vault.maxDeposit(actors[i]) == 0 || vault.maxMint(actors[i]) > 0
             );
         }
+    }
+
+    function invariant_depositQueueLengthTracksPendingDeposits() public view {
+        assertEq(
+            vault.depositQueueLength() == 0,
+            vault.totalPendingDeposits() == 0
+        );
     }
 
     function invariant_processQueueAcceptsMaxTradeVolume() public {

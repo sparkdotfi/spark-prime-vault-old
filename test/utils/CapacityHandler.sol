@@ -144,6 +144,10 @@ contract CapacityHandler is QueueHelper {
         if (vault.totalPendingDeposits() < deposits) ++depositMatches;
     }
 
+    function sanitizeDepositQueue(uint256 maxIterations) external {
+        vault.sanitizeDepositQueue(bound(maxIterations, 0, 20));
+    }
+
     function setCapacity(uint256 room) external {
         _setCapacity(vault.totalSupply() + bound(room, 0, 200 ether));
     }

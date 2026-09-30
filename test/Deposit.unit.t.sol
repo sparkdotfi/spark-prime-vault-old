@@ -331,6 +331,14 @@ contract RequestDepositUnitTests is QueueHelper {
         vault.requestDeposit(0, user, user);
     }
 
+    function test_cannot_requestDeposit_forZeroController() public {
+        _fund(user, 10 ether);
+
+        vm.prank(user);
+        vm.expectRevert(ISparkPrimeVault.ZeroValueProvided.selector);
+        vault.requestDeposit(10 ether, address(0), user);
+    }
+
     function test_requestDeposit_anyAmountWhenNoMinimumConfigured() public {
         _deployVaultWithMinimums(0, 0);
 

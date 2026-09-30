@@ -282,6 +282,15 @@ contract RequestWithdrawUnitTests is QueueHelper {
         vault.requestRedeem(0, user, user);
     }
 
+    function test_cannot_requestRedeem_forZeroController() public {
+        _depositAndClaim(user, 50 ether);
+        uint256 shares = vault.balanceOf(user);
+
+        vm.prank(user);
+        vm.expectRevert(ISparkPrimeVault.ZeroValueProvided.selector);
+        vault.requestRedeem(shares, address(0), user);
+    }
+
     function test_requestRedeem_anyAmountWhenNoMinimumConfigured() public {
         _deployVaultWithMinimums(0, 0);
         _depositAndClaim(user, 50 ether);
