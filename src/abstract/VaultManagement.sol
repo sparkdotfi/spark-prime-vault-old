@@ -27,6 +27,7 @@ abstract contract VaultManagement is
         uint256 newRate
     ) public onlyRole(VAULT_MANAGER_ROLE) {
         if (newRate < InterestLib.RAY) revert InterestRateBelowRay();
+        if (newRate > InterestLib.MAX_RATE) revert InterestRateAboveMax();
         Storage storage $ = getStorage();
         InterestLib.accrueInterest($);
         uint256 oldRate = $.ratePerSecond;

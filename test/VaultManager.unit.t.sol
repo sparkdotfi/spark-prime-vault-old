@@ -539,6 +539,16 @@ contract VaultManagerUnitTests is QueueHelper {
         assertEq(vault.interestRate(), RAY);
     }
 
+    function test_cannot_setInterestRate_aboveMaxRate() public {
+        vm.prank(vaultManager);
+        vm.expectRevert(IVaultManagement.InterestRateAboveMax.selector);
+        vault.setInterestRate(InterestLib.MAX_RATE + 1);
+
+        vm.prank(vaultManager);
+        vault.setInterestRate(InterestLib.MAX_RATE);
+        assertEq(vault.interestRate(), InterestLib.MAX_RATE);
+    }
+
     function test_setInterestRate_accruesAtTheOldRateFirst() public {
         vm.warp(block.timestamp + 365 days);
         uint256 accrued = vault.previewIndex();

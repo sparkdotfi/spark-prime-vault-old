@@ -6,6 +6,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 /** Continiously Compounding Interest Rate System */
 library InterestLib {
     uint256 constant RAY = 1e27;
+    uint256 constant MAX_RATE = 1.000000021979553151239153027e27;
 
     function accrueInterest(VaultBase.Storage storage $) internal {
         uint256 timeDelta = block.timestamp - $.lastAccrualTimestamp;

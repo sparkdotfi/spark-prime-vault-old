@@ -29,6 +29,8 @@ interface IVaultManagement {
     /// @notice Thrown when VAULT_MANAGER attempts to set a per-second rate below RAY (a negative rate)
     error InterestRateBelowRay();
 
+    error InterestRateAboveMax();
+
     /// @notice Thrown when VAULT_MANAGER attempts to set totalAssets above convertToAssets(totalSupply())
     error TotalAssetsExceedIndexValue();
 
