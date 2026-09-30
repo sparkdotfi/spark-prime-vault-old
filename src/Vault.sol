@@ -340,6 +340,7 @@ contract Vault is
         address owner
     ) public whenNotPaused nonReentrant returns (uint256) {
         Storage storage $ = getStorage();
+        InterestLib.accrueInterest($);
         if (shares == 0 || controller == address(0)) revert ZeroValueProvided();
         if (convertToAssets(shares) < $.minimumWithdraw)
             revert MustExceedMinimumRequestAmount($.minimumWithdraw);
@@ -357,8 +358,6 @@ contract Vault is
 
         /// Vault locks the users shares by taking ownership of them
         _transfer(owner, address(this), shares);
-
-        InterestLib.accrueInterest($);
 
         /// Amount of baseAsset the vault holds (subtracting amounts commited to claimable withdraws)
         int256 availableLiquidAssets = availableLiquidAssets();

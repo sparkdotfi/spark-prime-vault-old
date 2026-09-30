@@ -273,6 +273,18 @@ contract RequestWithdrawUnitTests is QueueHelper {
         assertEq(vault.withdrawQueueLength(), 1);
     }
 
+    function test_requestRedeem_minimumUsesTheAccruedIndex() public {
+        _depositAndClaim(user, 50 ether);
+        vm.warp(block.timestamp + 1 days);
+        uint256 shares = _sharesFor(MINIMUM_WITHDRAW);
+        assertLt(vault.convertToAssets(shares), MINIMUM_WITHDRAW);
+
+        vm.prank(user);
+        vault.requestRedeem(shares, user, user);
+
+        assertEq(vault.maxRedeem(user), shares);
+    }
+
     function test_requestRedeem_zeroRevertsBeforeTheMinimumCheck() public {
         _depositAndClaim(user, 50 ether);
         _drainLiquidity();
