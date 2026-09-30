@@ -89,6 +89,10 @@ contract Vault is
     function initialize(InitParams calldata params) external initializer {
         if (params.savingsVault.asset() != address(params.baseAsset))
             revert AssetMismatch();
+        if (params.ratePerSecond < InterestLib.RAY)
+            revert InterestRateBelowRay();
+        if (params.ratePerSecond > InterestLib.MAX_RATE)
+            revert InterestRateAboveMax();
 
         __ERC20_init(params.name, params.symbol);
         __ERC4626_init(params.baseAsset);
@@ -271,6 +275,7 @@ contract Vault is
         nonReentrant
         returns (uint256 shares)
     {
+        if (assets == 0) revert ZeroValueProvided();
         _authorizeClaim(receiver, controller);
 
         Storage storage $ = getStorage();
@@ -389,6 +394,7 @@ contract Vault is
         nonReentrant
         returns (uint256 assets)
     {
+        if (shares == 0) revert ZeroValueProvided();
         _authorizeClaim(receiver, controller);
 
         Storage storage $ = getStorage();

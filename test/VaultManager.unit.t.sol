@@ -827,6 +827,25 @@ contract VaultManagerUnitTests is QueueHelper {
         );
     }
 
+    function test_cannot_initialize_withAnInterestRateOutOfBounds() public {
+        VaultHandler implementation = new VaultHandler();
+        IVault.InitParams memory params = _initParams(savingsVault);
+
+        params.ratePerSecond = RAY - 1;
+        vm.expectRevert(IVaultManagement.InterestRateBelowRay.selector);
+        new ERC1967Proxy(
+            address(implementation),
+            abi.encodeCall(Vault.initialize, (params))
+        );
+
+        params.ratePerSecond = InterestLib.MAX_RATE + 1;
+        vm.expectRevert(IVaultManagement.InterestRateAboveMax.selector);
+        new ERC1967Proxy(
+            address(implementation),
+            abi.encodeCall(Vault.initialize, (params))
+        );
+    }
+
     function _rpowNearest(
         uint256 x,
         uint256 n

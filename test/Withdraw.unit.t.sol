@@ -452,6 +452,18 @@ contract RequestWithdrawUnitTests is QueueHelper {
         vault.withdraw(claimValue, userTwo, user);
     }
 
+    function test_cannot_withdraw_zeroAssets() public {
+        vm.prank(user);
+        vm.expectRevert(ISparkPrimeVault.ZeroValueProvided.selector);
+        vault.withdraw(0, user, user);
+    }
+
+    function test_cannot_redeem_zeroShares() public {
+        vm.prank(user);
+        vm.expectRevert(ISparkPrimeVault.ZeroValueProvided.selector);
+        vault.redeem(0, user, user);
+    }
+
     function test_redeem_emitsErc4626Withdraw() public {
         uint256 claimable = _claimableRedeemer(50 ether);
         uint256 assets = vault.convertToAssets(claimable);
