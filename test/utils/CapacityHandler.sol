@@ -49,13 +49,13 @@ contract CapacityHandler is QueueHelper {
             ? _capacityValue()
             : 0;
         uint256 queued = amount > instant ? amount - instant : 0;
-        if (queued > 0 && savingsVault.previewDeposit(queued) == 0) return;
+        bool queues = savingsVault.previewDeposit(queued) > 0;
 
         _fund(actor, amount);
         vm.prank(actor);
         vault.requestDeposit(amount, actor, actor);
 
-        if (queued > 0)
+        if (queues)
             queuedDeposits.push(
                 QueuedDeposit(actor, vault.requestNonce(actor))
             );
