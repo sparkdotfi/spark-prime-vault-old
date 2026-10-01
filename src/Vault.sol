@@ -159,10 +159,7 @@ contract Vault is
         Storage storage $ = getStorage();
         if (assets == 0) revert ZeroValueProvided();
 
-        if (controller != msg.sender && !isOperator(controller, msg.sender))
-            revert UnauthorizedCaller(msg.sender);
-        if (msg.sender != controller && receiver != controller)
-            revert OperatorMaliciousAction(receiver, controller);
+        _authorizeClaim(receiver, controller);
 
         Settlement storage settlement = $.ledger[controller];
 
@@ -424,6 +421,8 @@ contract Vault is
             revert UnauthorizedCaller(msg.sender);
         if (msg.sender != controller && receiver != controller)
             revert OperatorMaliciousAction(receiver, controller);
+        if (receiver == address(0) || receiver == address(this))
+            revert ERC20InvalidReceiver(receiver);
     }
 
     function _claimDeposit(

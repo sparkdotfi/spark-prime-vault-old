@@ -6,6 +6,9 @@ import {VaultHandler} from "./VaultHandler.t.sol";
 import {IVault} from "src/interfaces/IVault.sol";
 import {ISparkPrimeVault} from "src/interfaces/ISparkPrimeVault.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import {
+    IERC20Errors
+} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {USDC} from "./mocks/USDC.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
@@ -462,6 +465,29 @@ contract RequestWithdrawUnitTests is QueueHelper {
             abi.encodeWithSelector(IVault.UnauthorizedCaller.selector, userTwo)
         );
         vault.withdraw(claimValue, userTwo, user);
+    }
+
+    function test_cannot_claimRedeem_toTheVaultOrZeroAddress() public {
+        uint256 claimable = _claimableRedeemer(50 ether);
+        uint256 owed = vault.maxWithdraw(user);
+
+        vm.startPrank(user);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IERC20Errors.ERC20InvalidReceiver.selector,
+                address(vault)
+            )
+        );
+        vault.redeem(claimable, address(vault), user);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IERC20Errors.ERC20InvalidReceiver.selector,
+                address(0)
+            )
+        );
+        vault.withdraw(owed, address(0), user);
+        vm.stopPrank();
     }
 
     function test_cannot_withdraw_zeroAssets() public {
