@@ -160,8 +160,8 @@ The same holds for `withdrawFromSavings` and the savings shares backing the depo
 ### The savings vault is fixed at initialization and cannot be changed
 `initialize` sets the savings vault once and checks that its `asset()` is the base asset. There is no setter: switching venue requires a proxy upgrade, and only while the deposit queue is empty, since every queue entry is denominated in the current venue's shares.
 
-### `setOperator` stores a single operator
-To simplify the model and allow Spark to rotate keys via the `AdministeredAgent`, a single Operator entry is permitted per user. This is set once by the user before they begin their Vault Journey, and Spark rotates it's keys that interact with the address in question.
+### `setOperator` follows the ERC-7540 reference model
+Operators are stored per controller as `mapping(controller => mapping(operator => bool))`, so a user can approve several operators and approving one never revokes another. Spark rotates keys via the `AdministeredAgent`: the user approves the agent's address once
 
 ## Claimable redemptions are paid at the rate during their processQueue execution
 

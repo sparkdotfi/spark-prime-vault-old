@@ -109,6 +109,23 @@ contract OperatorUnitTests is QueueHelper {
         assertFalse(vault.isOperator(user, operator));
     }
 
+    function test_setOperator_approvesOperatorsIndependently() public {
+        address second = makeAddr("second");
+        vm.startPrank(user);
+        vault.setOperator(operator, true);
+        vault.setOperator(second, true);
+        vm.stopPrank();
+
+        assertTrue(vault.isOperator(user, operator));
+        assertTrue(vault.isOperator(user, second));
+
+        vm.prank(user);
+        vault.setOperator(operator, false);
+
+        assertFalse(vault.isOperator(user, operator));
+        assertTrue(vault.isOperator(user, second));
+    }
+
     function test_setOperator_revokingANonOperatorIsANoOp() public {
         vm.prank(user);
         vault.setOperator(operator, true);

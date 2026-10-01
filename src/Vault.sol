@@ -537,9 +537,7 @@ contract Vault is
     ) external returns (bool) {
         Storage storage $ = getStorage();
         if (approved && operator == address(0)) revert ZeroValueProvided();
-        if (approved) $.operators[msg.sender] = operator;
-        else if ($.operators[msg.sender] == operator)
-            $.operators[msg.sender] = address(0);
+        $.operators[msg.sender][operator] = approved;
 
         emit OperatorSet(msg.sender, operator, approved);
         return true;
@@ -549,8 +547,7 @@ contract Vault is
         address controller,
         address operator
     ) public view returns (bool status) {
-        if (operator == address(0)) return false;
         Storage storage $ = getStorage();
-        status = $.operators[controller] == operator;
+        status = $.operators[controller][operator];
     }
 }

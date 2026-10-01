@@ -35,7 +35,7 @@ abstract contract VaultBase is
     /// @custom:storage-location erc7201:sparkprime.vault.v1
     struct Storage {
         mapping(address => Settlement) ledger;
-        mapping(address => address) operators;
+        mapping(address => mapping(address => bool)) operators;
         mapping(address => uint256) nonces;
         TransactionQueue.RequestQueue withdrawQueue;
         TransactionQueue.RequestQueue depositQueue;
