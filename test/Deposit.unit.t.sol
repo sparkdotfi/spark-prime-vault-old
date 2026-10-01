@@ -6,9 +6,6 @@ import {VaultHandler} from "./VaultHandler.t.sol";
 import {IVault} from "src/interfaces/IVault.sol";
 import {ISparkPrimeVault} from "src/interfaces/ISparkPrimeVault.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
-import {
-    IERC7540Deposit
-} from "@openzeppelin/community-contracts/interfaces/IERC7540.sol";
 import {IVaultManagement} from "src/interfaces/IVaultManagement.sol";
 import {USDC} from "./mocks/USDC.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
@@ -539,7 +536,7 @@ contract RequestDepositUnitTests is QueueHelper {
         );
     }
 
-    function test_requestDeposit_refundsARemainderThatBuysNoSavingsShares()
+    function test_cannot_requestDeposit_whenTheQueuedRemainderBuysNoSavingsShares()
         public
     {
         _depositAndClaim(user, 50 ether);
@@ -550,21 +547,11 @@ contract RequestDepositUnitTests is QueueHelper {
         uint256 capacity = _capacityValue();
         _fund(userTwo, capacity + 1);
 
-        vm.expectEmit(address(vault));
-        emit IERC7540Deposit.DepositRequest(
-            userTwo,
-            userTwo,
-            0,
-            userTwo,
-            capacity
-        );
         vm.prank(userTwo);
+        vm.expectRevert(
+            abi.encodeWithSelector(IVault.ShareConversionFailure.selector, 1)
+        );
         vault.requestDeposit(capacity + 1, userTwo, userTwo);
-
-        assertEq(baseAsset.balanceOf(userTwo), 1);
-        assertEq(vault.maxDeposit(userTwo), capacity);
-        assertEq(vault.depositQueueLength(), 0);
-        assertEq(vault.totalPendingDeposits(), 0);
     }
 
     function test_requestDeposit_queuesARemainderBelowTheMinimum() public {

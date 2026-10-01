@@ -226,12 +226,7 @@ contract Vault is
             /// User request can be partially fulfilled instantly, remainder is queued
             _markClaimableDeposit($, controller, capacity, true);
             transaction.amount -= capacity;
-            if ($.savingsVault.previewDeposit(transaction.amount) == 0) {
-                baseAsset.safeTransfer(owner, transaction.amount);
-                assets = capacity;
-            } else {
-                _queueDeposit($, transaction);
-            }
+            _queueDeposit($, transaction);
         } else {
             /// User request can be completed fulfilled instantly
             _markClaimableDeposit($, controller, assets, true);
