@@ -215,15 +215,15 @@ The index compounds with `_rpow` copied verbatim from Sky's sUSDS, the same code
 A credit too small to buy one spPRIME share is forfeited instead of recorded, and a `requestDeposit` too small to buy one share reverts, so no controller can hold a claimable balance they cannot claim. The instant part of a `requestDeposit` pays for the remaining capacity rounded up.
 
 
-### `processQueue` reverts if Trade Volume exceeds liquidity or capacity
-The curator can define `tradeVolume`, the amount of volume in base asset units that should be exchanged between queues should consume. `processQueue` accepts it only if it is within both limits that make up `maxTradeVolume()`, checked after accrual and before either queue is walked:
+### `processQueue` clamps Trade Volume to liquidity and capacity
+The curator can define `tradeVolume`, the amount of volume in base asset units that should be exchanged between queues should consume. `processQueue` clamps it to `maxTradeVolume()`, the smaller of two limits, after accrual and before either queue is walked, so a call sized from an earlier read, or front-run by a cancel or an instant request, processes what it can instead of reverting:
 
-- Base asset: `tradeVolume` cannot be larger than idle liquidity (`availableLiquidAssets()`) plus the value of the deposit queue, or the call reverts with `InputVolumeExceedsLiquidity`. The idle liquidity is what would have been instant claimed if no queues existed; once a queue exists, it is consumed by `processQueue`.
-- Shares: `tradeVolume` cannot be larger than `convertToAssets(totalPendingWithdraws() + availableCapacity())`, or the call reverts with `InputVolumeExceedsAvailableCapacity`. The withdraw side burns up to `totalPendingWithdraws()` and the deposit side locks at most the shares `tradeVolume` buys, so a volume within this limit never locks more shares than it burns plus `availableCapacity()`. The natural volume, the smaller of the two queue values, always passes, even at zero capacity.
+- Base asset: idle liquidity (`availableLiquidAssets()`) plus the value of the deposit queue. The idle liquidity is what would have been instant claimed if no queues existed; once a queue exists, it is consumed by `processQueue`.
+- Shares: `convertToAssets(totalPendingWithdraws() + availableCapacity())`. The withdraw side burns up to `totalPendingWithdraws()` and the deposit side locks at most the shares `tradeVolume` buys, so a volume within this limit never locks more shares than it burns plus `availableCapacity()`. The natural volume, the smaller of the two queue values, is never clamped, even at zero capacity.
 
 After the fills, `processQueue` checks both again: `AssetInvariantBroken` if the vault owes more base asset than it holds, `ShareInvariantBroken` if `totalSupply()` exceeds `maxCapacity()`.
 
-`maxTradeVolume()` on `ILiquidityManagement` is the smaller of the two limits, and is what the liquidity manager sizes a call from. It reads the stored index; `processQueue` accrues first and accrual only raises the share limit, so a value read before the call still passes. The share limit rejects no useful volume: above it, a volume either does nothing beyond filling both queues, or would lock more shares than the withdraw side burns plus `availableCapacity()`.
+`maxTradeVolume()` on `ILiquidityManagement` is the smaller of the two limits, and is what the liquidity manager sizes a call from; passing `type(uint256).max` processes as much as both limits allow. The share limit costs no useful volume: above it, a volume either does nothing beyond filling both queues, or would lock more shares than the withdraw side burns plus `availableCapacity()`.
 
 Note for auditor: when Spark has already taken base asset owed to claimable withdrawals (see `take()`), `availableLiquidAssets()` is negative and every `processQueue` reverts with `AssetInvariantBroken` until Spark returns it.
 

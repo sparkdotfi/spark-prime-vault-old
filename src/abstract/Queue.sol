@@ -101,11 +101,7 @@ abstract contract Queue is LiquidityManagement, IQueue {
         /// tradeVolume = 200
 
         /// TODO: Send examples of each use case to Lucas via Slack
-        if (tradeVolume > availableDepositLiquidity())
-            revert InputVolumeExceedsLiquidity();
-
-        if (tradeVolume > availableWithdrawLiquidity())
-            revert InputVolumeExceedsAvailableCapacity();
+        tradeVolume = Math.min(tradeVolume, maxTradeVolume());
 
         /// Process the Withdraw Queue first, burning all matched shares to increase availableCapacity
         _fillWithdrawQueue($, tradeVolume);

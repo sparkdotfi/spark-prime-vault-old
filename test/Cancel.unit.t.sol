@@ -41,6 +41,25 @@ contract CancelUnitTests is QueueHelper {
         nonce = vault.requestNonce(controller_);
     }
 
+    function test_processQueue_toleratesAFrontRunCancel() public {
+        _queueRedeem(user, user, 50 ether);
+        _closeCapacity();
+        _queueDeposit(userTwo, userTwo, 10 ether);
+        uint256 nonce = _queueDeposit(userThree, userThree, 10 ether);
+        uint256 volume = vault.maxTradeVolume();
+
+        vm.prank(userThree);
+        vault.cancelDepositRequest(userThree, nonce);
+        assertLt(vault.maxTradeVolume(), volume);
+
+        vm.prank(rebalancer);
+        vault.processQueue(volume);
+
+        assertEq(vault.depositQueueLength(), 0);
+        assertGt(vault.maxMint(userTwo), 0);
+        assertSolvent();
+    }
+
     function test_cancelDepositRequest_refundsTheOwner() public {
         _closeCapacity();
         uint256 nonce = _queueDeposit(user, user, 10 ether);

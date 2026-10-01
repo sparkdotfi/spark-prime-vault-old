@@ -624,6 +624,25 @@ contract VaultManagerUnitTests is QueueHelper {
         );
     }
 
+    function test_setTotalAssets_pricesNewDepositsAfterTheLoss() public {
+        _depositAndClaim(user, 50 ether);
+        _depositAndClaim(userTwo, 50 ether);
+        uint256 target = (vault.totalAssets() * 6) / 10;
+        _pause();
+        vm.prank(vaultManager);
+        vault.setTotalAssets(target);
+        vm.prank(admin);
+        vault.unpause();
+
+        _depositAndClaim(userThree, target / 2);
+
+        assertApproxEqRel(
+            vault.balanceOf(userThree),
+            vault.balanceOf(user),
+            1e12
+        );
+    }
+
     function test_setTotalAssets_accruesFirst() public {
         _depositAndClaim(user, 50 ether);
         vm.warp(block.timestamp + 30 days);

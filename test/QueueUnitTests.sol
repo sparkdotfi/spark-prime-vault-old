@@ -4,7 +4,6 @@ pragma solidity ^0.8.20;
 import {Test} from "forge-std/Test.sol";
 import {VaultHandler} from "./VaultHandler.t.sol";
 import {IVault} from "src/interfaces/IVault.sol";
-import {IQueue} from "src/interfaces/IQueue.sol";
 import {USDC} from "./mocks/USDC.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {console} from "forge-std/console.sol";
@@ -245,7 +244,7 @@ contract QueueUnitTests is QueueHelper {
     }
 
     /// @dev 10 depositors, 100 ether total. 50 withdrawers, 200 ether total. There is no additional liquidity (mintable shares/idle base asset) Curator wants 200 ether in volume exchanged (non-symmetric)
-    function test_cannot_orderMatching_nonSymmetricCuratorRequest() public {
+    function test_orderMatching_clampsANonSymmetricCuratorRequest() public {
         address[] memory users = defaultUsers();
         uint256 totalDepositValue = 100 ether;
         uint256 totalWithdrawValue = 200 ether;
@@ -262,9 +261,9 @@ contract QueueUnitTests is QueueHelper {
 
         uint256 curatorCapacity = totalWithdrawValue; // I'm requesting an non-symmetric amount
         vm.prank(rebalancer);
-        vm.expectRevert(
-            abi.encodeWithSelector(IQueue.InputVolumeExceedsLiquidity.selector)
-        );
         vault.processQueue(curatorCapacity);
+
+        assertEq(vault.depositQueueLength(), 0);
+        assertGt(vault.withdrawQueueLength(), 0);
     }
 }

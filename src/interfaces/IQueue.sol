@@ -22,10 +22,6 @@ interface IQueue {
 
     function withdrawQueueLength() external view returns (uint256);
 
-    error InputVolumeExceedsLiquidity();
-
-    error InputVolumeExceedsAvailableCapacity();
-
     error PartialFillFailure();
 
     /// @notice Post Process Queue invariant: the vault owes more base asset than it holds

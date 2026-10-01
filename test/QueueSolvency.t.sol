@@ -133,8 +133,8 @@ contract QueueSolvencyTests is QueueHelper {
 
         /// cant sweep immediately because no liquidity
         vm.prank(rebalancer);
-        vm.expectRevert(IQueue.InputVolumeExceedsAvailableCapacity.selector);
         vault.processQueue(dust);
+        assertEq(vault.depositQueueLength(), 1, "dust waits for capacity");
 
         // boost capacity to give liquidity
         _openCapacity(51 ether + dust);
@@ -171,11 +171,10 @@ contract QueueSolvencyTests is QueueHelper {
 
         uint256 fullDemand = vault.convertToAssets(shares);
         vm.prank(rebalancer);
-        vm.expectRevert(IQueue.InputVolumeExceedsLiquidity.selector);
         vault.processQueue(fullDemand);
 
-        vm.prank(rebalancer);
-        vault.processQueue(20 ether);
+        assertEq(vault.depositQueueLength(), 0);
+        assertGt(vault.withdrawQueueLength(), 0);
         assertSolvent();
     }
 
@@ -191,8 +190,8 @@ contract QueueSolvencyTests is QueueHelper {
         assertEq(assetsHeld(), 0, "no liquidity");
 
         vm.prank(rebalancer);
-        vm.expectRevert(IQueue.InputVolumeExceedsLiquidity.selector);
         vault.processQueue(1 ether);
+        assertEq(vault.withdrawQueueLength(), 4);
 
         uint256 volume = vault.convertToAssets(shares);
         _injectLiquidity(volume);
@@ -728,16 +727,10 @@ contract QueueSolvencyTests is QueueHelper {
             vault.totalPendingDeposits()
         );
         uint256 burned = vault.totalPendingWithdraws();
+        assertEq(vault.maxTradeVolume(), vault.convertToAssets(burned));
 
         vm.prank(rebalancer);
-        vm.expectRevert(IQueue.InputVolumeExceedsAvailableCapacity.selector);
         vault.processQueue(volume);
-
-        uint256 maxVolume = vault.maxTradeVolume();
-        assertEq(maxVolume, vault.convertToAssets(burned));
-
-        vm.prank(rebalancer);
-        vault.processQueue(maxVolume);
 
         assertEq(vault.withdrawQueueLength(), 0);
         assertSolvent();
@@ -790,7 +783,7 @@ contract QueueSolvencyTests is QueueHelper {
         assertSolvent();
     }
 
-    function test_cannot_processQueue_volumeAboveMaxTradeVolume() public {
+    function test_processQueue_clampsToMaxTradeVolume() public {
         _mintSharesTo(user, 50 ether);
         _drainLiquidity();
         _requestRedeem(user, vault.balanceOf(user));
@@ -803,11 +796,7 @@ contract QueueSolvencyTests is QueueHelper {
         assertEq(maxVolume, pending);
 
         vm.prank(rebalancer);
-        vm.expectRevert(IQueue.InputVolumeExceedsAvailableCapacity.selector);
         vault.processQueue(maxVolume + 1);
-
-        vm.prank(rebalancer);
-        vault.processQueue(maxVolume);
 
         assertEq(vault.withdrawQueueLength(), 0);
         assertEq(vault.depositQueueLength(), 0);
@@ -822,14 +811,9 @@ contract QueueSolvencyTests is QueueHelper {
         _setCapacity(10 ether - 1);
 
         vm.prank(rebalancer);
-        vm.expectRevert(IQueue.InputVolumeExceedsAvailableCapacity.selector);
         vault.processQueue(10 ether);
 
-        _setCapacity(10 ether);
-        vm.prank(rebalancer);
-        vault.processQueue(10 ether);
-
-        assertEq(vault.maxMint(user), 10 ether);
+        assertEq(vault.maxMint(user), 10 ether - 1);
         assertEq(vault.availableCapacity(), 0);
         assertSolvent();
     }
@@ -885,11 +869,7 @@ contract QueueSolvencyTests is QueueHelper {
         );
 
         vm.prank(rebalancer);
-        vm.expectRevert(IQueue.InputVolumeExceedsLiquidity.selector);
         vault.processQueue(maxVolume + 1);
-
-        vm.prank(rebalancer);
-        vault.processQueue(maxVolume);
 
         assertEq(vault.depositQueueLength(), 0);
         assertSolvent();
