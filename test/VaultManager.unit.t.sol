@@ -8,6 +8,9 @@ import {ISparkPrimeVault} from "src/interfaces/ISparkPrimeVault.sol";
 import {IVaultManagement} from "src/interfaces/IVaultManagement.sol";
 import {IRebalancer} from "src/interfaces/IRebalancer.sol";
 import {
+    ILiquidityManagement
+} from "src/interfaces/ILiquidityManagement.sol";
+import {
     IAccessControl
 } from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {
@@ -109,6 +112,16 @@ contract VaultManagerUnitTests is QueueHelper {
 
         vm.prank(rebalancer);
         vault.withdrawFromSavings(shares);
+    }
+
+    function test_take_emitsFundsTaken() public {
+        _depositAndClaim(user, 100 ether);
+
+        vm.expectEmit(address(vault));
+        emit ILiquidityManagement.FundsTaken(liquidityManager, 40 ether);
+
+        vm.prank(liquidityManager);
+        vault.take(40 ether);
     }
 
     function test_savingsRoundTrip_isValuePreserving() public {
@@ -829,6 +842,41 @@ contract VaultManagerUnitTests is QueueHelper {
         IVault.InitParams memory params = _initParams(venue);
 
         vm.expectRevert(IVault.AssetMismatch.selector);
+        new ERC1967Proxy(
+            address(implementation),
+            abi.encodeCall(Vault.initialize, (params))
+        );
+    }
+
+    function test_cannot_initialize_withAZeroRoleAddress() public {
+        VaultHandler implementation = new VaultHandler();
+        IVault.InitParams memory params = _initParams(savingsVault);
+        params.admin = address(0);
+        vm.expectRevert(ISparkPrimeVault.ZeroValueProvided.selector);
+        new ERC1967Proxy(
+            address(implementation),
+            abi.encodeCall(Vault.initialize, (params))
+        );
+
+        params = _initParams(savingsVault);
+        params.vaultManager = address(0);
+        vm.expectRevert(ISparkPrimeVault.ZeroValueProvided.selector);
+        new ERC1967Proxy(
+            address(implementation),
+            abi.encodeCall(Vault.initialize, (params))
+        );
+
+        params = _initParams(savingsVault);
+        params.liquidityManager = address(0);
+        vm.expectRevert(ISparkPrimeVault.ZeroValueProvided.selector);
+        new ERC1967Proxy(
+            address(implementation),
+            abi.encodeCall(Vault.initialize, (params))
+        );
+
+        params = _initParams(savingsVault);
+        params.rebalancer = address(0);
+        vm.expectRevert(ISparkPrimeVault.ZeroValueProvided.selector);
         new ERC1967Proxy(
             address(implementation),
             abi.encodeCall(Vault.initialize, (params))

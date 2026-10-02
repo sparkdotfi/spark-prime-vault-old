@@ -28,9 +28,8 @@ import {
 } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import {
     IERC7540Operator
-} from "@openzeppelin/community-contracts/interfaces/IERC7540.sol";
+} from "./interfaces/IERC7540.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {console} from "forge-std/console.sol";
 contract Vault is
     Rebalancer,
     //  LiquidityManagement,
@@ -93,6 +92,12 @@ contract Vault is
             revert InterestRateBelowRay();
         if (params.ratePerSecond > InterestLib.MAX_RATE)
             revert InterestRateAboveMax();
+        if (
+            params.admin == address(0) ||
+            params.vaultManager == address(0) ||
+            params.liquidityManager == address(0) ||
+            params.rebalancer == address(0)
+        ) revert ZeroValueProvided();
 
         __ERC20_init(params.name, params.symbol);
         __ERC4626_init(params.baseAsset);
@@ -259,6 +264,16 @@ contract Vault is
     ) public returns (uint256 shares) {
         emit ReferralCode(receiver, referralCode);
         return deposit(assets, receiver, controller);
+    }
+
+    function mint(
+        uint256 shares,
+        address receiver,
+        address controller,
+        uint256 referralCode
+    ) public returns (uint256 assets) {
+        emit ReferralCode(receiver, referralCode);
+        return mint(shares, receiver, controller);
     }
 
     function withdraw(
@@ -455,6 +470,7 @@ contract Vault is
         settlement.withdrawnShares -= shares;
         settlement.assetsOwed -= assets;
         $.totalClaimableWithdrawAssets -= assets;
+        emit TotalClaimableWithdraws($.totalClaimableWithdrawAssets);
 
         IERC20 baseAsset = IERC20(asset());
         if (assets > baseAsset.balanceOf(address(this))) revert Insolvency();

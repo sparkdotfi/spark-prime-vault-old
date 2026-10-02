@@ -13,7 +13,6 @@ import {InterestLib} from "../libraries/InterestLib.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {TransientSlot} from "@openzeppelin/contracts/utils/TransientSlot.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
-import {console} from "forge-std/console.sol";
 
 abstract contract Queue is LiquidityManagement, IQueue {
     using TransactionQueue for TransactionQueue.RequestQueue;
@@ -227,7 +226,6 @@ abstract contract Queue is LiquidityManagement, IQueue {
         TransactionQueue.RequestQueue storage queue,
         function(Storage storage, address, uint256, bool) claim
     ) internal {
-        console.log("FILL UNBOUNDED");
         uint256 n = queue.length();
 
         for (n; n > 0; --n) {
@@ -244,7 +242,6 @@ abstract contract Queue is LiquidityManagement, IQueue {
         uint256 remainder
     ) internal {
         uint256 length = queue.length();
-        console.log("FILL UNTIL: %e", remainder);
         while (remainder > 0) {
             if (length == 0) revert PartialFillFailure();
 
@@ -315,6 +312,7 @@ abstract contract Queue is LiquidityManagement, IQueue {
         }
 
         emit ClaimableWithdraw(owner, $.ledger[owner].assetsOwed);
+        emit TotalClaimableWithdraws($.totalClaimableWithdrawAssets);
     }
 
     /// @notice Cleans up void registry entries and links new data
@@ -342,7 +340,6 @@ abstract contract Queue is LiquidityManagement, IQueue {
         VaultBase.Storage storage $,
         VaultBase.Transaction memory data
     ) internal {
-        console.log("Pushing to deposit queue amount: %e", data.amount);
         $.depositQueue.push(data);
         $.totalDepositQueueSavingsShares += data.amount;
         $.ledger[data.controller].pendingSavingsShares += data.amount;

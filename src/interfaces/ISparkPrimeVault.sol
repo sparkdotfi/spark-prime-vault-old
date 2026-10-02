@@ -62,6 +62,13 @@ interface ISparkPrimeVault {
         uint256 referralCode
     ) external returns (uint256 shares);
 
+    function mint(
+        uint256 shares,
+        address receiver,
+        address controller,
+        uint256 referralCode
+    ) external returns (uint256 assets);
+
     function cancelDepositRequest(address controller, uint256 nonce) external;
 
     function requestNonce(address controller) external view returns (uint256);

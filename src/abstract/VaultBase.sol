@@ -10,7 +10,6 @@ import {
     ERC4626Upgradeable
 } from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
 import {InterestLib} from "../libraries/InterestLib.sol";
-import {console} from "forge-std/console.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {
     ReentrancyGuardTransient
@@ -154,14 +153,12 @@ abstract contract VaultBase is
         Math.Rounding rounding
     ) internal view override(ERC4626Upgradeable) returns (uint256) {
         Storage storage $ = getStorage();
-        console.log("Converting to shares..");
         uint256 shares = Math.mulDiv(
             assets,
             InterestLib.RAY,
             $.indexRate,
             rounding
         );
-        console.log("shares = %e", shares);
         return shares;
     }
 
@@ -171,14 +168,12 @@ abstract contract VaultBase is
     ) internal view override(ERC4626Upgradeable) returns (uint256) {
         Storage storage $ = getStorage();
 
-        console.log("Converting to assets..");
         uint256 assets = Math.mulDiv(
             shares,
             $.indexRate,
             InterestLib.RAY,
             rounding
         );
-        console.log("assets = %e", assets);
         return assets;
     }
 

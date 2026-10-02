@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 import {
     IERC7540
-} from "@openzeppelin/community-contracts/interfaces/IERC7540.sol";
+} from "./IERC7540.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 

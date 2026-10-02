@@ -10,7 +10,6 @@ import {
     SafeERC20
 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
-import {console} from "forge-std/console.sol";
 
 abstract contract LiquidityManagement is
     VaultBase,
@@ -25,6 +24,7 @@ abstract contract LiquidityManagement is
         uint256 baseAmount
     ) public onlyRole(LIQUIDITY_MANAGER_ROLE) nonReentrant {
         IERC20(asset()).safeTransfer(msg.sender, baseAmount);
+        emit FundsTaken(msg.sender, baseAmount);
     }
 
     /// @notice Calculates how many assets the vault can allocate for withdrawals

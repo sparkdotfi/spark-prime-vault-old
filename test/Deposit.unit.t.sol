@@ -455,6 +455,20 @@ contract RequestDepositUnitTests is QueueHelper {
         assertEq(vault.totalAssets(), vault.convertToAssets(expected));
     }
 
+    function test_mintWithReferralCode_emitsReferralCode() public {
+        _requestDeposit(user, 40 ether);
+        uint256 shares = vault.maxMint(user);
+
+        vm.expectEmit(address(vault));
+        emit ISparkPrimeVault.ReferralCode(user, 7);
+
+        vm.prank(user);
+        vault.mint(shares, user, user, 7);
+
+        assertEq(vault.balanceOf(user), shares);
+        assertEq(vault.maxMint(user), 0);
+    }
+
     function test_cannot_depositWithReferralCode_asUnauthorizedCaller() public {
         _requestDeposit(user, 40 ether);
 

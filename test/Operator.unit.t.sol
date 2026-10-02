@@ -6,7 +6,7 @@ import {VaultHandler} from "./VaultHandler.t.sol";
 import {IVault} from "src/interfaces/IVault.sol";
 import {
     IERC7540Operator
-} from "@openzeppelin/community-contracts/interfaces/IERC7540.sol";
+} from "src/interfaces/IERC7540.sol";
 import {USDC} from "./mocks/USDC.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {ISparkPrimeVault} from "src/interfaces/ISparkPrimeVault.sol";

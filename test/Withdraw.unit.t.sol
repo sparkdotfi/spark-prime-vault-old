@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import {Test} from "forge-std/Test.sol";
 import {VaultHandler} from "./VaultHandler.t.sol";
 import {IVault} from "src/interfaces/IVault.sol";
+import {IQueue} from "src/interfaces/IQueue.sol";
 import {ISparkPrimeVault} from "src/interfaces/ISparkPrimeVault.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {
@@ -488,6 +489,23 @@ contract RequestWithdrawUnitTests is QueueHelper {
         );
         vault.withdraw(owed, address(0), user);
         vm.stopPrank();
+    }
+
+    function test_totalClaimableWithdraws_emittedOnMarkAndClaim() public {
+        _depositAndClaim(user, 50 ether);
+        uint256 shares = vault.balanceOf(user);
+        _coverRedemption(shares);
+        uint256 owed = vault.convertToAssets(shares);
+
+        vm.expectEmit(address(vault));
+        emit IQueue.TotalClaimableWithdraws(owed);
+        vm.prank(user);
+        vault.requestRedeem(shares, user, user);
+
+        vm.expectEmit(address(vault));
+        emit IQueue.TotalClaimableWithdraws(0);
+        vm.prank(user);
+        vault.withdraw(owed, user, user);
     }
 
     function test_cannot_withdraw_zeroAssets() public {
