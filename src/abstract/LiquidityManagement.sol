@@ -19,7 +19,6 @@ abstract contract LiquidityManagement is
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
 
-    /// @notice Provides Spark PAU ability to withdraw the vaults baseAsset balance
     function take(
         uint256 baseAmount
     ) public onlyRole(LIQUIDITY_MANAGER_ROLE) nonReentrant {
@@ -27,9 +26,6 @@ abstract contract LiquidityManagement is
         emit FundsTaken(msg.sender, baseAmount);
     }
 
-    /// @notice Calculates how many assets the vault can allocate for withdrawals
-    /// @dev It is the Rebalancers responsibility to convert Savings Vault shares back to base asset for them to be considered instant liquidty
-    /// @return totalBaseAssets Instant Withdrawal Liquidity
     function availableLiquidAssets()
         public
         view

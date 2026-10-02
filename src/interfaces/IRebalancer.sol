@@ -16,11 +16,11 @@ interface IRebalancer {
     event SavingsWithdraw(uint256 shares, uint256 outputAssets);
 
     /// @notice Move idle base asset from Vault to Savings Vault to earn yield. REBALANCER_ROLE only
-    /// @dev Internals handle conversion to saving vault.
+    /// @dev Internals handle conversion to saving vault. Trusts the rebalancer for a reasonable `assets` amount
     function depositToSavings(uint256 assets) external returns (uint256 shares);
 
     /// @notice Withdraws from Savings Vault into Prime vault base asset. REBALANCER_ROLE only
-    /// @dev Internals handle conversion to saving vault.
+    /// @dev Internals handle conversion to saving vault. Trusts the rebalancer for a reasonable `shares` amount
     function withdrawFromSavings(
         uint256 shares
     ) external returns (uint256 assets);

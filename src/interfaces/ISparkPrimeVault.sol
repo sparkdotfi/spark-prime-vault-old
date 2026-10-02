@@ -5,37 +5,45 @@ import {IVault} from "./IVault.sol";
 
 /**
  * @title ISparkPrimeVault
- * @notice Asynchronous ERC-7540 Vault with Admin set continuous rate
+ * @notice Asynchronous ERC-7540 vault whose shares (spPRIME) accrue at a continuous rate set by the Spark Planner or PAU
  * @author 0xpotionseller, arkis.xyz
+ * @dev
+ * Pricing: a single index prices every conversion. It compounds per second at
+ * the rate VAULT_MANAGER sets, and VAULT_MANAGER books a realized loss, only
+ * while paused, by lowering totalAssets, which scales the index down. The
+ * vault is agnostic to the strategies downstream (Arkis) and to realized P&L:
+ * the Spark Planner reconciles off-chain and expresses the net policy rate.
  *
- *         The vault tracks user balances via a monotonically-growing rate index.
- *         The rate of growth is set directly by the Spark Automated Software (SAS),
- *         The vault balance may hold idle base asset and Savings Vault token
- *         Initially the Savings Vault is Spark Savings Vault (spUSDC), but should be treated as swappable.
- *.
- *         The vault is agnostic to investment strategies downstream (Arkis) and realized P&L
- *         The SAS reconciles off-chain and expresses the net policy interest rate
- *         The SAS interacts directly to set interest rates
- *         The SAS interacts via PAU to take/put base asset funds into the vault
+ * Holdings: idle base asset and savings vault shares. The savings vault is
+ * fixed at initialization (initially spUSDC) and MUST accept the base asset as
+ * a deposit. The Spark Planner moves base asset out with take and back in with plain
+ * transfers through the PAU (LIQUIDITY_MANAGER), and between idle and the
+ * savings vault as REBALANCER.
  *
- *            Savings vault MUST accept base asset as a deposit in order to use
- *         depositToSavings and withdrawFromSavings functions inside IRebalancer
+ * Requests: requestDeposit and requestRedeem become Claimable in the same
+ * transaction, in full or in part, when their own queue is empty and the vault
+ * has free capacity (deposits) or idle liquidity (redemptions). The rest joins
+ * that FIFO queue; queued deposits wait in the savings vault. Only REBALANCER
+ * matches the queues, through processQueue; a user request never matches
+ * against the opposite queue.
  *
- *         A user performs `claimRequest` which creates state `Pending`. The state may or may not transition to `Claimable` in the same transaction.
- *         If no queue exists and idle liquidity is available, the request transitions from `Pending` to `Claimable` within the same transaction.
- *         Other it is queued and becomes 'Claimable' via Symmetric FIFO queues with cross-matching between deposit and redemption heads.
+ * Claims: users move Claimable to Claimed themselves with deposit or mint and
+ * withdraw or redeem. An approved operator may claim for a controller, to the
+ * controller only, but cannot open requests.
  *
- *         Cross-matching between queues occurs on user invoked `claimRequest` AND `processQueue` which is invoked by Rebalancer only
- *         Cross-matching is net neutral (Sleeve and capacity unaffected)
+ * Cancellation: a queued deposit can be cancelled by its owner, its
+ * controller, the controller's operator or VAULT_MANAGER, which refunds the
+ * owner. Redemption requests cannot be cancelled.
  *
- *         User must perform Settlement i.e transition 'Claimable' to 'Claimed' manually, via claimRequest
- *
+ * Pause: VAULT_MANAGER pauses every request and claim and DEFAULT_ADMIN
+ * unpauses. Cancellation, processQueue and take keep working while paused.
  */
 
 interface ISparkPrimeVault {
-    /// @notice Emitted when the user performs deposit with a referral code
+    /// @notice Emitted when the user performs deposit or mint with a referral code
     event ReferralCode(address beneficary, uint256 code);
 
+    /// @notice Emitted when a queued deposit is cancelled and `assets` are refunded to `owner`
     event DepositRequestCancelled(
         address indexed controller,
         address indexed owner,
@@ -43,16 +51,26 @@ interface ISparkPrimeVault {
         uint256 assets
     );
 
+    /// @notice Thrown when a required amount or address is zero
+    error ZeroValueProvided();
+
+    /// @notice Thrown when a request is below the configured minimum `amount`
+    error MustExceedMinimumRequestAmount(uint256 amount);
+
+    /// @notice Thrown when cancelDepositRequest targets a nonce with no queued deposit
     error RequestNotQueued(address controller, uint256 nonce);
+
+    /// @notice Thrown when a withdraw or redeem claim exceeds the controller's claimable balance
+    error InsufficientClaimableAmount(uint256 requested, uint256 actual);
 
     /// @notice Returned when the vault fails cannot pay out owed shares/assets to a claimer
     error Insolvency();
 
-    error ZeroValueProvided();
-    error MustExceedMinimumRequestAmount(uint256 amount);
-
-    error InsufficientClaimableAmount(uint256 requested, uint256 actual);
     error InsufficientFunds();
+
+    /// @notice Cancels a queued deposit and refunds its savings shares, redeemed to base asset, to the request's owner
+    /// @dev Callable by the owner, the controller, an operator the controller approved, or VAULT_MANAGER, including while paused
+    function cancelDepositRequest(address controller, uint256 nonce) external;
 
     /// @notice Overload of ERC4626 deposit to allow Spark Referal Program support
     function deposit(
@@ -62,6 +80,7 @@ interface ISparkPrimeVault {
         uint256 referralCode
     ) external returns (uint256 shares);
 
+    /// @notice Overload of ERC4626 mint to allow Spark Referal Program support
     function mint(
         uint256 shares,
         address receiver,
@@ -69,10 +88,15 @@ interface ISparkPrimeVault {
         uint256 referralCode
     ) external returns (uint256 assets);
 
-    function cancelDepositRequest(address controller, uint256 nonce) external;
+    /// @notice spPRIME shares the controller has waiting in the withdraw queue; equal to pendingRedeemRequest
+    function pendingWithdrawAmount(
+        address controller
+    ) external view returns (uint256);
 
+    /// @notice Nonce of the controller's latest request; queued deposits are keyed by (controller, nonce)
     function requestNonce(address controller) external view returns (uint256);
 
+    /// @notice The queued deposit for (controller, nonce), its amount in savings vault shares; empty once filled or cancelled
     function queuedDepositRequest(
         address controller,
         uint256 nonce

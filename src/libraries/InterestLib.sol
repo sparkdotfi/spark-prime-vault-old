@@ -3,7 +3,6 @@ pragma solidity ^0.8.20;
 import {VaultBase} from "../abstract/VaultBase.sol";
 import {IVault} from "../interfaces/IVault.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-/** Continiously Compounding Interest Rate System */
 library InterestLib {
     uint256 constant RAY = 1e27;
     uint256 constant MAX_RATE = 1.000000021979553151239153027e27;

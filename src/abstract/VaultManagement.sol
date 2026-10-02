@@ -15,14 +15,6 @@ abstract contract VaultManagement is
     AccessControlUpgradeable,
     IVaultManagement
 {
-    function pause() public onlyRole(VAULT_MANAGER_ROLE) {
-        _pause();
-    }
-
-    function unpause() public onlyRole(DEFAULT_ADMIN_ROLE) {
-        _unpause();
-    }
-
     function setInterestRate(
         uint256 newRate
     ) public onlyRole(VAULT_MANAGER_ROLE) {
@@ -51,6 +43,16 @@ abstract contract VaultManagement is
         emit TotalAssetsUpdated(oldTotalAssets, newTotalAssets);
     }
 
+    function setCapacity(
+        uint256 newCapacity
+    ) public onlyRole(VAULT_MANAGER_ROLE) {
+        Storage storage $ = getStorage();
+        if (newCapacity < totalSupply())
+            revert MaximumCapacityCannotExceedCurrentTotal();
+        emit CapacityUpdated($.maximumCapacity, newCapacity);
+        $.maximumCapacity = newCapacity;
+    }
+
     function setMinimumDeposit(
         uint256 amount
     ) public onlyRole(VAULT_MANAGER_ROLE) {
@@ -66,17 +68,16 @@ abstract contract VaultManagement is
         $.minimumWithdraw = amount;
         emit MinimumWithdrawUpdated(amount);
     }
+
     function updateWithdrawFee(
         uint256 bps
     ) public onlyRole(VAULT_MANAGER_ROLE) {}
 
-    function setCapacity(
-        uint256 newCapacity
-    ) public onlyRole(VAULT_MANAGER_ROLE) {
-        Storage storage $ = getStorage();
-        if (newCapacity < totalSupply())
-            revert MaximumCapacityCannotExceedCurrentTotal();
-        emit CapacityUpdated($.maximumCapacity, newCapacity);
-        $.maximumCapacity = newCapacity;
+    function pause() public onlyRole(VAULT_MANAGER_ROLE) {
+        _pause();
+    }
+
+    function unpause() public onlyRole(DEFAULT_ADMIN_ROLE) {
+        _unpause();
     }
 }

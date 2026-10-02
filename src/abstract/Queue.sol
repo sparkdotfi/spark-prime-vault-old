@@ -22,119 +22,30 @@ abstract contract Queue is LiquidityManagement, IQueue {
     bytes32 private constant SAVINGS_VAULT_PRICE_PER_SHARE =
         keccak256("sparkprime.vault.depositFillRate");
 
-    /// @notice The total share amount in the Withdraw Queue
-    function totalPendingWithdraws() public view returns (uint256 shares) {
-        Storage storage $ = getStorage();
-        shares = $.totalWithdrawQueueShares;
-    }
-
-    /// @notice Total Savings Vault shares currently in the deposit queue
-    function totalPendingDeposits() public view returns (uint256 shares) {
-        Storage storage $ = getStorage();
-        shares = $.totalDepositQueueSavingsShares;
-    }
-
-    function _depositQueueValuation() internal view returns (uint256 assets) {
-        Storage storage $ = getStorage();
-        uint256 shares = $.totalDepositQueueSavingsShares;
-        assets = shares == 0 ? 0 : $.savingsVault.previewRedeem(shares);
-    }
-
-    function claimableWithdrawTotal() public view returns (uint256) {
-        Storage storage $ = getStorage();
-        return $.totalClaimableWithdrawAssets;
-    }
-
-    function claimableDepositTotal() public view returns (uint256) {
-        Storage storage $ = getStorage();
-        return $.totalClaimableDepositShares;
-    }
-
-    /// @notice Provides the number of requests present in the FIFO Withdraw Queue
-    function withdrawQueueLength() public view returns (uint256) {
-        Storage storage $ = getStorage();
-        return TransactionQueue.length($.withdrawQueue);
-    }
-
-    /// @notice Provides the first entry in the FIFO Withdraw Queue
-    /// @dev Can revert with QueueEmpty
-    function withdrawQueueHead()
-        public
-        view
-        returns (Transaction memory transaction)
-    {
-        Storage storage $ = getStorage();
-        transaction = TransactionQueue.front($.withdrawQueue);
-    }
-
-    /// @notice Provides the number of requests present in the FIFO Deposit Queue
-    function depositQueueLength() public view returns (uint256) {
-        Storage storage $ = getStorage();
-        return
-            TransactionQueue.length($.depositQueue) - $.depositQueue.cancelled;
-    }
-
-    /// @notice Provides the first entry in the FIFO Deposit Queue
-    /// @dev Can revert with QueueEmpty
-    function depositQueueHead()
-        public
-        view
-        returns (Transaction memory transaction)
-    {
-        Storage storage $ = getStorage();
-        transaction = TransactionQueue.front($.depositQueue);
-    }
-
-    /// @notice Process pending deposits/withdrawals against eachother
-    /// @dev Trusts the planner/rebalancer for a reasonable `tradeVolume` amount to bound the loop
     function processQueue(
         uint256 tradeVolume
-    ) public onlyRole(REBALANCER_ROLER) nonReentrant {
+    ) public onlyRole(REBALANCER_ROLE) nonReentrant {
         Storage storage $ = getStorage();
         InterestLib.accrueInterest($);
 
-        /// We can only ever eat uptil the smaller queue
-
-        /// baseAsset = 100
-        /// shares = 500 ==> 400,
-        /// tradeVolume = 200
-
-        /// TODO: Send examples of each use case to Lucas via Slack
         tradeVolume = Math.min(tradeVolume, maxTradeVolume());
 
-        /// Process the Withdraw Queue first, burning all matched shares to increase availableCapacity
         _fillWithdrawQueue($, tradeVolume);
-
-        /// Process the Deposit Queue second, so every claim has access to availableCapacity
         _fillDepositQueue($, tradeVolume);
 
-        // Sanity Invariants: Never allow claims to exceed current balance resulting in debt
-
-        /// Order Matching should never result in base asset insolvency
         int256 assetsLeft = availableLiquidAssets();
         if (assetsLeft < 0) revert AssetInvariantBroken(assetsLeft);
 
-        /// Order Matching should never result in share insolvency
-        /// We should never go into negative shares after `processQueue`
         int256 sharesLeft = $.maximumCapacity.toInt256() -
             totalSupply().toInt256();
         if (sharesLeft < 0) revert ShareInvariantBroken(sharesLeft);
     }
 
-    /// @dev We can only eat as much as the smaller queue
     function maxTradeVolume() public view returns (uint256) {
         return
             Math.min(availableDepositLiquidity(), availableWithdrawLiquidity());
     }
 
-    function sanitizeDepositQueue(
-        uint256 maxIterations
-    ) external returns (uint256 removed) {
-        Storage storage $ = getStorage();
-        removed = $.depositQueue.sanitize(maxIterations);
-    }
-
-    /// @dev Vaults liquid baseAssets + baseAssets deposited from deposit queue into savings vault
     function availableDepositLiquidity()
         internal
         view
@@ -147,7 +58,6 @@ abstract contract Queue is LiquidityManagement, IQueue {
         );
     }
 
-    /// @dev Total withdraw queue shares + shares left to mint until availableCapacity
     function availableWithdrawLiquidity()
         internal
         view
@@ -192,17 +102,14 @@ abstract contract Queue is LiquidityManagement, IQueue {
             : $.savingsVault.previewWithdraw(tradeVolume);
         uint256 credit = fillAll ? queueValue : tradeVolume;
 
-        /// Get the price per share from Savings Vault once and store it
         SAVINGS_VAULT_PRICE_PER_SHARE.asUint256().tstore(
             shares == 0 ? 0 : Math.mulDiv(credit, InterestLib.RAY, shares)
         );
 
-        /// Process the deposit Queues, every entry uses the same price per share
         fillAll
             ? fillUnbounded($, $.depositQueue, _markClaimableDeposit)
             : fillUntil($, $.depositQueue, _markClaimableDeposit, shares);
 
-        /// Reset after we're done
         SAVINGS_VAULT_PRICE_PER_SHARE.asUint256().tstore(0);
 
         uint256 minted = $.totalClaimableDepositShares - claimableBefore;
@@ -211,7 +118,6 @@ abstract contract Queue is LiquidityManagement, IQueue {
         uint256 processedSavingsShares = totalSavingsSharesInQueue -
             $.totalDepositQueueSavingsShares;
 
-        /// Pull all processed depositor funds out of savings vault
         if (processedSavingsShares > 0)
             $.savingsVault.redeem(
                 processedSavingsShares,
@@ -220,7 +126,6 @@ abstract contract Queue is LiquidityManagement, IQueue {
             );
     }
 
-    /// @dev Iterate over entire queue and eat until EOF
     function fillUnbounded(
         Storage storage $,
         TransactionQueue.RequestQueue storage queue,
@@ -234,7 +139,7 @@ abstract contract Queue is LiquidityManagement, IQueue {
             claim($, data.controller, data.amount, false);
         }
     }
-    /// @dev Iterate queue and accumulate claims until we hit required capacity. Reverts on pre-mature EOF
+
     function fillUntil(
         Storage storage $,
         TransactionQueue.RequestQueue storage queue,
@@ -249,17 +154,34 @@ abstract contract Queue is LiquidityManagement, IQueue {
             --length;
             if (!active) continue;
             if (data.amount >= remainder) {
-                /// @dev Base case, occurs exactly once at the last processed element
                 claim($, data.controller, remainder, false);
                 if (data.amount == remainder) break;
                 _insertHeadWithNewAmount(queue, data, data.amount - remainder);
                 break;
             } else {
-                /// @dev Recursive case
                 claim($, data.controller, data.amount, false);
                 remainder -= data.amount;
             }
         }
+    }
+
+    function _insertHeadWithNewAmount(
+        TransactionQueue.RequestQueue storage queue,
+        Transaction memory data,
+        uint256 newAmount
+    ) private {
+        data.amount = newAmount;
+        queue.pushFront(data);
+    }
+
+    function _pushToDepositQueue(
+        VaultBase.Storage storage $,
+        VaultBase.Transaction memory data
+    ) internal {
+        $.depositQueue.push(data);
+        $.totalDepositQueueSavingsShares += data.amount;
+        $.ledger[data.controller].pendingSavingsShares += data.amount;
+        emit DepositQueueValuation($.totalDepositQueueSavingsShares);
     }
 
     function _markClaimableDeposit(
@@ -292,6 +214,16 @@ abstract contract Queue is LiquidityManagement, IQueue {
         emit ClaimableDeposit(owner, $.ledger[owner].depositedAssets);
     }
 
+    function _pushToWithdrawQueue(
+        Storage storage $,
+        IVault.Transaction memory data
+    ) internal {
+        $.withdrawQueue.push(data);
+        $.totalWithdrawQueueShares += data.amount;
+        $.ledger[data.controller].pendingSharesOut += data.amount;
+        emit WithdrawQueueValuation($.totalWithdrawQueueShares);
+    }
+
     function _markClaimableWithdraw(
         VaultBase.Storage storage $,
         address owner,
@@ -315,34 +247,65 @@ abstract contract Queue is LiquidityManagement, IQueue {
         emit TotalClaimableWithdraws($.totalClaimableWithdrawAssets);
     }
 
-    /// @notice Cleans up void registry entries and links new data
-    /// @dev Restricted usage to modify an existing element to head (partial fills).
-    function _insertHeadWithNewAmount(
-        TransactionQueue.RequestQueue storage queue,
-        Transaction memory data,
-        uint256 newAmount
-    ) private {
-        data.amount = newAmount;
-        queue.pushFront(data);
+    function sanitizeDepositQueue(
+        uint256 maxIterations
+    ) external returns (uint256 removed) {
+        Storage storage $ = getStorage();
+        removed = $.depositQueue.sanitize(maxIterations);
     }
 
-    function _pushToWithdrawQueue(
-        Storage storage $,
-        IVault.Transaction memory data
-    ) internal {
-        $.withdrawQueue.push(data);
-        $.totalWithdrawQueueShares += data.amount;
-        $.ledger[data.controller].pendingSharesOut += data.amount;
-        emit WithdrawQueueValuation($.totalWithdrawQueueShares);
+    function totalPendingDeposits() public view returns (uint256 shares) {
+        Storage storage $ = getStorage();
+        shares = $.totalDepositQueueSavingsShares;
     }
 
-    function _pushToDepositQueue(
-        VaultBase.Storage storage $,
-        VaultBase.Transaction memory data
-    ) internal {
-        $.depositQueue.push(data);
-        $.totalDepositQueueSavingsShares += data.amount;
-        $.ledger[data.controller].pendingSavingsShares += data.amount;
-        emit DepositQueueValuation($.totalDepositQueueSavingsShares);
+    function _depositQueueValuation() internal view returns (uint256 assets) {
+        Storage storage $ = getStorage();
+        uint256 shares = $.totalDepositQueueSavingsShares;
+        assets = shares == 0 ? 0 : $.savingsVault.previewRedeem(shares);
+    }
+
+    function depositQueueLength() public view returns (uint256) {
+        Storage storage $ = getStorage();
+        return
+            TransactionQueue.length($.depositQueue) - $.depositQueue.cancelled;
+    }
+
+    function depositQueueHead()
+        public
+        view
+        returns (Transaction memory transaction)
+    {
+        Storage storage $ = getStorage();
+        transaction = TransactionQueue.front($.depositQueue);
+    }
+
+    function claimableDepositTotal() public view returns (uint256) {
+        Storage storage $ = getStorage();
+        return $.totalClaimableDepositShares;
+    }
+
+    function totalPendingWithdraws() public view returns (uint256 shares) {
+        Storage storage $ = getStorage();
+        shares = $.totalWithdrawQueueShares;
+    }
+
+    function withdrawQueueLength() public view returns (uint256) {
+        Storage storage $ = getStorage();
+        return TransactionQueue.length($.withdrawQueue);
+    }
+
+    function withdrawQueueHead()
+        public
+        view
+        returns (Transaction memory transaction)
+    {
+        Storage storage $ = getStorage();
+        transaction = TransactionQueue.front($.withdrawQueue);
+    }
+
+    function claimableWithdrawTotal() public view returns (uint256) {
+        Storage storage $ = getStorage();
+        return $.totalClaimableWithdrawAssets;
     }
 }

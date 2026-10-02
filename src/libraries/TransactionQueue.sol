@@ -11,7 +11,7 @@ library TransactionQueue {
     using DoubleEndedQueue for DoubleEndedQueue.Bytes32Deque;
 
     error QueueEmpty();
-    error QueueFull(); // only when more than uint128 entries exceeded
+    error QueueFull();
 
     struct RequestQueue {
         DoubleEndedQueue.Bytes32Deque order;
@@ -26,38 +26,28 @@ library TransactionQueue {
         element = keccak256(abi.encode(controller, nonce));
     }
 
-    function tryGet(
+    function push(
         RequestQueue storage queue,
-        bytes32 element
-    )
-        internal
-        view
-        returns (bool active, IVault.Transaction memory transaction)
-    {
-        transaction = queue.entries[element];
-        active = transaction.controller != address(0);
+        IVault.Transaction memory transaction
+    ) internal {
+        bytes32 element = key(transaction.controller, transaction.nonce);
+
+        bool success = queue.order.tryPushBack(element);
+        if (!success) revert QueueFull();
+
+        queue.entries[element] = transaction;
     }
 
-    function front(
-        RequestQueue storage queue
-    ) internal view returns (IVault.Transaction memory transaction) {
-        uint256 n = queue.order.length();
-        for (uint256 i; i < n; ++i) {
-            bool active;
-            (active, transaction) = tryGet(queue, queue.order.at(i));
-            if (active) return transaction;
-        }
-        revert QueueEmpty();
-    }
+    function pushFront(
+        RequestQueue storage queue,
+        IVault.Transaction memory transaction
+    ) internal {
+        bytes32 element = key(transaction.controller, transaction.nonce);
 
-    function length(
-        RequestQueue storage queue
-    ) internal view returns (uint256) {
-        return queue.order.length();
-    }
+        bool success = queue.order.tryPushFront(element);
+        if (!success) revert QueueFull();
 
-    function isEmpty(RequestQueue storage queue) internal view returns (bool) {
-        return queue.order.length() == queue.cancelled;
+        queue.entries[element] = transaction;
     }
 
     function pop(
@@ -97,27 +87,37 @@ library TransactionQueue {
         queue.cancelled -= removed;
     }
 
-    function push(
+    function tryGet(
         RequestQueue storage queue,
-        IVault.Transaction memory transaction
-    ) internal {
-        bytes32 element = key(transaction.controller, transaction.nonce);
-
-        bool success = queue.order.tryPushBack(element);
-        if (!success) revert QueueFull();
-
-        queue.entries[element] = transaction;
+        bytes32 element
+    )
+        internal
+        view
+        returns (bool active, IVault.Transaction memory transaction)
+    {
+        transaction = queue.entries[element];
+        active = transaction.controller != address(0);
     }
 
-    function pushFront(
-        RequestQueue storage queue,
-        IVault.Transaction memory transaction
-    ) internal {
-        bytes32 element = key(transaction.controller, transaction.nonce);
+    function front(
+        RequestQueue storage queue
+    ) internal view returns (IVault.Transaction memory transaction) {
+        uint256 n = queue.order.length();
+        for (uint256 i; i < n; ++i) {
+            bool active;
+            (active, transaction) = tryGet(queue, queue.order.at(i));
+            if (active) return transaction;
+        }
+        revert QueueEmpty();
+    }
 
-        bool success = queue.order.tryPushFront(element);
-        if (!success) revert QueueFull();
+    function length(
+        RequestQueue storage queue
+    ) internal view returns (uint256) {
+        return queue.order.length();
+    }
 
-        queue.entries[element] = transaction;
+    function isEmpty(RequestQueue storage queue) internal view returns (bool) {
+        return queue.order.length() == queue.cancelled;
     }
 }

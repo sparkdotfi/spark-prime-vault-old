@@ -147,7 +147,7 @@ contract VaultManagerUnitTests is QueueHelper {
             abi.encodeWithSelector(
                 IAccessControl.AccessControlUnauthorizedAccount.selector,
                 vaultManager,
-                REBALANCER_ROLER
+                REBALANCER_ROLE
             )
         );
         vault.depositToSavings(1 ether);
@@ -164,7 +164,7 @@ contract VaultManagerUnitTests is QueueHelper {
             abi.encodeWithSelector(
                 IAccessControl.AccessControlUnauthorizedAccount.selector,
                 liquidityManager,
-                REBALANCER_ROLER
+                REBALANCER_ROLE
             )
         );
         vault.withdrawFromSavings(shares);

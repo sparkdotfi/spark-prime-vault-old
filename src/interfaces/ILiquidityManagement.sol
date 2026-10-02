@@ -18,7 +18,7 @@ interface ILiquidityManagement {
 
     /// @notice Total amount of liquid USDC available for NEW withdraw request
     /// @dev base asset balance - claimableWithdrawTotal
-    /// @dev Can be negative
+    /// @dev Can be negative. Savings vault shares the vault holds do not count until the rebalancer withdraws them
     function availableLiquidAssets() external view returns (int256);
 
     /// @notice Largest `tradeVolume` processQueue accepts. In base Assets.
