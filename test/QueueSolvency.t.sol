@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import {QueueHelper} from "./utils/QueueHelper.sol";
 import {IQueue} from "src/interfaces/IQueue.sol";
 import {Vm} from "forge-std/Vm.sol";
+import {SavingsVault} from "./mocks/SavingsVault.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
@@ -234,7 +235,7 @@ contract QueueSolvencyTests is QueueHelper {
         assertSolvent();
     }
 
-    function test_takeAfterMatching_makesVaultInsolvent() public {
+    function test_cannot_take_afterMatching_theAssetsOwedToClaimers() public {
         _ensureCapacity(40 ether);
         _mintShares(4, 40 ether, defaultUsers());
         _drainLiquidity();
@@ -250,10 +251,39 @@ contract QueueSolvencyTests is QueueHelper {
         vault.processQueue(volume);
         assertSolvent();
 
-        /// simulate PAU pulling funds that were commited to claimers
-        _drainLiquidity();
+        uint256 held = baseAsset.balanceOf(address(vault));
+        int256 available = vault.availableLiquidAssets();
+        vm.prank(liquidityManager);
+        vm.expectRevert(
+            abi.encodeWithSignature(
+                "ExceedsAvailableLiquidity(uint256,int256)",
+                held,
+                available
+            )
+        );
+        vault.take(held);
 
-        assertInsolvent();
+        _drainLiquidity();
+        assertSolvent();
+    }
+
+    function test_processQueue_fillsDepositsOnlyUpToTheSavingsVaultsLiquidity()
+        public
+    {
+        _depositAndClaim(user, 50 ether);
+        _drainLiquidity();
+        _requestRedeem(user, vault.balanceOf(user));
+        _closeCapacity();
+        _requestDeposit(userTwo, 20 ether);
+        uint256 liquid = baseAsset.balanceOf(address(savingsVault));
+        SavingsVault(address(savingsVault)).lend(liquid - 5 ether);
+
+        vm.prank(rebalancer);
+        vault.processQueue(type(uint256).max);
+
+        assertApproxEqAbs(vault.maxDeposit(userTwo), 5 ether, 2);
+        assertGt(vault.totalPendingDeposits(), 0);
+        assertSolvent();
     }
 
     function test_pendingEscrowIsHeldButNotDeliverable() public {
@@ -572,7 +602,7 @@ contract QueueSolvencyTests is QueueHelper {
         assertSolvent();
     }
 
-    function test_cannot_processQueue_afterTheSavingsBackingIsWithdrawn()
+    function test_cannot_withdrawFromSavings_theDepositQueuesBacking()
         public
     {
         _closeCapacity();
@@ -580,24 +610,15 @@ contract QueueSolvencyTests is QueueHelper {
         uint256 backing = savingsVault.balanceOf(address(vault));
 
         vm.prank(rebalancer);
-        uint256 unwound = vault.withdrawFromSavings(backing);
-        _openCapacity(50 ether);
-
-        vm.prank(rebalancer);
         vm.expectRevert(
             abi.encodeWithSignature(
-                "ERC4626ExceededMaxRedeem(address,uint256,uint256)",
-                address(vault),
+                "ExceedsFreeSavingsShares(uint256,uint256)",
                 backing,
                 0
             )
         );
-        vault.processQueue(10 ether);
-
-        uint256 needed = savingsVault.previewMint(backing);
-        if (needed > unwound) _injectLiquidity(needed - unwound);
-        vm.prank(rebalancer);
-        vault.depositToSavings(needed);
+        vault.withdrawFromSavings(backing);
+        _openCapacity(50 ether);
 
         uint256 value = savingsVault.previewRedeem(
             vault.totalPendingDeposits()

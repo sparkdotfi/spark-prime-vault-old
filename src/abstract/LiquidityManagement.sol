@@ -22,6 +22,7 @@ abstract contract LiquidityManagement is
     function take(
         uint256 baseAmount
     ) public onlyRole(LIQUIDITY_MANAGER_ROLE) nonReentrant {
+        _requireAvailableLiquidity(baseAmount);
         IERC20(asset()).safeTransfer(msg.sender, baseAmount);
         emit FundsTaken(msg.sender, baseAmount);
     }
@@ -35,5 +36,11 @@ abstract contract LiquidityManagement is
         totalBaseAssets =
             IERC20(asset()).balanceOf(address(this)).toInt256() -
             $.totalClaimableWithdrawAssets.toInt256();
+    }
+
+    function _requireAvailableLiquidity(uint256 amount) internal view {
+        int256 available = availableLiquidAssets();
+        if (amount.toInt256() > available)
+            revert ExceedsAvailableLiquidity(amount, available);
     }
 }

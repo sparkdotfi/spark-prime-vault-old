@@ -271,24 +271,78 @@ contract CancelUnitTests is QueueHelper {
         vault.cancelDepositRequest(user, nonce);
     }
 
-    function test_cannot_cancelDepositRequest_whenInsolvent() public {
+    function test_cannot_withdrawFromSavings_theBackingOfACancellableDeposit()
+        public
+    {
         _closeCapacity();
         uint256 nonce = _queueDeposit(userTwo, userTwo, 10 ether);
         uint256 backing = savingsVault.balanceOf(address(vault));
+        uint256 refund = savingsVault.previewRedeem(backing);
 
         vm.prank(rebalancer);
-        vault.withdrawFromSavings(backing);
-
-        vm.prank(userTwo);
         vm.expectRevert(
             abi.encodeWithSignature(
-                "ERC4626ExceededMaxRedeem(address,uint256,uint256)",
-                address(vault),
+                "ExceedsFreeSavingsShares(uint256,uint256)",
                 backing,
                 0
             )
         );
+        vault.withdrawFromSavings(backing);
+
+        vm.prank(userTwo);
         vault.cancelDepositRequest(userTwo, nonce);
+
+        assertEq(baseAsset.balanceOf(userTwo), refund);
+    }
+
+    function test_requestDeposit_emitsDepositQueuedWithTheNonce() public {
+        _closeCapacity();
+        _fund(user, 10 ether);
+        uint256 nonce = vault.requestNonce(user) + 1;
+        uint256 shares = savingsVault.previewDeposit(10 ether);
+
+        vm.expectEmit(address(vault));
+        emit ISparkPrimeVault.DepositQueued(user, user, nonce, shares);
+
+        vm.prank(user);
+        vault.requestDeposit(10 ether, user, user);
+    }
+
+    function test_cancelDepositRequest_byTheEmittedNonceAfterAnotherFunder()
+        public
+    {
+        _closeCapacity();
+        _fund(user, 10 ether);
+
+        vm.recordLogs();
+        vm.prank(user);
+        vault.requestDeposit(10 ether, user, user);
+        uint256 nonce = _queuedNonce(vm.getRecordedLogs());
+
+        _queueDeposit(userTwo, user, 10 ether);
+        assertEq(vault.requestNonce(user), nonce + 1);
+
+        vm.prank(user);
+        vault.cancelDepositRequest(user, nonce);
+
+        assertEq(vault.queuedDepositRequest(user, nonce).owner, address(0));
+        assertEq(vault.queuedDepositRequest(user, nonce + 1).owner, userTwo);
+        assertGt(baseAsset.balanceOf(user), 0);
+    }
+
+    function _queuedNonce(
+        Vm.Log[] memory logs
+    ) internal view returns (uint256 nonce) {
+        for (uint256 i; i < logs.length; ++i) {
+            if (
+                logs[i].emitter == address(vault) &&
+                logs[i].topics[0] == ISparkPrimeVault.DepositQueued.selector
+            ) {
+                (nonce, ) = abi.decode(logs[i].data, (uint256, uint256));
+                return nonce;
+            }
+        }
+        revert("no DepositQueued");
     }
 
     function test_cancelDepositRequest_afterLiquidityIsTaken() public {
@@ -302,7 +356,7 @@ contract CancelUnitTests is QueueHelper {
         );
 
         _drainLiquidity();
-        assertLt(vault.availableLiquidAssets(), 0);
+        assertEq(vault.availableLiquidAssets(), 0);
 
         vm.prank(userTwo);
         vault.cancelDepositRequest(userTwo, nonce);

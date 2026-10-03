@@ -190,8 +190,7 @@ contract VaultManagerUnitTests is QueueHelper {
         vm.prank(rebalancer);
         vm.expectRevert(
             abi.encodeWithSignature(
-                "ERC4626ExceededMaxRedeem(address,uint256,uint256)",
-                address(vault),
+                "ExceedsFreeSavingsShares(uint256,uint256)",
                 shares + 1,
                 shares
             )
@@ -227,7 +226,9 @@ contract VaultManagerUnitTests is QueueHelper {
         );
     }
 
-    function test_depositToSavings_canStrandAClaimableRedeemer() public {
+    function test_cannot_depositToSavings_theAssetsOwedToAClaimableRedeemer()
+        public
+    {
         _depositAndClaim(user, 100 ether);
         uint256 shares = vault.balanceOf(user);
         _coverRedemption(shares);
@@ -236,12 +237,32 @@ contract VaultManagerUnitTests is QueueHelper {
         vault.requestRedeem(shares, user, user);
         assertEq(vault.maxRedeem(user), shares);
 
+        int256 available = vault.availableLiquidAssets();
         vm.prank(rebalancer);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ILiquidityManagement.ExceedsAvailableLiquidity.selector,
+                40 ether,
+                available
+            )
+        );
         vault.depositToSavings(40 ether);
 
         vm.prank(user);
-        vm.expectRevert();
         vault.redeem(shares, user, user);
+        assertEq(vault.maxRedeem(user), 0);
+    }
+
+    function test_convertToAssets_usesTheAccruedIndex() public {
+        _depositAndClaim(user, 50 ether);
+        vm.warp(block.timestamp + 30 days);
+        uint256 shares = vault.balanceOf(user);
+
+        assertGt(vault.previewIndex(), vault.index());
+        assertEq(
+            vault.convertToAssets(shares),
+            Math.mulDiv(shares, vault.previewIndex(), RAY)
+        );
     }
 
     function test_setMinimumDeposit() public {
@@ -487,6 +508,7 @@ contract VaultManagerUnitTests is QueueHelper {
         vault.processQueue(volume);
         assertEq(vault.withdrawQueueLength(), 0);
 
+        _injectLiquidity(1 ether);
         vm.prank(liquidityManager);
         vault.take(1 ether);
     }

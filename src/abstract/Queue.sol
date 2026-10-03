@@ -52,7 +52,7 @@ abstract contract Queue is LiquidityManagement, IQueue {
         returns (uint256 valueInBaseAssets)
     {
         int256 liquidAssets = availableLiquidAssets() +
-            _depositQueueValuation().toInt256();
+            _fillableDepositValue().toInt256();
         valueInBaseAssets = uint256(
             liquidAssets > 0 ? liquidAssets : int256(0)
         );
@@ -97,13 +97,14 @@ abstract contract Queue is LiquidityManagement, IQueue {
         uint256 totalSavingsSharesInQueue = $.totalDepositQueueSavingsShares;
         uint256 claimableBefore = $.totalClaimableDepositShares;
         uint256 queueValue = _depositQueueValuation();
+        uint256 volume = Math.min(tradeVolume, _fillableDepositValue());
 
-        bool fillAll = tradeVolume >= queueValue;
+        bool fillAll = volume >= queueValue;
 
         uint256 shares = fillAll
             ? totalSavingsSharesInQueue
-            : $.savingsVault.previewWithdraw(tradeVolume);
-        uint256 credit = fillAll ? queueValue : tradeVolume;
+            : _savingsSharesFor(volume);
+        uint256 credit = fillAll ? queueValue : volume;
 
         SAVINGS_VAULT_PRICE_PER_SHARE.asUint256().tstore(
             shares == 0 ? 0 : Math.mulDiv(credit, InterestLib.RAY, shares)
@@ -267,7 +268,25 @@ abstract contract Queue is LiquidityManagement, IQueue {
     function _depositQueueValuation() internal view returns (uint256 assets) {
         Storage storage $ = getStorage();
         uint256 shares = $.totalDepositQueueSavingsShares;
-        assets = shares == 0 ? 0 : $.savingsVault.previewRedeem(shares);
+        assets = shares == 0 ? 0 : $.savingsVault.convertToAssets(shares);
+    }
+
+    function _fillableDepositValue() internal view returns (uint256) {
+        uint256 queued = _depositQueueValuation();
+        if (queued == 0) return 0;
+        Storage storage $ = getStorage();
+        uint256 redeemable = $.savingsVault.convertToAssets(
+            $.savingsVault.maxRedeem(address(this))
+        );
+        return Math.min(queued, redeemable);
+    }
+
+    function _savingsSharesFor(
+        uint256 assets
+    ) internal view returns (uint256 shares) {
+        Storage storage $ = getStorage();
+        shares = $.savingsVault.convertToShares(assets);
+        if ($.savingsVault.convertToAssets(shares) < assets) ++shares;
     }
 
     function depositQueueLength() public view returns (uint256) {

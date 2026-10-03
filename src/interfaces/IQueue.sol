@@ -29,7 +29,7 @@ interface IQueue {
 
     /// @notice Matches the withdraw queue against the deposit queue and free capacity for up to `tradeVolume` base asset. REBALANCER_ROLE only
     /// @dev Clamps `tradeVolume` to maxTradeVolume() and trusts the rebalancer to size it so the fill loops fit in a block.
-    /// Fills the withdraw queue first, burning the matched shares, then the deposit queue at a single savings vault price.
+    /// Fills the withdraw queue first, burning the matched shares, then the deposit queue at a single savings vault price, up to what the savings vault can redeem now.
     /// Reverts with AssetInvariantBroken or ShareInvariantBroken if the result leaves the vault insolvent or above capacity
     function processQueue(uint256 tradeVolume) external;
 

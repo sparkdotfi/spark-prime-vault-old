@@ -232,8 +232,9 @@ abstract contract QueueHelper is Test {
 
     /// @dev Curator pulls out all liquidity to force withdraw queues
     function _drainLiquidity() internal returns (uint256 taken) {
-        taken = baseAsset.balanceOf(address(vault));
-        if (taken == 0) return 0;
+        int256 free = vault.availableLiquidAssets();
+        if (free <= 0) return 0;
+        taken = uint256(free);
         vm.prank(liquidityManager);
         vault.take(taken);
     }

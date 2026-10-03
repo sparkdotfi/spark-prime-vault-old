@@ -85,7 +85,7 @@ abstract contract VaultBase is
         uint256 shares = Math.mulDiv(
             assets,
             InterestLib.RAY,
-            $.indexRate,
+            InterestLib.simulateAccrue($),
             rounding
         );
         return shares;
@@ -98,7 +98,7 @@ abstract contract VaultBase is
         Storage storage $ = getStorage();
         uint256 assets = Math.mulDiv(
             shares,
-            $.indexRate,
+            InterestLib.simulateAccrue($),
             InterestLib.RAY,
             rounding
         );

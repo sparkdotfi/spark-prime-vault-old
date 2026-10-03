@@ -141,6 +141,12 @@ contract Vault is Rebalancer, VaultManagement, Queue, ISparkPrimeVault {
         if (shares == 0) revert ShareConversionFailure(transaction.amount);
         transaction.amount = shares;
         _pushToDepositQueue($, transaction);
+        emit DepositQueued(
+            transaction.controller,
+            transaction.owner,
+            transaction.nonce,
+            shares
+        );
     }
 
     function cancelDepositRequest(

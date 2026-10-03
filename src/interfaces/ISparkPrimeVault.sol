@@ -43,6 +43,15 @@ interface ISparkPrimeVault {
     /// @notice Emitted when the user performs deposit or mint with a referral code
     event ReferralCode(address beneficiary, uint256 code);
 
+    /// @notice Emitted when a deposit request, or remainder from partial fill, is queued as `savingsShares`
+    /// @dev `nonce` identifies the entry for cancelDepositRequest. requestId is always 0
+    event DepositQueued(
+        address indexed controller,
+        address indexed owner,
+        uint256 nonce,
+        uint256 savingsShares
+    );
+
     /// @notice Emitted when a queued deposit is cancelled and `assets` are refunded to `owner`
     event DepositRequestCancelled(
         address indexed controller,

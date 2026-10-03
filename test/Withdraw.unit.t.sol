@@ -281,7 +281,7 @@ contract RequestWithdrawUnitTests is QueueHelper {
         _depositAndClaim(user, 50 ether);
         vm.warp(block.timestamp + 1 days);
         uint256 shares = _sharesFor(MINIMUM_WITHDRAW);
-        assertLt(vault.convertToAssets(shares), MINIMUM_WITHDRAW);
+        assertLt(Math.mulDiv(shares, vault.index(), RAY), MINIMUM_WITHDRAW);
 
         vm.prank(user);
         vault.requestRedeem(shares, user, user);
