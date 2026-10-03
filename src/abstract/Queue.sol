@@ -84,7 +84,10 @@ abstract contract Queue is LiquidityManagement, IQueue {
             );
 
         uint256 matched = queuedBefore - $.totalWithdrawQueueShares;
-        if (matched > 0) _burn(address(this), matched);
+        if (matched > 0) {
+            _burn(address(this), matched);
+            emit WithdrawQueueValuation($.totalWithdrawQueueShares);
+        }
     }
 
     function _fillDepositQueue(
@@ -118,12 +121,14 @@ abstract contract Queue is LiquidityManagement, IQueue {
         uint256 processedSavingsShares = totalSavingsSharesInQueue -
             $.totalDepositQueueSavingsShares;
 
-        if (processedSavingsShares > 0)
+        if (processedSavingsShares > 0) {
             $.savingsVault.redeem(
                 processedSavingsShares,
                 address(this),
                 address(this)
             );
+            emit DepositQueueValuation($.totalDepositQueueSavingsShares);
+        }
     }
 
     function fillUnbounded(
@@ -186,7 +191,7 @@ abstract contract Queue is LiquidityManagement, IQueue {
 
     function _markClaimableDeposit(
         VaultBase.Storage storage $,
-        address owner,
+        address controller,
         uint256 amount,
         bool instantClaim
     ) internal {
@@ -201,17 +206,17 @@ abstract contract Queue is LiquidityManagement, IQueue {
         uint256 shares = convertToShares(baseAssets);
         if (shares == 0) baseAssets = 0;
 
-        $.ledger[owner].depositedAssets += baseAssets;
-        $.ledger[owner].sharesOwed += shares;
+        $.ledger[controller].depositedAssets += baseAssets;
+        $.ledger[controller].sharesOwed += shares;
 
         if (!instantClaim) {
-            $.ledger[owner].pendingSavingsShares -= amount;
+            $.ledger[controller].pendingSavingsShares -= amount;
             $.totalDepositQueueSavingsShares -= amount;
         }
 
         $.totalClaimableDepositShares += shares;
         if (instantClaim) _mint(address(this), shares);
-        emit ClaimableDeposit(owner, $.ledger[owner].depositedAssets);
+        emit ClaimableDeposit(controller, $.ledger[controller].depositedAssets);
     }
 
     function _pushToWithdrawQueue(
@@ -226,24 +231,24 @@ abstract contract Queue is LiquidityManagement, IQueue {
 
     function _markClaimableWithdraw(
         VaultBase.Storage storage $,
-        address owner,
+        address controller,
         uint256 amount,
         bool instantClaim
     ) internal {
         uint256 assets = convertToAssets(amount);
 
-        $.ledger[owner].withdrawnShares += amount;
-        $.ledger[owner].assetsOwed += assets;
+        $.ledger[controller].withdrawnShares += amount;
+        $.ledger[controller].assetsOwed += assets;
         $.totalClaimableWithdrawAssets += assets;
 
         if (instantClaim) {
             _burn(address(this), amount);
         } else {
-            $.ledger[owner].pendingSharesOut -= amount;
+            $.ledger[controller].pendingSharesOut -= amount;
             $.totalWithdrawQueueShares -= amount;
         }
 
-        emit ClaimableWithdraw(owner, $.ledger[owner].assetsOwed);
+        emit ClaimableWithdraw(controller, $.ledger[controller].assetsOwed);
         emit TotalClaimableWithdraws($.totalClaimableWithdrawAssets);
     }
 

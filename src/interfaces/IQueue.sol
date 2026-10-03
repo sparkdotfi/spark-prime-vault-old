@@ -3,14 +3,14 @@ pragma solidity ^0.8.20;
 
 import {VaultBase} from "../abstract/VaultBase.sol";
 interface IQueue {
-    /// @notice Emitted when a users claimable deposit amount changes
-    event ClaimableDeposit(address beneficiary, uint256 totalAmount);
+    /// @notice Emitted when a controller's claimable deposit, in base asset, changes
+    event ClaimableDeposit(address controller, uint256 totalAmount);
 
     /// @notice Emitted whenever Deposit Queue value changes
     event DepositQueueValuation(uint256 newAmount);
 
-    /// @notice Emitted when a users claimable withdraw amount changes
-    event ClaimableWithdraw(address beneficiary, uint256 totalShares);
+    /// @notice Emitted when a controller's claimable withdraw, in base asset, changes
+    event ClaimableWithdraw(address controller, uint256 totalAssets);
 
     /// @notice Emitted whenever Withdraw Queue value changes
     event WithdrawQueueValuation(uint256 newAmount);

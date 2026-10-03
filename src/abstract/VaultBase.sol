@@ -164,7 +164,7 @@ abstract contract VaultBase is
     }
 
     function maxDeposit(
-        address receiver
+        address controller
     )
         public
         view
@@ -173,11 +173,11 @@ abstract contract VaultBase is
     {
         if (paused()) return 0;
         Storage storage $ = getStorage();
-        claimableAssets = $.ledger[receiver].depositedAssets;
+        claimableAssets = $.ledger[controller].depositedAssets;
     }
 
     function maxMint(
-        address receiver
+        address controller
     )
         public
         view
@@ -186,7 +186,7 @@ abstract contract VaultBase is
     {
         if (paused()) return 0;
         Storage storage $ = getStorage();
-        claimableShares = $.ledger[receiver].sharesOwed;
+        claimableShares = $.ledger[controller].sharesOwed;
     }
 
     function claimableRedeemRequest(
@@ -198,7 +198,7 @@ abstract contract VaultBase is
     }
 
     function maxWithdraw(
-        address owner
+        address controller
     )
         public
         view
@@ -207,11 +207,11 @@ abstract contract VaultBase is
     {
         if (paused()) return 0;
         Storage storage $ = getStorage();
-        claimValue = $.ledger[owner].assetsOwed;
+        claimValue = $.ledger[controller].assetsOwed;
     }
 
     function maxRedeem(
-        address owner
+        address controller
     )
         public
         view
@@ -220,7 +220,7 @@ abstract contract VaultBase is
     {
         if (paused()) return 0;
         Storage storage $ = getStorage();
-        claimableShares = $.ledger[owner].withdrawnShares;
+        claimableShares = $.ledger[controller].withdrawnShares;
     }
 
     function previewDeposit(
@@ -249,5 +249,9 @@ abstract contract VaultBase is
 
     function share() public view override returns (address shareTokenAddress) {
         shareTokenAddress = address(this);
+    }
+
+    function vault(address asset_) external view returns (address) {
+        return asset_ == asset() ? address(this) : address(0);
     }
 }

@@ -183,7 +183,7 @@ contract RequestWithdrawUnitTests is QueueHelper {
         vm.prank(user);
         vm.expectRevert(
             abi.encodeWithSelector(
-                ISparkPrimeVault.MustExceedMinimumRequestAmount.selector,
+                ISparkPrimeVault.BelowMinimumRequestAmount.selector,
                 MINIMUM_WITHDRAW
             )
         );
@@ -216,7 +216,7 @@ contract RequestWithdrawUnitTests is QueueHelper {
         vm.prank(user);
         vm.expectRevert(
             abi.encodeWithSelector(
-                ISparkPrimeVault.MustExceedMinimumRequestAmount.selector,
+                ISparkPrimeVault.BelowMinimumRequestAmount.selector,
                 MINIMUM_WITHDRAW
             )
         );
@@ -242,7 +242,7 @@ contract RequestWithdrawUnitTests is QueueHelper {
         vm.prank(user);
         vm.expectRevert(
             abi.encodeWithSelector(
-                ISparkPrimeVault.MustExceedMinimumRequestAmount.selector,
+                ISparkPrimeVault.BelowMinimumRequestAmount.selector,
                 MINIMUM_WITHDRAW
             )
         );
@@ -265,7 +265,7 @@ contract RequestWithdrawUnitTests is QueueHelper {
         vm.prank(user);
         vm.expectRevert(
             abi.encodeWithSelector(
-                ISparkPrimeVault.MustExceedMinimumRequestAmount.selector,
+                ISparkPrimeVault.BelowMinimumRequestAmount.selector,
                 MINIMUM_WITHDRAW
             )
         );

@@ -34,8 +34,11 @@ interface IVaultManagement {
     /// @notice Thrown when VAULT_MANAGER attempts to set totalAssets above convertToAssets(totalSupply())
     error TotalAssetsExceedIndexValue();
 
-    /// @notice Thrown when VAULT_MANAGER attempts to set maximumCapacity < totalSupply
-    error MaximumCapacityCannotExceedCurrentTotal();
+    /// @notice Thrown when VAULT_MANAGER attempts to set maximumCapacity below totalSupply
+    error CapacityBelowTotalSupply();
+
+    /// @notice Thrown when a capacity above type(uint128).max is set, which share conversions could overflow
+    error CapacityAboveLimit();
 
     /// @notice Sets the per-second continiuous interest rate. VAULT_MANAGER only
     /// @dev Accrues at the old rate first. The rate must be within [RAY, MAX_RATE]
@@ -46,6 +49,7 @@ interface IVaultManagement {
     function setTotalAssets(uint256 newTotalAssets) external;
 
     /// @notice Set Maximum Vault Capacity (spPRIME shares cap). VAULT_MANAGER only
+    /// @dev Must be at least totalSupply and at most type(uint128).max
     function setCapacity(uint256 newCapacity) external;
 
     /// @notice Sets the smallest base asset amount requestDeposit accepts; 0 disables it. VAULT_MANAGER only
@@ -58,9 +62,10 @@ interface IVaultManagement {
     /// @dev Not implemented yet: the call has no effect
     function updateWithdrawFee(uint256 bps) external;
 
-    /// @notice Halts every user entry point. VAULT_MANAGER only
+    /// @notice Pauses requests and claims. VAULT_MANAGER only
+    /// @dev cancelDepositRequest, setOperator and the role-gated functions, including processQueue and take, stay callable
     function pause() external;
 
-    /// @notice Resumes user entry points. DEFAULT_ADMIN only
+    /// @notice Resumes requests and claims. DEFAULT_ADMIN only
     function unpause() external;
 }

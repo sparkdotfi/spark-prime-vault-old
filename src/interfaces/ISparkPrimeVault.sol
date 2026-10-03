@@ -41,7 +41,7 @@ import {IVault} from "./IVault.sol";
 
 interface ISparkPrimeVault {
     /// @notice Emitted when the user performs deposit or mint with a referral code
-    event ReferralCode(address beneficary, uint256 code);
+    event ReferralCode(address beneficiary, uint256 code);
 
     /// @notice Emitted when a queued deposit is cancelled and `assets` are refunded to `owner`
     event DepositRequestCancelled(
@@ -55,7 +55,7 @@ interface ISparkPrimeVault {
     error ZeroValueProvided();
 
     /// @notice Thrown when a request is below the configured minimum `amount`
-    error MustExceedMinimumRequestAmount(uint256 amount);
+    error BelowMinimumRequestAmount(uint256 amount);
 
     /// @notice Thrown when cancelDepositRequest targets a nonce with no queued deposit
     error RequestNotQueued(address controller, uint256 nonce);
@@ -87,11 +87,6 @@ interface ISparkPrimeVault {
         address controller,
         uint256 referralCode
     ) external returns (uint256 assets);
-
-    /// @notice spPRIME shares the controller has waiting in the withdraw queue; equal to pendingRedeemRequest
-    function pendingWithdrawAmount(
-        address controller
-    ) external view returns (uint256);
 
     /// @notice Nonce of the controller's latest request; queued deposits are keyed by (controller, nonce)
     function requestNonce(address controller) external view returns (uint256);

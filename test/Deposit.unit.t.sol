@@ -274,7 +274,7 @@ contract RequestDepositUnitTests is QueueHelper {
         vm.prank(user);
         vm.expectRevert(
             abi.encodeWithSelector(
-                ISparkPrimeVault.MustExceedMinimumRequestAmount.selector,
+                ISparkPrimeVault.BelowMinimumRequestAmount.selector,
                 MINIMUM_DEPOSIT
             )
         );
@@ -295,7 +295,7 @@ contract RequestDepositUnitTests is QueueHelper {
         vm.prank(user);
         vm.expectRevert(
             abi.encodeWithSelector(
-                ISparkPrimeVault.MustExceedMinimumRequestAmount.selector,
+                ISparkPrimeVault.BelowMinimumRequestAmount.selector,
                 MINIMUM_DEPOSIT
             )
         );
@@ -317,7 +317,7 @@ contract RequestDepositUnitTests is QueueHelper {
         vm.prank(userTwo);
         vm.expectRevert(
             abi.encodeWithSelector(
-                ISparkPrimeVault.MustExceedMinimumRequestAmount.selector,
+                ISparkPrimeVault.BelowMinimumRequestAmount.selector,
                 MINIMUM_DEPOSIT
             )
         );

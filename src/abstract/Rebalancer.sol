@@ -23,6 +23,7 @@ abstract contract Rebalancer is
         Storage storage $ = getStorage();
         IERC20(asset()).forceApprove(address($.savingsVault), assets);
         shares = $.savingsVault.deposit(assets, address(this));
+        if (shares == 0) revert ShareConversionFailure(assets);
         emit SavingsDeposit(assets, shares);
     }
 

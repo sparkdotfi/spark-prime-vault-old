@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 import {
     IERC7540
 } from "./IERC7540.sol";
+import {IERC7575Share} from "./IERC7575.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
@@ -14,7 +15,7 @@ import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 /// position. maxDeposit, maxMint, maxWithdraw and maxRedeem return 0 while
 /// paused; claimableDepositRequest and claimableRedeemRequest do not. Every
 /// preview function reverts.
-interface IVault is IERC7540 {
+interface IVault is IERC7540, IERC7575Share {
     struct InitParams {
         string name;
         string symbol;
@@ -31,7 +32,6 @@ interface IVault is IERC7540 {
     }
 
     struct Settlement {
-        address beneficiary;
         uint256 depositedAssets;
         uint256 sharesOwed;
         uint256 pendingSavingsShares;
@@ -60,7 +60,7 @@ interface IVault is IERC7540 {
     error UnauthorizedCaller(address caller);
 
     /// @notice Thrown when an operator claims to a receiver other than the controller
-    error OperatorMaliciousAction(address reciever, address victim);
+    error OperatorMaliciousAction(address receiver, address victim);
 
     /// @notice Thrown when a deposit or mint claim exceeds the controller's claimable balance
     error InsufficientClaimableBalance(uint256 requested, uint256 available);

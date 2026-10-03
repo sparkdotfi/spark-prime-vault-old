@@ -29,6 +29,7 @@ import {
 import {
     IERC7540Operator
 } from "./interfaces/IERC7540.sol";
+import {IERC7575Share} from "./interfaces/IERC7575.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 contract Vault is Rebalancer, VaultManagement, Queue, ISparkPrimeVault {
     using TransactionQueue for TransactionQueue.RequestQueue;
@@ -50,6 +51,7 @@ contract Vault is Rebalancer, VaultManagement, Queue, ISparkPrimeVault {
             revert InterestRateBelowRay();
         if (params.ratePerSecond > InterestLib.MAX_RATE)
             revert InterestRateAboveMax();
+        if (params.capacity > type(uint128).max) revert CapacityAboveLimit();
         if (
             params.admin == address(0) ||
             params.vaultManager == address(0) ||
@@ -85,7 +87,7 @@ contract Vault is Rebalancer, VaultManagement, Queue, ISparkPrimeVault {
         Storage storage $ = getStorage();
         if (assets == 0 || controller == address(0)) revert ZeroValueProvided();
         if (assets < $.minimumDeposit)
-            revert MustExceedMinimumRequestAmount($.minimumDeposit);
+            revert BelowMinimumRequestAmount($.minimumDeposit);
         if (msg.sender != owner) revert UnauthorizedCaller(msg.sender);
 
         InterestLib.accrueInterest($);
@@ -273,7 +275,7 @@ contract Vault is Rebalancer, VaultManagement, Queue, ISparkPrimeVault {
         InterestLib.accrueInterest($);
         if (shares == 0 || controller == address(0)) revert ZeroValueProvided();
         if (convertToAssets(shares) < $.minimumWithdraw)
-            revert MustExceedMinimumRequestAmount($.minimumWithdraw);
+            revert BelowMinimumRequestAmount($.minimumWithdraw);
 
         if (owner != msg.sender) revert UnauthorizedCaller(msg.sender);
 
@@ -473,13 +475,6 @@ contract Vault is Rebalancer, VaultManagement, Queue, ISparkPrimeVault {
         return $.ledger[controller].pendingSharesOut;
     }
 
-    function pendingWithdrawAmount(
-        address controller
-    ) public view returns (uint256) {
-        Storage storage $ = getStorage();
-        return $.ledger[controller].pendingSharesOut;
-    }
-
     function requestNonce(address controller) public view returns (uint256) {
         Storage storage $ = getStorage();
         return $.nonces[controller];
@@ -501,6 +496,7 @@ contract Vault is Rebalancer, VaultManagement, Queue, ISparkPrimeVault {
         return
             interfaceId == type(IERC7540Operator).interfaceId ||
             interfaceId == ERC7575_INTERFACE_ID ||
+            interfaceId == type(IERC7575Share).interfaceId ||
             interfaceId == ERC7540_DEPOSIT_INTERFACE_ID ||
             interfaceId == ERC7540_REDEEM_INTERFACE_ID ||
             super.supportsInterface(interfaceId);

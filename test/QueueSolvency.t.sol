@@ -944,6 +944,44 @@ contract QueueSolvencyTests is QueueHelper {
         assertSolvent();
     }
 
+    function test_processQueue_emitsQueueValuationsMatchingTheGetters()
+        public
+    {
+        _depositAndClaim(user, 50 ether);
+        _drainLiquidity();
+        _requestRedeem(user, vault.balanceOf(user));
+        _closeCapacity();
+        _requestDeposit(userTwo, 20 ether);
+        uint256 volume = vault.maxTradeVolume() / 2;
+
+        vm.recordLogs();
+        vm.prank(rebalancer);
+        vault.processQueue(volume);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        uint256 withdrawValuations;
+        uint256 depositValuations;
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].emitter != address(vault)) continue;
+            bytes32 topic = logs[i].topics[0];
+            uint256 value = logs[i].data.length == 32
+                ? abi.decode(logs[i].data, (uint256))
+                : 0;
+            if (topic == IQueue.WithdrawQueueValuation.selector) {
+                ++withdrawValuations;
+                assertEq(value, vault.totalPendingWithdraws());
+            } else if (topic == IQueue.DepositQueueValuation.selector) {
+                ++depositValuations;
+                assertEq(value, vault.totalPendingDeposits());
+            }
+        }
+
+        assertEq(withdrawValuations, 1);
+        assertEq(depositValuations, 1);
+        assertGt(vault.totalPendingWithdraws(), 0);
+        assertGt(vault.totalPendingDeposits(), 0);
+    }
+
     function test_processQueue_keepsTheRoundingSurplusOfAPartialFill() public {
         _deployCleanVault(MINIMUM_DEPOSIT, MINIMUM_WITHDRAW);
         uint256 volume = 55e18 - 1;

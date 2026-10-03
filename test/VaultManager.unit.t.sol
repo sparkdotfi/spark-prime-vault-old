@@ -44,9 +44,7 @@ contract VaultManagerUnitTests is QueueHelper {
         vm.prank(vaultManager);
         vm.expectRevert(
             abi.encodeWithSelector(
-                IVaultManagement
-                    .MaximumCapacityCannotExceedCurrentTotal
-                    .selector
+                IVaultManagement.CapacityBelowTotalSupply.selector
             )
         );
         vault.setCapacity(committed - 1);
@@ -71,6 +69,19 @@ contract VaultManagerUnitTests is QueueHelper {
             venueBefore + 40 ether
         );
         assertEq(savingsVault.balanceOf(address(vault)), shares);
+    }
+
+    function test_cannot_depositToSavings_forZeroSavingsShares() public {
+        _depositAndClaim(user, 50 ether);
+        vm.prank(rebalancer);
+        vault.depositToSavings(40 ether);
+        _accrueSavings(1_000);
+
+        vm.prank(rebalancer);
+        vm.expectRevert(
+            abi.encodeWithSelector(IVault.ShareConversionFailure.selector, 1)
+        );
+        vault.depositToSavings(1);
     }
 
     function test_depositToSavings_emitsSavingsDeposit() public {
@@ -251,7 +262,7 @@ contract VaultManagerUnitTests is QueueHelper {
         vm.prank(user);
         vm.expectRevert(
             abi.encodeWithSelector(
-                ISparkPrimeVault.MustExceedMinimumRequestAmount.selector,
+                ISparkPrimeVault.BelowMinimumRequestAmount.selector,
                 5 ether
             )
         );
@@ -282,7 +293,7 @@ contract VaultManagerUnitTests is QueueHelper {
         vm.prank(user);
         vm.expectRevert(
             abi.encodeWithSelector(
-                ISparkPrimeVault.MustExceedMinimumRequestAmount.selector,
+                ISparkPrimeVault.BelowMinimumRequestAmount.selector,
                 5 ether
             )
         );
@@ -842,6 +853,33 @@ contract VaultManagerUnitTests is QueueHelper {
         IVault.InitParams memory params = _initParams(venue);
 
         vm.expectRevert(IVault.AssetMismatch.selector);
+        new ERC1967Proxy(
+            address(implementation),
+            abi.encodeCall(Vault.initialize, (params))
+        );
+    }
+
+    function test_setCapacity_isBoundedByUint128() public {
+        vm.prank(vaultManager);
+        vm.expectRevert(IVaultManagement.CapacityAboveLimit.selector);
+        vault.setCapacity(uint256(type(uint128).max) + 1);
+
+        _setCapacity(type(uint128).max);
+        vm.warp(block.timestamp + 365 days);
+        _requestDeposit(user, 10 ether);
+
+        vm.prank(rebalancer);
+        vault.processQueue(0);
+
+        assertEq(vault.maxDeposit(user), 10 ether);
+    }
+
+    function test_cannot_initialize_aboveTheCapacityLimit() public {
+        VaultHandler implementation = new VaultHandler();
+        IVault.InitParams memory params = _initParams(savingsVault);
+        params.capacity = uint256(type(uint128).max) + 1;
+
+        vm.expectRevert(IVaultManagement.CapacityAboveLimit.selector);
         new ERC1967Proxy(
             address(implementation),
             abi.encodeCall(Vault.initialize, (params))
