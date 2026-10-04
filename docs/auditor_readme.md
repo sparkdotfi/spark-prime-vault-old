@@ -40,9 +40,9 @@ The user funds are directly deposited into the Savings Vault, which returns a `s
 A queued transaction enters processing via curator function `processQueue(tradeVolume)`
 
 At this stage the users Savings Vault Shares are withdrawn from the Savings Vault, returning `assets` denominated in baseAssets.
-The baseAssets are converted to `shares` via `convertToShares(assets)`. We store both inside the users `Settlement` ledger as `depositedAssets` and `sharesOwed`, which we'll use to lock the yield.
+The baseAssets are converted to `shares` via `convertToShares(assets)`. We store both inside the users `Settlement` ledger as `depositedAssets` and `sharesOwed`, which lock the price of the fill.
 
-Locking Yield: A user should earn yield whilst being a member of the queue via the Savings Vault. Once Spark marks their deposit claimable, they no longer earn any yield. They hold a claim for `X baseAssets in, Y shares out`.
+Locking Yield: A user should earn yield whilst being a member of the queue via the Savings Vault. Once Spark marks their deposit claimable, the price is locked: they hold a claim for `X baseAssets in, Y shares out`. The `Y` shares are minted into escrow at that point, so from then on they earn the vault's rate, whether or not they have been claimed yet.
 
 The queue itself is either fully or partially filled. 
 
@@ -75,7 +75,7 @@ A queued transaction enters processing via curator function `processQueue(tradeV
 
 All shares processed in the withdraw queue are burnt in a single `burn(totalShares)` call. The withdraw queue is always processed before the deposit queue, this is so that the Vault Accounting aligns. All burnt shares from the withdraw queue increase the available capacity of the vault. This is what allows deposit queue entries to be marked claimable, minting their shares into the vault's escrow in a single batch.
 
-Similar to Deposits, we lock the yield at the time of processing. A withdraw earns yield from Pending until Claimable state. This mitigates any concerns of withdrawers indefinitely remaining unclaimed and earning interest.
+As for deposits, the price is locked at the time of processing. Unlike a deposit, whose escrowed shares keep earning, a withdraw earns yield only from Pending until Claimable state. This mitigates any concerns of withdrawers indefinitely remaining unclaimed and earning interest.
 
 At the time of processing:
 The `Settlement` entry for each queue member is updated, incrementing their claimable asset amounts.
@@ -86,6 +86,9 @@ Their `assetsOwed` is incremented by the `convertToAssets(tx.amount)`, this lock
 Mirroring deposits, the locked `withdrawnShares` and `assetsOwed` are used to calculate the baseAsset amount owed to the user, and are transferred. Their `Settlement` entry is updated accordingly. 
 
 TotalClaimableWithdraws is decremented.
+
+### Withdraw fee
+`updateWithdrawFee(bps)` sets the fee for redemption requests made from then on, up to `MAX_WITHDRAW_BPS` (5,000 bps, 50%). Each request stores the fee in force when it was made (`Transaction.fee`), so a later change never reaches it, even while it waits in the queue. The fee is taken from the base asset owed when the request becomes Claimable, rounded up, so `assetsOwed` and `maxWithdraw` are net of it while `withdrawnShares` and `maxRedeem` stay the full share amount. The fee stays in the vault as free liquidity, which Spark can `take`.
 
 ### Accounting
 Idle Base Assets 
@@ -98,13 +101,13 @@ Usage: Pending Deposits (on `processQueue`) unwind savings vault shares into Idl
 
 Note for auditor:
 
-Previous Invariant: Savings Balance >= totalPendingDeposits;
-Invariant DOES NOT hold, insolvency is possible. Spark wants complete control over savings vault balance via IRebalancer, unwinding savings vault shares will leave the depositors blocked.
+Invariant: Savings Balance >= totalPendingDeposits.
+`withdrawFromSavings` reverts with `ExceedsFreeSavingsShares` rather than unwind the savings shares backing the deposit queue.
 
-Previous Invariant: Idle Base Assets >= Total Claimable Withdraws
-Invariant DOES NOT hold, insolvency is possible. Same reason as above, Spark may allocate idle base assets and block withdrawers.
+Invariant: Idle Base Assets >= Total Claimable Withdraws.
+`take` and `depositToSavings` revert with `ExceedsAvailableLiquidity` above `availableLiquidAssets()`, so they cannot spend base asset owed to claimable withdrawals.
 
-This means Spark is fully responsible for ensuring liquidity is available to withdrawers and depositors, and that a processQueue function doesn't fail as a result of neglected accounting.
+Spark is still responsible for supplying the liquidity that `processQueue` settles with.
 
 ### Mint and Burns
 Simply put: Withdraw Queue member shares are burnt, Deposit Queue member shares are minted. We can mint at most how much we have burnt + the available capacity (diff between totalSupply and maximumCapacity)
@@ -143,19 +146,15 @@ Invariant: `totalSupply() <= maxCapacity()`. It holds because:
 
 `MAXIMUM_CAPACITY` in the deploy script is a share amount. The index starts at RAY, so at deployment it equals the same amount of base asset.
 
-Note for auditor: an instant credit fills the capacity exactly only while the index is at least RAY. The index starts at RAY and never falls, because `setInterestRate` reverts with `InterestRateBelowRay` for any rate below RAY, as sUSDS does. `initialize` does not check the rate, so the deployment must pass one at or above RAY. `setInterestRate` also accrues at the old rate before switching, so a new rate never applies to time that has already passed, as sUSDS and Spark Vaults require.
+Note for auditor: an instant credit fills the capacity exactly only while the index is at least RAY. The index starts at RAY and never falls, because `setInterestRate` reverts with `InterestRateBelowRay` for any rate below RAY, as sUSDS does. `initialize` applies the same range check as `setInterestRate`. `setInterestRate` also accrues at the old rate before switching, so a new rate never applies to time that has already passed, as sUSDS and Spark Vaults require.
 
-### `take()` has no solvency guard
-`take` transfers any amount up to the full base-asset balance, with no check against `claimableWithdrawTotal()`. These assets are already promised to users, and will result in revert with `Insolvency` at claim time. 
-
-The `take()` function is access controlled to the PAU, It was suggested to Spark to add insolvency safe guards but it was decided they want full control via PAU over funds. `test_takeAfterMatching_makesVaultInsolvent`
-
-The same holds for `withdrawFromSavings` and the savings shares backing the deposit queue (see Accounting).
+### `take()` cannot spend assets owed to claimers
+`take` transfers at most `availableLiquidAssets()`, the idle base asset not already owed to claimable withdrawals, and reverts with `ExceedsAvailableLiquidity` above it (`test_cannot_take_afterMatching_theAssetsOwedToClaimers`). `depositToSavings` has the same floor, and `withdrawFromSavings` cannot unwind the savings shares backing the deposit queue (see Accounting).
 
 `pause` blocks claims (`deposit`, `mint`, `redeem`, `withdraw`) as well as requests, so users cannot reach amounts already set aside for them while paused. `take` and `withdrawFromSavings` are not paused and stay available to Spark.
 
 ### The savings position is not liquidity
-`availableLiquidAssets()` counts idle base asset only. Savings shares the Rebalancer holds outside the deposit queue are counted nowhere, so moving idle capital into savings reduces what `processQueue` can settle and what instant withdrawers receive, and can leave a Claimable redemption unpaid until Spark unwinds it (`test_depositToSavings_canStrandAClaimableRedeemer`). Spark's planner is responsible for unwinding before it processes.
+`availableLiquidAssets()` counts idle base asset only. Savings shares the Rebalancer holds outside the deposit queue are counted nowhere, so moving idle capital into savings reduces what `processQueue` can settle and what instant withdrawers receive. It cannot strand a Claimable redemption, because `depositToSavings` reverts above `availableLiquidAssets()` (`test_cannot_depositToSavings_theAssetsOwedToAClaimableRedeemer`). Spark's planner is responsible for unwinding before it processes.
 
 ### The savings vault is fixed at initialization and cannot be changed
 `initialize` sets the savings vault once and checks that its `asset()` is the base asset. There is no setter: switching venue requires a proxy upgrade, and only while the deposit queue is empty, since every queue entry is denominated in the current venue's shares.
@@ -225,7 +224,7 @@ After the fills, `processQueue` checks both again: `AssetInvariantBroken` if the
 
 `maxTradeVolume()` on `ILiquidityManagement` is the smaller of the two limits, and is what the liquidity manager sizes a call from; passing `type(uint256).max` processes as much as both limits allow. The share limit costs no useful volume: above it, a volume either does nothing beyond filling both queues, or would lock more shares than the withdraw side burns plus `availableCapacity()`.
 
-Note for auditor: when Spark has already taken base asset owed to claimable withdrawals (see `take()`), `availableLiquidAssets()` is negative and every `processQueue` reverts with `AssetInvariantBroken` until Spark returns it.
+Note for auditor: `take` and `depositToSavings` cannot push `availableLiquidAssets()` below zero. The deposit side counts only the part of the deposit queue the savings vault can redeem now (`maxRedeem`), and the deposit fill is capped at the same amount, so an illiquid savings vault shrinks the volume instead of reverting `processQueue`.
 
 ## `processQueue` loop is bounded by tradeVolume, not by elements
 The curator defines exactly how much volume should be traded between the deposit and withdraw queues, and iteration occurs until this volume is fulfilled.
