@@ -495,7 +495,7 @@ contract RequestWithdrawUnitTests is QueueHelper {
         _depositAndClaim(user, 50 ether);
         uint256 shares = vault.balanceOf(user);
         _coverRedemption(shares);
-        vm.prank(vaultManager);
+        vm.prank(riskManager);
         vault.updateWithdrawFee(100);
         uint256 gross = vault.convertToAssets(shares);
         uint256 fee = Math.mulDiv(gross, 100, 10_000, Math.Rounding.Ceil);
@@ -510,12 +510,12 @@ contract RequestWithdrawUnitTests is QueueHelper {
     function test_requestRedeem_keepsTheFeeInForceWhenItWasQueued() public {
         _depositAndClaim(user, 50 ether);
         _drainLiquidity();
-        vm.prank(vaultManager);
+        vm.prank(riskManager);
         vault.updateWithdrawFee(100);
         _requestRedeem(user, vault.balanceOf(user));
         assertEq(vault.withdrawQueueHead().fee, 100);
 
-        vm.prank(vaultManager);
+        vm.prank(riskManager);
         vault.updateWithdrawFee(500);
         uint256 gross = vault.convertToAssets(vault.totalPendingWithdraws());
         uint256 fee = Math.mulDiv(gross, 100, 10_000, Math.Rounding.Ceil);

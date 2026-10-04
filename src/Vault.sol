@@ -56,7 +56,9 @@ contract Vault is Rebalancer, VaultManagement, Queue, ISparkPrimeVault {
             params.admin == address(0) ||
             params.vaultManager == address(0) ||
             params.liquidityManager == address(0) ||
-            params.rebalancer == address(0)
+            params.rebalancer == address(0) ||
+            params.guardian == address(0) ||
+            params.riskManager == address(0)
         ) revert ZeroValueProvided();
 
         __ERC20_init(params.name, params.symbol);
@@ -77,6 +79,8 @@ contract Vault is Rebalancer, VaultManagement, Queue, ISparkPrimeVault {
         _grantRole(VAULT_MANAGER_ROLE, params.vaultManager);
         _grantRole(LIQUIDITY_MANAGER_ROLE, params.liquidityManager);
         _grantRole(REBALANCER_ROLE, params.rebalancer);
+        _grantRole(GUARDIAN_ROLE, params.guardian);
+        _grantRole(RISK_MANAGER_ROLE, params.riskManager);
     }
 
     function requestDeposit(
@@ -405,8 +409,7 @@ contract Vault is Rebalancer, VaultManagement, Queue, ISparkPrimeVault {
         if (
             msg.sender != owner &&
             msg.sender != controller &&
-            !isOperator(controller, msg.sender) &&
-            !hasRole(VAULT_MANAGER_ROLE, msg.sender)
+            !hasRole(GUARDIAN_ROLE, msg.sender)
         ) revert UnauthorizedCaller(msg.sender);
     }
 

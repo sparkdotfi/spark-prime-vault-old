@@ -30,6 +30,8 @@ interface IVault is IERC7540, IERC7575Share {
         address vaultManager;
         address liquidityManager;
         address rebalancer;
+        address guardian;
+        address riskManager;
     }
 
     struct Settlement {

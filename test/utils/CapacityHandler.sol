@@ -153,7 +153,7 @@ contract CapacityHandler is QueueHelper {
     }
 
     function setWithdrawFee(uint256 bps) external {
-        vm.prank(vaultManager);
+        vm.prank(riskManager);
         vault.updateWithdrawFee(bound(bps, 0, 5_000));
     }
 

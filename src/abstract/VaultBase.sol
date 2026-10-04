@@ -28,6 +28,8 @@ abstract contract VaultBase is
         keccak256("LIQUIDITY_MANAGER_ROLE");
     bytes32 constant REBALANCER_ROLE = keccak256("REBALANCER_ROLE");
     bytes32 constant VAULT_MANAGER_ROLE = keccak256("VAULT_MANAGER_ROLE");
+    bytes32 constant GUARDIAN_ROLE = keccak256("GUARDIAN_ROLE");
+    bytes32 constant RISK_MANAGER_ROLE = keccak256("RISK_MANAGER_ROLE");
     uint256 constant BPS = 10_000;
 
     /// @custom:storage-location erc7201:sparkprime.vault.v1

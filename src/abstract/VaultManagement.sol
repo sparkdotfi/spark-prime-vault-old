@@ -31,7 +31,7 @@ abstract contract VaultManagement is
 
     function setTotalAssets(
         uint256 newTotalAssets
-    ) public onlyRole(VAULT_MANAGER_ROLE) whenPaused {
+    ) public onlyRole(RISK_MANAGER_ROLE) whenPaused {
         if (newTotalAssets == 0) revert ISparkPrimeVault.ZeroValueProvided();
         Storage storage $ = getStorage();
 
@@ -73,7 +73,7 @@ abstract contract VaultManagement is
 
     function updateWithdrawFee(
         uint256 bps
-    ) public onlyRole(VAULT_MANAGER_ROLE) {
+    ) public onlyRole(RISK_MANAGER_ROLE) {
         if (bps > MAX_WITHDRAW_BPS) revert WithdrawFeeAboveMax();
         Storage storage $ = getStorage();
         emit WithdrawFeeUpdated($.withdrawFee, bps);
@@ -85,7 +85,7 @@ abstract contract VaultManagement is
         return $.withdrawFee;
     }
 
-    function pause() public onlyRole(VAULT_MANAGER_ROLE) {
+    function pause() public onlyRole(GUARDIAN_ROLE) {
         _pause();
     }
 

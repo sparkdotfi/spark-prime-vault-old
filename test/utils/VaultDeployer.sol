@@ -21,62 +21,13 @@ library VaultDeployer {
     string internal constant SYMBOL = "spPRIME";
 
     function deploy(
-        IERC20 baseAsset,
-        IERC4626 savingsVault,
-        address admin,
-        address vaultManager,
-        address liquidityManager,
-        address rebalancer
-    ) internal returns (VaultHandler vault) {
-        return
-            deploy(
-                baseAsset,
-                savingsVault,
-                admin,
-                vaultManager,
-                liquidityManager,
-                rebalancer,
-                MINIMUM_DEPOSIT,
-                MINIMUM_WITHDRAW,
-                MAXIMUM_VAULT_CAPACITY,
-                TEN_PERCENT_APY
-            );
-    }
-
-    function deploy(
-        IERC20 baseAsset,
-        IERC4626 savingsVault,
-        address admin,
-        address vaultManager,
-        address liquidityManager,
-        address rebalancer,
-        uint256 minimumDeposit,
-        uint256 minimumWithdraw,
-        uint256 capacity,
-        uint256 ratePerSecond
+        IVault.InitParams memory params
     ) internal returns (VaultHandler vault) {
         VaultHandler implementation = new VaultHandler();
-
-        IVault.InitParams memory params = IVault.InitParams({
-            name: NAME,
-            symbol: SYMBOL,
-            baseAsset: baseAsset,
-            savingsVault: savingsVault,
-            minimumDeposit: minimumDeposit,
-            minimumWithdraw: minimumWithdraw,
-            capacity: capacity,
-            ratePerSecond: ratePerSecond,
-            admin: admin,
-            vaultManager: vaultManager,
-            liquidityManager: liquidityManager,
-            rebalancer: rebalancer
-        });
-
         ERC1967Proxy proxy = new ERC1967Proxy(
             address(implementation),
             abi.encodeCall(Vault.initialize, (params))
         );
-
         vault = VaultHandler(address(proxy));
     }
 }

@@ -370,7 +370,7 @@ contract VaultManagerUnitTests is QueueHelper {
     }
 
     function _pause() internal {
-        vm.prank(vaultManager);
+        vm.prank(guardian);
         vault.pause();
     }
 
@@ -382,7 +382,7 @@ contract VaultManagerUnitTests is QueueHelper {
         assertFalse(vault.paused());
 
         vm.expectEmit(address(vault));
-        emit PausableUpgradeable.Paused(vaultManager);
+        emit PausableUpgradeable.Paused(guardian);
         _pause();
 
         assertTrue(vault.paused());
@@ -399,13 +399,13 @@ contract VaultManagerUnitTests is QueueHelper {
         assertFalse(vault.paused());
     }
 
-    function test_cannot_pause_withoutVaultManagerRole() public {
-        vm.prank(rebalancer);
+    function test_cannot_pause_withoutGuardianRole() public {
+        vm.prank(vaultManager);
         vm.expectRevert(
             abi.encodeWithSelector(
                 IAccessControl.AccessControlUnauthorizedAccount.selector,
-                rebalancer,
-                VAULT_MANAGER_ROLE
+                vaultManager,
+                GUARDIAN_ROLE
             )
         );
         vault.pause();
@@ -621,7 +621,7 @@ contract VaultManagerUnitTests is QueueHelper {
         uint256 target = (indexValue * 9) / 10;
 
         _pause();
-        vm.prank(vaultManager);
+        vm.prank(riskManager);
         vault.setTotalAssets(target);
 
         assertEq(vault.totalAssets(), target);
@@ -636,7 +636,7 @@ contract VaultManagerUnitTests is QueueHelper {
         _depositAndClaim(user, 50 ether);
         uint256 target = vault.totalAssets() / 2;
         _pause();
-        vm.prank(vaultManager);
+        vm.prank(riskManager);
         vault.setTotalAssets(target);
         vm.prank(admin);
         vault.unpause();
@@ -657,7 +657,7 @@ contract VaultManagerUnitTests is QueueHelper {
         _depositAndClaim(userTwo, 50 ether);
         uint256 target = (vault.totalAssets() * 6) / 10;
         _pause();
-        vm.prank(vaultManager);
+        vm.prank(riskManager);
         vault.setTotalAssets(target);
         vm.prank(admin);
         vault.unpause();
@@ -679,7 +679,7 @@ contract VaultManagerUnitTests is QueueHelper {
         _depositAndClaim(userTwo, 50 ether);
         uint256 target = (vault.totalAssets() * 6) / 10;
         _pause();
-        vm.prank(vaultManager);
+        vm.prank(riskManager);
         vault.setTotalAssets(target);
         vm.prank(admin);
         vault.unpause();
@@ -704,7 +704,7 @@ contract VaultManagerUnitTests is QueueHelper {
         uint256 target = indexValue / 2;
 
         _pause();
-        vm.prank(vaultManager);
+        vm.prank(riskManager);
         vault.setTotalAssets(target);
 
         assertEq(vault.lastAccrual(), block.timestamp);
@@ -716,7 +716,7 @@ contract VaultManagerUnitTests is QueueHelper {
         uint256 indexValue = vault.totalAssets();
 
         _pause();
-        vm.prank(vaultManager);
+        vm.prank(riskManager);
         vm.expectRevert(IVaultManagement.TotalAssetsExceedIndexValue.selector);
         vault.setTotalAssets(indexValue + 1);
     }
@@ -725,7 +725,7 @@ contract VaultManagerUnitTests is QueueHelper {
         _depositAndClaim(user, 50 ether);
         uint256 target = vault.totalAssets() / 2;
 
-        vm.prank(vaultManager);
+        vm.prank(riskManager);
         vm.expectRevert(PausableUpgradeable.ExpectedPause.selector);
         vault.setTotalAssets(target);
     }
@@ -734,21 +734,21 @@ contract VaultManagerUnitTests is QueueHelper {
         _depositAndClaim(user, 50 ether);
 
         _pause();
-        vm.prank(vaultManager);
+        vm.prank(riskManager);
         vm.expectRevert(ISparkPrimeVault.ZeroValueProvided.selector);
         vault.setTotalAssets(0);
     }
 
-    function test_cannot_setTotalAssets_withoutVaultManagerRole() public {
+    function test_cannot_setTotalAssets_withoutRiskManagerRole() public {
         _depositAndClaim(user, 50 ether);
         uint256 target = vault.totalAssets() / 2;
 
-        vm.prank(rebalancer);
+        vm.prank(vaultManager);
         vm.expectRevert(
             abi.encodeWithSelector(
                 IAccessControl.AccessControlUnauthorizedAccount.selector,
-                rebalancer,
-                VAULT_MANAGER_ROLE
+                vaultManager,
+                RISK_MANAGER_ROLE
             )
         );
         vault.setTotalAssets(target);
@@ -761,7 +761,7 @@ contract VaultManagerUnitTests is QueueHelper {
         _pause();
         vm.expectEmit(address(vault));
         emit IVaultManagement.TotalAssetsUpdated(current, current / 2);
-        vm.prank(vaultManager);
+        vm.prank(riskManager);
         vault.setTotalAssets(current / 2);
     }
 
@@ -855,22 +855,21 @@ contract VaultManagerUnitTests is QueueHelper {
 
     function _initParams(
         IERC4626 venue
-    ) internal view returns (IVault.InitParams memory) {
-        return
-            IVault.InitParams({
-                name: "spPrime Vault",
-                symbol: "spPRIME",
-                baseAsset: baseAsset,
-                savingsVault: venue,
-                minimumDeposit: MINIMUM_DEPOSIT,
-                minimumWithdraw: MINIMUM_WITHDRAW,
-                capacity: MAXIMUM_VAULT_CAPACITY,
-                ratePerSecond: TEN_PERCENT_APY,
-                admin: admin,
-                vaultManager: vaultManager,
-                liquidityManager: liquidityManager,
-                rebalancer: rebalancer
-            });
+    ) internal view returns (IVault.InitParams memory params) {
+        params.name = "spPrime Vault";
+        params.symbol = "spPRIME";
+        params.baseAsset = baseAsset;
+        params.savingsVault = venue;
+        params.minimumDeposit = MINIMUM_DEPOSIT;
+        params.minimumWithdraw = MINIMUM_WITHDRAW;
+        params.capacity = MAXIMUM_VAULT_CAPACITY;
+        params.ratePerSecond = TEN_PERCENT_APY;
+        params.admin = admin;
+        params.vaultManager = vaultManager;
+        params.liquidityManager = liquidityManager;
+        params.rebalancer = rebalancer;
+        params.guardian = guardian;
+        params.riskManager = riskManager;
     }
 
     function test_cannot_initialize_withASavingsVaultForAnotherAsset() public {
@@ -945,6 +944,22 @@ contract VaultManagerUnitTests is QueueHelper {
             address(implementation),
             abi.encodeCall(Vault.initialize, (params))
         );
+
+        params = _initParams(savingsVault);
+        params.guardian = address(0);
+        vm.expectRevert(ISparkPrimeVault.ZeroValueProvided.selector);
+        new ERC1967Proxy(
+            address(implementation),
+            abi.encodeCall(Vault.initialize, (params))
+        );
+
+        params = _initParams(savingsVault);
+        params.riskManager = address(0);
+        vm.expectRevert(ISparkPrimeVault.ZeroValueProvided.selector);
+        new ERC1967Proxy(
+            address(implementation),
+            abi.encodeCall(Vault.initialize, (params))
+        );
     }
 
     function test_cannot_initialize_withoutASavingsVault() public {
@@ -962,29 +977,29 @@ contract VaultManagerUnitTests is QueueHelper {
         vm.expectEmit(address(vault));
         emit IVaultManagement.WithdrawFeeUpdated(0, 50);
 
-        vm.prank(vaultManager);
+        vm.prank(riskManager);
         vault.updateWithdrawFee(50);
 
         assertEq(vault.withdrawFee(), 50);
     }
 
     function test_cannot_updateWithdrawFee_aboveTheMaximum() public {
-        vm.prank(vaultManager);
+        vm.prank(riskManager);
         vm.expectRevert(IVaultManagement.WithdrawFeeAboveMax.selector);
         vault.updateWithdrawFee(5_001);
 
-        vm.prank(vaultManager);
+        vm.prank(riskManager);
         vault.updateWithdrawFee(5_000);
         assertEq(vault.withdrawFee(), 5_000);
     }
 
-    function test_cannot_updateWithdrawFee_asNonManager() public {
-        vm.prank(user);
+    function test_cannot_updateWithdrawFee_withoutRiskManagerRole() public {
+        vm.prank(vaultManager);
         vm.expectRevert(
             abi.encodeWithSelector(
                 IAccessControl.AccessControlUnauthorizedAccount.selector,
-                user,
-                VAULT_MANAGER_ROLE
+                vaultManager,
+                RISK_MANAGER_ROLE
             )
         );
         vault.updateWithdrawFee(50);

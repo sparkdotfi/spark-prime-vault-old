@@ -21,6 +21,8 @@ abstract contract QueueHelper is Test {
     address internal rebalancer = makeAddr("rebalancer");
     address internal vaultManager = makeAddr("vault_manager");
     address internal liquidityManager = makeAddr("liquidity_manager");
+    address internal guardian = makeAddr("guardian");
+    address internal riskManager = makeAddr("risk_manager");
     address internal operator = makeAddr("operator");
 
     address internal user = makeAddr("User");
@@ -54,6 +56,8 @@ abstract contract QueueHelper is Test {
         0xccc64574297998b6c3edf6078cc5e01268465ff116954e3af02ff3a70a730f46;
     bytes32 constant VAULT_MANAGER_ROLE =
         0xd1473398bb66596de5d1ea1fc8e303ff2ac23265adc9144b1b52065dc4f0934b;
+    bytes32 constant GUARDIAN_ROLE = keccak256("GUARDIAN_ROLE");
+    bytes32 constant RISK_MANAGER_ROLE = keccak256("RISK_MANAGER_ROLE");
 
     function _deployVault() internal {
         _deployVaultWithMinimums(MINIMUM_DEPOSIT, MINIMUM_WITHDRAW);
@@ -90,18 +94,22 @@ abstract contract QueueHelper is Test {
         baseAsset = new USDC();
         savingsVault = new SavingsVault(baseAsset);
 
-        vault = VaultDeployer.deploy(
-            baseAsset,
-            savingsVault,
-            admin,
-            vaultManager,
-            liquidityManager,
-            rebalancer,
-            minimumDeposit,
-            minimumWithdraw,
-            MAXIMUM_VAULT_CAPACITY,
-            TEN_PERCENT_APY
-        );
+        IVault.InitParams memory params;
+        params.name = VaultDeployer.NAME;
+        params.symbol = VaultDeployer.SYMBOL;
+        params.baseAsset = baseAsset;
+        params.savingsVault = savingsVault;
+        params.minimumDeposit = minimumDeposit;
+        params.minimumWithdraw = minimumWithdraw;
+        params.capacity = MAXIMUM_VAULT_CAPACITY;
+        params.ratePerSecond = TEN_PERCENT_APY;
+        params.admin = admin;
+        params.vaultManager = vaultManager;
+        params.liquidityManager = liquidityManager;
+        params.rebalancer = rebalancer;
+        params.guardian = guardian;
+        params.riskManager = riskManager;
+        vault = VaultDeployer.deploy(params);
         blockTime = 0;
         savingsGrows = false;
     }

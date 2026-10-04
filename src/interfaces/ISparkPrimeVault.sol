@@ -9,8 +9,8 @@ import {IVault} from "./IVault.sol";
  * @author 0xpotionseller, arkis.xyz
  * @dev
  * Pricing: a single index prices every conversion. It compounds per second at
- * the rate VAULT_MANAGER sets, and VAULT_MANAGER books a realized loss, only
- * while paused, by lowering totalAssets, which scales the index down. The
+ * the rate VAULT_MANAGER sets, and RISK_MANAGER books a realized loss, only
+ * while GUARDIAN has paused the vault, by lowering totalAssets, which scales the index down. The
  * vault is agnostic to the strategies downstream (Arkis) and to realized P&L:
  * the Spark Planner reconciles off-chain and expresses the net policy rate.
  *
@@ -29,13 +29,12 @@ import {IVault} from "./IVault.sol";
  *
  * Claims: users move Claimable to Claimed themselves with deposit or mint and
  * withdraw or redeem. An approved operator may claim for a controller, to the
- * controller only, but cannot open requests.
+ * controller only, but cannot open or cancel requests.
  *
  * Cancellation: a queued deposit can be cancelled by its owner, its
- * controller, the controller's operator or VAULT_MANAGER, which refunds the
- * owner. Redemption requests cannot be cancelled.
+ * controller or GUARDIAN, which refunds the owner. Redemption requests cannot be cancelled.
  *
- * Pause: VAULT_MANAGER pauses every request and claim and DEFAULT_ADMIN
+ * Pause: GUARDIAN pauses every request and claim and DEFAULT_ADMIN
  * unpauses. Cancellation, processQueue and take keep working while paused.
  */
 
@@ -78,7 +77,7 @@ interface ISparkPrimeVault {
     error InsufficientFunds();
 
     /// @notice Cancels a queued deposit and refunds its savings shares, redeemed to base asset, to the request's owner
-    /// @dev Callable by the owner, the controller, an operator the controller approved, or VAULT_MANAGER, including while paused
+    /// @dev Callable by the owner, the controller or GUARDIAN, including while paused
     function cancelDepositRequest(address controller, uint256 nonce) external;
 
     /// @notice Overload of ERC4626 deposit to allow Spark Referal Program support
