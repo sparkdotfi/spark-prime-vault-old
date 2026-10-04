@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import {Test} from "forge-std/Test.sol";
 import {VaultHandler} from "./VaultHandler.t.sol";
 import {IVault} from "src/interfaces/IVault.sol";
+import {IQueue} from "src/interfaces/IQueue.sol";
 import {ISparkPrimeVault} from "src/interfaces/ISparkPrimeVault.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {
@@ -708,13 +709,21 @@ contract RequestDepositUnitTests is QueueHelper {
 
         vm.prank(operator);
         vm.expectRevert(
-            abi.encodeWithSelector(
-                IVault.OperatorMaliciousAction.selector,
-                operator,
-                user
-            )
+            abi.encodeWithSelector(IVault.UnauthorizedCaller.selector, operator)
         );
         vault.mint(shares, operator, user);
+    }
+
+    function test_deposit_emitsTheReducedClaimableDeposit() public {
+        _requestDeposit(user, 40 ether);
+
+        vm.expectEmit(address(vault));
+        emit IQueue.ClaimableDeposit(user, 30 ether);
+
+        vm.prank(user);
+        vault.deposit(10 ether, user, user);
+
+        assertEq(vault.claimableDepositRequest(0, user), 30 ether);
     }
 
     function test_cannot_claimDeposit_toTheVaultOrZeroAddress() public {

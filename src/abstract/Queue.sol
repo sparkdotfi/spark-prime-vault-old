@@ -135,21 +135,21 @@ abstract contract Queue is LiquidityManagement, IQueue {
     function fillUnbounded(
         Storage storage $,
         TransactionQueue.RequestQueue storage queue,
-        function(Storage storage, address, uint256, bool) claim
+        function(Storage storage, Transaction memory, uint256, bool) claim
     ) internal {
         uint256 n = queue.length();
 
         for (n; n > 0; --n) {
             (bool active, Transaction memory data) = queue.pop();
             if (!active) continue;
-            claim($, data.controller, data.amount, false);
+            claim($, data, data.amount, false);
         }
     }
 
     function fillUntil(
         Storage storage $,
         TransactionQueue.RequestQueue storage queue,
-        function(Storage storage, address, uint256, bool) claim,
+        function(Storage storage, Transaction memory, uint256, bool) claim,
         uint256 remainder
     ) internal {
         uint256 length = queue.length();
@@ -160,12 +160,12 @@ abstract contract Queue is LiquidityManagement, IQueue {
             --length;
             if (!active) continue;
             if (data.amount >= remainder) {
-                claim($, data.controller, remainder, false);
+                claim($, data, remainder, false);
                 if (data.amount == remainder) break;
                 _insertHeadWithNewAmount(queue, data, data.amount - remainder);
                 break;
             } else {
-                claim($, data.controller, data.amount, false);
+                claim($, data, data.amount, false);
                 remainder -= data.amount;
             }
         }
@@ -192,10 +192,11 @@ abstract contract Queue is LiquidityManagement, IQueue {
 
     function _markClaimableDeposit(
         VaultBase.Storage storage $,
-        address controller,
+        Transaction memory data,
         uint256 amount,
         bool instantClaim
     ) internal {
+        address controller = data.controller;
         uint256 baseAssets = instantClaim
             ? amount
             : Math.mulDiv(
@@ -232,11 +233,13 @@ abstract contract Queue is LiquidityManagement, IQueue {
 
     function _markClaimableWithdraw(
         VaultBase.Storage storage $,
-        address controller,
+        Transaction memory data,
         uint256 amount,
         bool instantClaim
     ) internal {
+        address controller = data.controller;
         uint256 assets = convertToAssets(amount);
+        assets -= Math.mulDiv(assets, data.fee, BPS, Math.Rounding.Ceil);
 
         $.ledger[controller].withdrawnShares += amount;
         $.ledger[controller].assetsOwed += assets;

@@ -128,11 +128,15 @@ contract VaultManagerUnitTests is QueueHelper {
     function test_take_emitsFundsTaken() public {
         _depositAndClaim(user, 100 ether);
 
+        uint256 before = baseAsset.balanceOf(liquidityManager);
+
         vm.expectEmit(address(vault));
         emit ILiquidityManagement.FundsTaken(liquidityManager, 40 ether);
 
         vm.prank(liquidityManager);
         vault.take(40 ether);
+
+        assertEq(baseAsset.balanceOf(liquidityManager) - before, 40 ether);
     }
 
     function test_savingsRoundTrip_isValuePreserving() public {
@@ -952,6 +956,77 @@ contract VaultManagerUnitTests is QueueHelper {
             address(implementation),
             abi.encodeCall(Vault.initialize, (params))
         );
+    }
+
+    function test_updateWithdrawFee() public {
+        vm.expectEmit(address(vault));
+        emit IVaultManagement.WithdrawFeeUpdated(0, 50);
+
+        vm.prank(vaultManager);
+        vault.updateWithdrawFee(50);
+
+        assertEq(vault.withdrawFee(), 50);
+    }
+
+    function test_cannot_updateWithdrawFee_aboveTheMaximum() public {
+        vm.prank(vaultManager);
+        vm.expectRevert(IVaultManagement.WithdrawFeeAboveMax.selector);
+        vault.updateWithdrawFee(5_001);
+
+        vm.prank(vaultManager);
+        vault.updateWithdrawFee(5_000);
+        assertEq(vault.withdrawFee(), 5_000);
+    }
+
+    function test_cannot_updateWithdrawFee_asNonManager() public {
+        vm.prank(user);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector,
+                user,
+                VAULT_MANAGER_ROLE
+            )
+        );
+        vault.updateWithdrawFee(50);
+    }
+
+    function test_initialize_acceptsTheRateBounds() public {
+        VaultHandler implementation = new VaultHandler();
+        IVault.InitParams memory params = _initParams(savingsVault);
+
+        params.ratePerSecond = RAY;
+        Vault atRay = Vault(
+            address(
+                new ERC1967Proxy(
+                    address(implementation),
+                    abi.encodeCall(Vault.initialize, (params))
+                )
+            )
+        );
+        params.ratePerSecond = InterestLib.MAX_RATE;
+        Vault atMax = Vault(
+            address(
+                new ERC1967Proxy(
+                    address(implementation),
+                    abi.encodeCall(Vault.initialize, (params))
+                )
+            )
+        );
+
+        assertEq(atRay.interestRate(), RAY);
+        assertEq(atMax.interestRate(), InterestLib.MAX_RATE);
+    }
+
+    function test_accrueInterest_atMaxRateDoublesYearlyForFiftyYears() public {
+        vm.prank(vaultManager);
+        vault.setInterestRate(InterestLib.MAX_RATE);
+        uint256 start = vault.index();
+
+        vm.warp(block.timestamp + 50 * 365 days);
+        vm.prank(vaultManager);
+        vault.setInterestRate(RAY);
+
+        assertApproxEqRel(vault.index(), start * 2 ** 50, 1e12);
     }
 
     function test_cannot_initialize_withAnInterestRateOutOfBounds() public {

@@ -24,11 +24,7 @@ contract OperatorUnitTests is QueueHelper {
 
         vm.startPrank(operator);
         vm.expectRevert(
-            abi.encodeWithSelector(
-                IVault.OperatorMaliciousAction.selector,
-                operator,
-                user
-            )
+            abi.encodeWithSelector(IVault.UnauthorizedCaller.selector, operator)
         );
         vault.deposit(5 ether, operator, user);
         vm.stopPrank();

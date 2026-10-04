@@ -3,6 +3,8 @@ pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 import {QueueHelper} from "./utils/QueueHelper.sol";
+import {IERC7575} from "src/interfaces/IERC7575.sol";
+import {IQueue} from "src/interfaces/IQueue.sol";
 import {
     IERC7540Operator
 } from "src/interfaces/IERC7540.sol";
@@ -30,6 +32,15 @@ contract Erc165UnitTests is QueueHelper {
 
     function test_supportsInterface_erc7575() public view {
         assertTrue(vault.supportsInterface(ERC7575));
+    }
+
+    function test_cannot_supportsInterface_vendoredIERC7575Id() public view {
+        assertEq(type(IERC7575).interfaceId, bytes4(0xa8d5fd65));
+        assertFalse(vault.supportsInterface(type(IERC7575).interfaceId));
+    }
+
+    function test_iQueueProcessQueueSelectorMatchesTheVault() public view {
+        assertEq(IQueue.processQueue.selector, vault.processQueue.selector);
     }
 
     function test_supportsInterface_erc7575Share() public view {

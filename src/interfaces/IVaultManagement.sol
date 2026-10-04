@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 interface IVaultManagement {
     /**
      * @title IVaultManagement
-     * @notice Interface used by VAULT_MANAGER to set interest rate, withdraw fee and max capacity
+     * @notice Interface used by VAULT_MANAGER to set interest rate, loss, capacity, minimums and withdraw fee
      * @dev This will be the Spark Automated Software
      */
     /// @notice Emitted when VAULT_MANAGER updates the continuous interest rate
@@ -22,17 +22,21 @@ interface IVaultManagement {
     /// @notice Emitted when VAULT_MANAGER sets the minimum withdraw
     event MinimumWithdrawUpdated(uint256 amount);
 
-    /// @notice Emitted when VAULT_MANAGER calls updateWithdrawFee(uint256 bps)
+    /// @notice Emitted when VAULT_MANAGER changes the withdraw fee, in bps
     event WithdrawFeeUpdated(uint256 oldValue, uint256 newValue);
 
     /// @notice Thrown when VAULT_MANAGER attempts to set a per-second rate below RAY (a negative rate)
     error InterestRateBelowRay();
 
     /// @notice Thrown when VAULT_MANAGER attempts to set a per-second rate above MAX_RATE (100% APY)
+    /// @dev At MAX_RATE a single accrual gap stays within _rpow's range for about 76 years
     error InterestRateAboveMax();
 
     /// @notice Thrown when VAULT_MANAGER attempts to set totalAssets above convertToAssets(totalSupply())
     error TotalAssetsExceedIndexValue();
+
+    /// @notice Thrown when VAULT_MANAGER attempts to set a withdraw fee above MAX_WITHDRAW_BPS (5,000 bps, 50%)
+    error WithdrawFeeAboveMax();
 
     /// @notice Thrown when VAULT_MANAGER attempts to set maximumCapacity below totalSupply
     error CapacityBelowTotalSupply();
@@ -58,9 +62,13 @@ interface IVaultManagement {
     /// @notice Sets the smallest base asset value requestRedeem accepts; 0 disables it. VAULT_MANAGER only
     function setMinimumWithdraw(uint256 amount) external;
 
-    /// @notice Set the fee on withdrawal from timestamp onwards. Existing requests are not affected.
-    /// @dev Not implemented yet: the call has no effect
+    /// @notice Sets the withdraw fee, in bps, for redemption requests made from now on. Existing requests are not affected. VAULT_MANAGER only
+    /// @dev Each request keeps the fee in force when it was made. The fee is taken from the base asset owed when the request
+    /// becomes claimable, rounded up, and stays in the vault as free liquidity. At most MAX_WITHDRAW_BPS (5,000 bps, 50%)
     function updateWithdrawFee(uint256 bps) external;
+
+    /// @notice Withdraw fee, in bps, applied to new redemption requests
+    function withdrawFee() external view returns (uint256);
 
     /// @notice Pauses requests and claims. VAULT_MANAGER only
     /// @dev cancelDepositRequest, setOperator and the role-gated functions, including processQueue and take, stay callable

@@ -102,7 +102,8 @@ contract Vault is Rebalancer, VaultManagement, Queue, ISparkPrimeVault {
             controller,
             owner,
             assets,
-            ++$.nonces[controller]
+            ++$.nonces[controller],
+            0
         );
         IERC20 baseAsset = IERC20(asset());
 
@@ -115,11 +116,11 @@ contract Vault is Rebalancer, VaultManagement, Queue, ISparkPrimeVault {
         if (!$.depositQueue.isEmpty() || capacity == 0) {
             _queueDeposit($, transaction);
         } else if (assets > capacity) {
-            _markClaimableDeposit($, controller, capacity, true);
+            _markClaimableDeposit($, transaction, capacity, true);
             transaction.amount -= capacity;
             _queueDeposit($, transaction);
         } else {
-            _markClaimableDeposit($, controller, assets, true);
+            _markClaimableDeposit($, transaction, assets, true);
         }
 
         emit DepositRequest(controller, owner, 0, msg.sender, assets);
@@ -289,7 +290,8 @@ contract Vault is Rebalancer, VaultManagement, Queue, ISparkPrimeVault {
             controller,
             owner,
             shares,
-            ++$.nonces[controller]
+            ++$.nonces[controller],
+            $.withdrawFee
         );
 
         emit RedeemRequest(controller, owner, 0, msg.sender, shares);
@@ -305,11 +307,16 @@ contract Vault is Rebalancer, VaultManagement, Queue, ISparkPrimeVault {
             uint256 liquidAssets = availableLiquidAssets.toUint256();
 
             if (liquidAssets >= requestedAmount) {
-                _markClaimableWithdraw($, controller, shares, true);
+                _markClaimableWithdraw($, transaction, shares, true);
             } else {
                 uint256 instantShares = convertToShares(liquidAssets);
                 if (instantShares > 0) {
-                    _markClaimableWithdraw($, controller, instantShares, true);
+                    _markClaimableWithdraw(
+                        $,
+                        transaction,
+                        instantShares,
+                        true
+                    );
                     transaction.amount -= instantShares;
                 }
                 if (transaction.amount > 0)
@@ -386,10 +393,10 @@ contract Vault is Rebalancer, VaultManagement, Queue, ISparkPrimeVault {
         address receiver,
         address controller
     ) internal view {
-        if (controller != msg.sender && !isOperator(controller, msg.sender))
-            revert UnauthorizedCaller(msg.sender);
-        if (msg.sender != controller && receiver != controller)
-            revert OperatorMaliciousAction(receiver, controller);
+        if (
+            controller != msg.sender &&
+            (!isOperator(controller, msg.sender) || receiver != controller)
+        ) revert UnauthorizedCaller(msg.sender);
         if (receiver == address(0) || receiver == address(this))
             revert ERC20InvalidReceiver(receiver);
     }
@@ -415,6 +422,7 @@ contract Vault is Rebalancer, VaultManagement, Queue, ISparkPrimeVault {
         settlement.depositedAssets -= assets;
         settlement.sharesOwed -= shares;
         $.totalClaimableDepositShares -= shares;
+        emit ClaimableDeposit(controller, settlement.depositedAssets);
 
         _transfer(address(this), receiver, shares);
 
@@ -433,6 +441,7 @@ contract Vault is Rebalancer, VaultManagement, Queue, ISparkPrimeVault {
         settlement.withdrawnShares -= shares;
         settlement.assetsOwed -= assets;
         $.totalClaimableWithdrawAssets -= assets;
+        emit ClaimableWithdraw(controller, settlement.assetsOwed);
         emit TotalClaimableWithdraws($.totalClaimableWithdrawAssets);
 
         IERC20 baseAsset = IERC20(asset());

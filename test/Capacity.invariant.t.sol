@@ -13,7 +13,7 @@ contract CapacityInvariantTests is QueueHelper {
         savingsVault = handler.getSavingsVault();
         baseAsset = handler.getBaseAsset();
 
-        bytes4[] memory selectors = new bytes4[](12);
+        bytes4[] memory selectors = new bytes4[](13);
         selectors[0] = CapacityHandler.requestDeposit.selector;
         selectors[1] = CapacityHandler.claimDeposit.selector;
         selectors[2] = CapacityHandler.requestRedeem.selector;
@@ -26,6 +26,7 @@ contract CapacityInvariantTests is QueueHelper {
         selectors[9] = CapacityHandler.warp.selector;
         selectors[10] = CapacityHandler.accrueSavings.selector;
         selectors[11] = CapacityHandler.sanitizeDepositQueue.selector;
+        selectors[12] = CapacityHandler.setWithdrawFee.selector;
 
         targetContract(address(handler));
         targetSelector(

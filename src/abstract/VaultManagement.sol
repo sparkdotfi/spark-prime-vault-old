@@ -15,6 +15,8 @@ abstract contract VaultManagement is
     AccessControlUpgradeable,
     IVaultManagement
 {
+    uint256 constant MAX_WITHDRAW_BPS = 5_000;
+
     function setInterestRate(
         uint256 newRate
     ) public onlyRole(VAULT_MANAGER_ROLE) {
@@ -71,7 +73,17 @@ abstract contract VaultManagement is
 
     function updateWithdrawFee(
         uint256 bps
-    ) public onlyRole(VAULT_MANAGER_ROLE) {}
+    ) public onlyRole(VAULT_MANAGER_ROLE) {
+        if (bps > MAX_WITHDRAW_BPS) revert WithdrawFeeAboveMax();
+        Storage storage $ = getStorage();
+        emit WithdrawFeeUpdated($.withdrawFee, bps);
+        $.withdrawFee = bps;
+    }
+
+    function withdrawFee() public view returns (uint256) {
+        Storage storage $ = getStorage();
+        return $.withdrawFee;
+    }
 
     function pause() public onlyRole(VAULT_MANAGER_ROLE) {
         _pause();

@@ -12,8 +12,9 @@ import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 /// 0, and Pending and Claimable state is aggregated per controller. ERC-4626
 /// deposit(assets, receiver) and mint(shares, receiver) claim with msg.sender
 /// as controller, and withdraw and redeem take the controller in the owner
-/// position. maxDeposit, maxMint, maxWithdraw and maxRedeem return 0 while
-/// paused; claimableDepositRequest and claimableRedeemRequest do not. Every
+/// position. maxDeposit, maxMint, maxWithdraw and maxRedeem take the
+/// controller and return its claimable balance, or 0 while paused;
+/// claimableDepositRequest and claimableRedeemRequest ignore the pause. Every
 /// preview function reverts.
 interface IVault is IERC7540, IERC7575Share {
     struct InitParams {
@@ -45,6 +46,7 @@ interface IVault is IERC7540, IERC7575Share {
         address owner;
         uint256 amount;
         uint256 nonce;
+        uint256 fee;
     }
 
     /// @notice Lazy accrual of continuous interest
@@ -56,11 +58,8 @@ interface IVault is IERC7540, IERC7575Share {
     /// @notice Thrown when requestDeposit receives a different base asset amount than it transferred
     error DeltaMismatch();
 
-    /// @notice Thrown when msg.sender is not authorised to act for the owner or controller
+    /// @notice Thrown when msg.sender is not authorised to act for the owner or controller, including an operator claiming to a receiver other than the controller
     error UnauthorizedCaller(address caller);
-
-    /// @notice Thrown when an operator claims to a receiver other than the controller
-    error OperatorMaliciousAction(address receiver, address victim);
 
     /// @notice Thrown when a deposit or mint claim exceeds the controller's claimable balance
     error InsufficientClaimableBalance(uint256 requested, uint256 available);

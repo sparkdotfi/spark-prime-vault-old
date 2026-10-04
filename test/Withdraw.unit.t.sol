@@ -491,6 +491,56 @@ contract RequestWithdrawUnitTests is QueueHelper {
         vm.stopPrank();
     }
 
+    function test_requestRedeem_chargesTheWithdrawFeeOnAnInstantFill() public {
+        _depositAndClaim(user, 50 ether);
+        uint256 shares = vault.balanceOf(user);
+        _coverRedemption(shares);
+        vm.prank(vaultManager);
+        vault.updateWithdrawFee(100);
+        uint256 gross = vault.convertToAssets(shares);
+        uint256 fee = Math.mulDiv(gross, 100, 10_000, Math.Rounding.Ceil);
+
+        vm.prank(user);
+        vault.requestRedeem(shares, user, user);
+
+        assertEq(vault.maxRedeem(user), shares);
+        assertEq(vault.maxWithdraw(user), gross - fee);
+    }
+
+    function test_requestRedeem_keepsTheFeeInForceWhenItWasQueued() public {
+        _depositAndClaim(user, 50 ether);
+        _drainLiquidity();
+        vm.prank(vaultManager);
+        vault.updateWithdrawFee(100);
+        _requestRedeem(user, vault.balanceOf(user));
+        assertEq(vault.withdrawQueueHead().fee, 100);
+
+        vm.prank(vaultManager);
+        vault.updateWithdrawFee(500);
+        uint256 gross = vault.convertToAssets(vault.totalPendingWithdraws());
+        uint256 fee = Math.mulDiv(gross, 100, 10_000, Math.Rounding.Ceil);
+        _injectLiquidity(gross);
+
+        vm.prank(rebalancer);
+        vault.processQueue(type(uint256).max);
+
+        assertEq(vault.maxWithdraw(user), gross - fee);
+        assertEq(vault.availableLiquidAssets(), int256(fee));
+    }
+
+    function test_withdraw_emitsTheReducedClaimableWithdraw() public {
+        _claimableRedeemer(50 ether);
+        uint256 owed = vault.maxWithdraw(user);
+
+        vm.expectEmit(address(vault));
+        emit IQueue.ClaimableWithdraw(user, owed - 10 ether);
+
+        vm.prank(user);
+        vault.withdraw(10 ether, user, user);
+
+        assertEq(vault.maxWithdraw(user), owed - 10 ether);
+    }
+
     function test_totalClaimableWithdraws_emittedOnMarkAndClaim() public {
         _depositAndClaim(user, 50 ether);
         uint256 shares = vault.balanceOf(user);

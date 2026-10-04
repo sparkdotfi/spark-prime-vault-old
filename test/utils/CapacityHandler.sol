@@ -152,6 +152,11 @@ contract CapacityHandler is QueueHelper {
         _setCapacity(vault.totalSupply() + bound(room, 0, 200 ether));
     }
 
+    function setWithdrawFee(uint256 bps) external {
+        vm.prank(vaultManager);
+        vault.updateWithdrawFee(bound(bps, 0, 5_000));
+    }
+
     function injectLiquidity(uint256 amount) external {
         _injectLiquidity(bound(amount, 0, 50 ether));
     }
