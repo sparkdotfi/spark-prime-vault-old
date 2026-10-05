@@ -4,8 +4,12 @@ pragma solidity ^0.8.20;
 import {Test} from "forge-std/Test.sol";
 import {VaultHandler} from "./VaultHandler.t.sol";
 import {IVault} from "src/interfaces/IVault.sol";
+import {IQueue} from "src/interfaces/IQueue.sol";
 import {ISparkPrimeVault} from "src/interfaces/ISparkPrimeVault.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import {
+    IERC20Errors
+} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {USDC} from "./mocks/USDC.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
@@ -179,7 +183,7 @@ contract RequestWithdrawUnitTests is QueueHelper {
         vm.prank(user);
         vm.expectRevert(
             abi.encodeWithSelector(
-                ISparkPrimeVault.MustExceedMinimumRequestAmount.selector,
+                ISparkPrimeVault.BelowMinimumRequestAmount.selector,
                 MINIMUM_WITHDRAW
             )
         );
@@ -212,7 +216,7 @@ contract RequestWithdrawUnitTests is QueueHelper {
         vm.prank(user);
         vm.expectRevert(
             abi.encodeWithSelector(
-                ISparkPrimeVault.MustExceedMinimumRequestAmount.selector,
+                ISparkPrimeVault.BelowMinimumRequestAmount.selector,
                 MINIMUM_WITHDRAW
             )
         );
@@ -238,7 +242,7 @@ contract RequestWithdrawUnitTests is QueueHelper {
         vm.prank(user);
         vm.expectRevert(
             abi.encodeWithSelector(
-                ISparkPrimeVault.MustExceedMinimumRequestAmount.selector,
+                ISparkPrimeVault.BelowMinimumRequestAmount.selector,
                 MINIMUM_WITHDRAW
             )
         );
@@ -261,7 +265,7 @@ contract RequestWithdrawUnitTests is QueueHelper {
         vm.prank(user);
         vm.expectRevert(
             abi.encodeWithSelector(
-                ISparkPrimeVault.MustExceedMinimumRequestAmount.selector,
+                ISparkPrimeVault.BelowMinimumRequestAmount.selector,
                 MINIMUM_WITHDRAW
             )
         );
@@ -273,6 +277,18 @@ contract RequestWithdrawUnitTests is QueueHelper {
         assertEq(vault.withdrawQueueLength(), 1);
     }
 
+    function test_requestRedeem_minimumUsesTheAccruedIndex() public {
+        _depositAndClaim(user, 50 ether);
+        vm.warp(block.timestamp + 1 days);
+        uint256 shares = _sharesFor(MINIMUM_WITHDRAW);
+        assertLt(Math.mulDiv(shares, vault.index(), RAY), MINIMUM_WITHDRAW);
+
+        vm.prank(user);
+        vault.requestRedeem(shares, user, user);
+
+        assertEq(vault.maxRedeem(user), shares);
+    }
+
     function test_requestRedeem_zeroRevertsBeforeTheMinimumCheck() public {
         _depositAndClaim(user, 50 ether);
         _drainLiquidity();
@@ -280,6 +296,15 @@ contract RequestWithdrawUnitTests is QueueHelper {
         vm.prank(user);
         vm.expectRevert(ISparkPrimeVault.ZeroValueProvided.selector);
         vault.requestRedeem(0, user, user);
+    }
+
+    function test_cannot_requestRedeem_forZeroController() public {
+        _depositAndClaim(user, 50 ether);
+        uint256 shares = vault.balanceOf(user);
+
+        vm.prank(user);
+        vm.expectRevert(ISparkPrimeVault.ZeroValueProvided.selector);
+        vault.requestRedeem(shares, address(0), user);
     }
 
     function test_requestRedeem_anyAmountWhenNoMinimumConfigured() public {
@@ -441,6 +466,108 @@ contract RequestWithdrawUnitTests is QueueHelper {
             abi.encodeWithSelector(IVault.UnauthorizedCaller.selector, userTwo)
         );
         vault.withdraw(claimValue, userTwo, user);
+    }
+
+    function test_cannot_claimRedeem_toTheVaultOrZeroAddress() public {
+        uint256 claimable = _claimableRedeemer(50 ether);
+        uint256 owed = vault.maxWithdraw(user);
+
+        vm.startPrank(user);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IERC20Errors.ERC20InvalidReceiver.selector,
+                address(vault)
+            )
+        );
+        vault.redeem(claimable, address(vault), user);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IERC20Errors.ERC20InvalidReceiver.selector,
+                address(0)
+            )
+        );
+        vault.withdraw(owed, address(0), user);
+        vm.stopPrank();
+    }
+
+    function test_requestRedeem_chargesTheWithdrawFeeOnAnInstantFill() public {
+        _depositAndClaim(user, 50 ether);
+        uint256 shares = vault.balanceOf(user);
+        _coverRedemption(shares);
+        vm.prank(riskManager);
+        vault.updateWithdrawFee(100);
+        uint256 gross = vault.convertToAssets(shares);
+        uint256 fee = Math.mulDiv(gross, 100, 10_000, Math.Rounding.Ceil);
+
+        vm.prank(user);
+        vault.requestRedeem(shares, user, user);
+
+        assertEq(vault.maxRedeem(user), shares);
+        assertEq(vault.maxWithdraw(user), gross - fee);
+    }
+
+    function test_requestRedeem_keepsTheFeeInForceWhenItWasQueued() public {
+        _depositAndClaim(user, 50 ether);
+        _drainLiquidity();
+        vm.prank(riskManager);
+        vault.updateWithdrawFee(100);
+        _requestRedeem(user, vault.balanceOf(user));
+        assertEq(vault.withdrawQueueHead().fee, 100);
+
+        vm.prank(riskManager);
+        vault.updateWithdrawFee(500);
+        uint256 gross = vault.convertToAssets(vault.totalPendingWithdraws());
+        uint256 fee = Math.mulDiv(gross, 100, 10_000, Math.Rounding.Ceil);
+        _injectLiquidity(gross);
+
+        vm.prank(rebalancer);
+        vault.processQueue(type(uint256).max);
+
+        assertEq(vault.maxWithdraw(user), gross - fee);
+        assertEq(vault.availableLiquidAssets(), int256(fee));
+    }
+
+    function test_withdraw_emitsTheReducedClaimableWithdraw() public {
+        _claimableRedeemer(50 ether);
+        uint256 owed = vault.maxWithdraw(user);
+
+        vm.expectEmit(address(vault));
+        emit IQueue.ClaimableWithdraw(user, owed - 10 ether);
+
+        vm.prank(user);
+        vault.withdraw(10 ether, user, user);
+
+        assertEq(vault.maxWithdraw(user), owed - 10 ether);
+    }
+
+    function test_totalClaimableWithdraws_emittedOnMarkAndClaim() public {
+        _depositAndClaim(user, 50 ether);
+        uint256 shares = vault.balanceOf(user);
+        _coverRedemption(shares);
+        uint256 owed = vault.convertToAssets(shares);
+
+        vm.expectEmit(address(vault));
+        emit IQueue.TotalClaimableWithdraws(owed);
+        vm.prank(user);
+        vault.requestRedeem(shares, user, user);
+
+        vm.expectEmit(address(vault));
+        emit IQueue.TotalClaimableWithdraws(0);
+        vm.prank(user);
+        vault.withdraw(owed, user, user);
+    }
+
+    function test_cannot_withdraw_zeroAssets() public {
+        vm.prank(user);
+        vm.expectRevert(ISparkPrimeVault.ZeroValueProvided.selector);
+        vault.withdraw(0, user, user);
+    }
+
+    function test_cannot_redeem_zeroShares() public {
+        vm.prank(user);
+        vm.expectRevert(ISparkPrimeVault.ZeroValueProvided.selector);
+        vault.redeem(0, user, user);
     }
 
     function test_redeem_emitsErc4626Withdraw() public {

@@ -6,7 +6,7 @@ import {VaultHandler} from "./VaultHandler.t.sol";
 import {IVault} from "src/interfaces/IVault.sol";
 import {
     IERC7540Operator
-} from "@openzeppelin/community-contracts/interfaces/IERC7540.sol";
+} from "src/interfaces/IERC7540.sol";
 import {USDC} from "./mocks/USDC.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {ISparkPrimeVault} from "src/interfaces/ISparkPrimeVault.sol";
@@ -24,11 +24,7 @@ contract OperatorUnitTests is QueueHelper {
 
         vm.startPrank(operator);
         vm.expectRevert(
-            abi.encodeWithSelector(
-                IVault.OperatorMaliciousAction.selector,
-                operator,
-                user
-            )
+            abi.encodeWithSelector(IVault.UnauthorizedCaller.selector, operator)
         );
         vault.deposit(5 ether, operator, user);
         vm.stopPrank();
@@ -107,6 +103,23 @@ contract OperatorUnitTests is QueueHelper {
 
         assertTrue(ok);
         assertFalse(vault.isOperator(user, operator));
+    }
+
+    function test_setOperator_approvesOperatorsIndependently() public {
+        address second = makeAddr("second");
+        vm.startPrank(user);
+        vault.setOperator(operator, true);
+        vault.setOperator(second, true);
+        vm.stopPrank();
+
+        assertTrue(vault.isOperator(user, operator));
+        assertTrue(vault.isOperator(user, second));
+
+        vm.prank(user);
+        vault.setOperator(operator, false);
+
+        assertFalse(vault.isOperator(user, operator));
+        assertTrue(vault.isOperator(user, second));
     }
 
     function test_setOperator_revokingANonOperatorIsANoOp() public {

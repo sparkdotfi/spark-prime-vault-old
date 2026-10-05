@@ -8,6 +8,9 @@ import {ISparkPrimeVault} from "src/interfaces/ISparkPrimeVault.sol";
 import {IVaultManagement} from "src/interfaces/IVaultManagement.sol";
 import {IRebalancer} from "src/interfaces/IRebalancer.sol";
 import {
+    ILiquidityManagement
+} from "src/interfaces/ILiquidityManagement.sol";
+import {
     IAccessControl
 } from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {
@@ -41,9 +44,7 @@ contract VaultManagerUnitTests is QueueHelper {
         vm.prank(vaultManager);
         vm.expectRevert(
             abi.encodeWithSelector(
-                IVaultManagement
-                    .MaximumCapacityCannotExceedCurrentTotal
-                    .selector
+                IVaultManagement.CapacityBelowTotalSupply.selector
             )
         );
         vault.setCapacity(committed - 1);
@@ -68,6 +69,19 @@ contract VaultManagerUnitTests is QueueHelper {
             venueBefore + 40 ether
         );
         assertEq(savingsVault.balanceOf(address(vault)), shares);
+    }
+
+    function test_cannot_depositToSavings_forZeroSavingsShares() public {
+        _depositAndClaim(user, 50 ether);
+        vm.prank(rebalancer);
+        vault.depositToSavings(40 ether);
+        _accrueSavings(1_000);
+
+        vm.prank(rebalancer);
+        vm.expectRevert(
+            abi.encodeWithSelector(IVault.ShareConversionFailure.selector, 1)
+        );
+        vault.depositToSavings(1);
     }
 
     function test_depositToSavings_emitsSavingsDeposit() public {
@@ -111,6 +125,20 @@ contract VaultManagerUnitTests is QueueHelper {
         vault.withdrawFromSavings(shares);
     }
 
+    function test_take_emitsFundsTaken() public {
+        _depositAndClaim(user, 100 ether);
+
+        uint256 before = baseAsset.balanceOf(liquidityManager);
+
+        vm.expectEmit(address(vault));
+        emit ILiquidityManagement.FundsTaken(liquidityManager, 40 ether);
+
+        vm.prank(liquidityManager);
+        vault.take(40 ether);
+
+        assertEq(baseAsset.balanceOf(liquidityManager) - before, 40 ether);
+    }
+
     function test_savingsRoundTrip_isValuePreserving() public {
         _depositAndClaim(user, 100 ether);
         uint256 before = baseAsset.balanceOf(address(vault));
@@ -134,7 +162,7 @@ contract VaultManagerUnitTests is QueueHelper {
             abi.encodeWithSelector(
                 IAccessControl.AccessControlUnauthorizedAccount.selector,
                 vaultManager,
-                REBALANCER_ROLER
+                REBALANCER_ROLE
             )
         );
         vault.depositToSavings(1 ether);
@@ -151,7 +179,7 @@ contract VaultManagerUnitTests is QueueHelper {
             abi.encodeWithSelector(
                 IAccessControl.AccessControlUnauthorizedAccount.selector,
                 liquidityManager,
-                REBALANCER_ROLER
+                REBALANCER_ROLE
             )
         );
         vault.withdrawFromSavings(shares);
@@ -166,8 +194,7 @@ contract VaultManagerUnitTests is QueueHelper {
         vm.prank(rebalancer);
         vm.expectRevert(
             abi.encodeWithSignature(
-                "ERC4626ExceededMaxRedeem(address,uint256,uint256)",
-                address(vault),
+                "ExceedsFreeSavingsShares(uint256,uint256)",
                 shares + 1,
                 shares
             )
@@ -203,7 +230,9 @@ contract VaultManagerUnitTests is QueueHelper {
         );
     }
 
-    function test_depositToSavings_canStrandAClaimableRedeemer() public {
+    function test_cannot_depositToSavings_theAssetsOwedToAClaimableRedeemer()
+        public
+    {
         _depositAndClaim(user, 100 ether);
         uint256 shares = vault.balanceOf(user);
         _coverRedemption(shares);
@@ -212,12 +241,32 @@ contract VaultManagerUnitTests is QueueHelper {
         vault.requestRedeem(shares, user, user);
         assertEq(vault.maxRedeem(user), shares);
 
+        int256 available = vault.availableLiquidAssets();
         vm.prank(rebalancer);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ILiquidityManagement.ExceedsAvailableLiquidity.selector,
+                40 ether,
+                available
+            )
+        );
         vault.depositToSavings(40 ether);
 
         vm.prank(user);
-        vm.expectRevert();
         vault.redeem(shares, user, user);
+        assertEq(vault.maxRedeem(user), 0);
+    }
+
+    function test_convertToAssets_usesTheAccruedIndex() public {
+        _depositAndClaim(user, 50 ether);
+        vm.warp(block.timestamp + 30 days);
+        uint256 shares = vault.balanceOf(user);
+
+        assertGt(vault.previewIndex(), vault.index());
+        assertEq(
+            vault.convertToAssets(shares),
+            Math.mulDiv(shares, vault.previewIndex(), RAY)
+        );
     }
 
     function test_setMinimumDeposit() public {
@@ -238,7 +287,7 @@ contract VaultManagerUnitTests is QueueHelper {
         vm.prank(user);
         vm.expectRevert(
             abi.encodeWithSelector(
-                ISparkPrimeVault.MustExceedMinimumRequestAmount.selector,
+                ISparkPrimeVault.BelowMinimumRequestAmount.selector,
                 5 ether
             )
         );
@@ -269,7 +318,7 @@ contract VaultManagerUnitTests is QueueHelper {
         vm.prank(user);
         vm.expectRevert(
             abi.encodeWithSelector(
-                ISparkPrimeVault.MustExceedMinimumRequestAmount.selector,
+                ISparkPrimeVault.BelowMinimumRequestAmount.selector,
                 5 ether
             )
         );
@@ -321,7 +370,7 @@ contract VaultManagerUnitTests is QueueHelper {
     }
 
     function _pause() internal {
-        vm.prank(vaultManager);
+        vm.prank(guardian);
         vault.pause();
     }
 
@@ -333,7 +382,7 @@ contract VaultManagerUnitTests is QueueHelper {
         assertFalse(vault.paused());
 
         vm.expectEmit(address(vault));
-        emit PausableUpgradeable.Paused(vaultManager);
+        emit PausableUpgradeable.Paused(guardian);
         _pause();
 
         assertTrue(vault.paused());
@@ -350,13 +399,13 @@ contract VaultManagerUnitTests is QueueHelper {
         assertFalse(vault.paused());
     }
 
-    function test_cannot_pause_withoutVaultManagerRole() public {
-        vm.prank(rebalancer);
+    function test_cannot_pause_withoutGuardianRole() public {
+        vm.prank(vaultManager);
         vm.expectRevert(
             abi.encodeWithSelector(
                 IAccessControl.AccessControlUnauthorizedAccount.selector,
-                rebalancer,
-                VAULT_MANAGER_ROLE
+                vaultManager,
+                GUARDIAN_ROLE
             )
         );
         vault.pause();
@@ -463,6 +512,7 @@ contract VaultManagerUnitTests is QueueHelper {
         vault.processQueue(volume);
         assertEq(vault.withdrawQueueLength(), 0);
 
+        _injectLiquidity(1 ether);
         vm.prank(liquidityManager);
         vault.take(1 ether);
     }
@@ -539,6 +589,16 @@ contract VaultManagerUnitTests is QueueHelper {
         assertEq(vault.interestRate(), RAY);
     }
 
+    function test_cannot_setInterestRate_aboveMaxRate() public {
+        vm.prank(vaultManager);
+        vm.expectRevert(IVaultManagement.InterestRateAboveMax.selector);
+        vault.setInterestRate(InterestLib.MAX_RATE + 1);
+
+        vm.prank(vaultManager);
+        vault.setInterestRate(InterestLib.MAX_RATE);
+        assertEq(vault.interestRate(), InterestLib.MAX_RATE);
+    }
+
     function test_setInterestRate_accruesAtTheOldRateFirst() public {
         vm.warp(block.timestamp + 365 days);
         uint256 accrued = vault.previewIndex();
@@ -560,30 +620,77 @@ contract VaultManagerUnitTests is QueueHelper {
         uint256 held = vault.convertToAssets(vault.balanceOf(user));
         uint256 target = (indexValue * 9) / 10;
 
-        vm.prank(vaultManager);
+        _pause();
+        vm.prank(riskManager);
         vault.setTotalAssets(target);
 
         assertEq(vault.totalAssets(), target);
-        assertEq(vault.totalLoss(), indexValue - target);
-        assertEq(vault.convertToAssets(vault.balanceOf(user)), held);
+        assertApproxEqAbs(
+            vault.convertToAssets(vault.balanceOf(user)),
+            (held * 9) / 10,
+            1
+        );
     }
 
     function test_setTotalAssets_keepsTrackingSupplyAndInterest() public {
         _depositAndClaim(user, 50 ether);
         uint256 target = vault.totalAssets() / 2;
-        vm.prank(vaultManager);
+        _pause();
+        vm.prank(riskManager);
         vault.setTotalAssets(target);
-        uint256 loss = vault.totalLoss();
+        vm.prank(admin);
+        vault.unpause();
 
         vm.warp(block.timestamp + 365 days);
         _depositAndClaim(userTwo, 10 ether);
 
-        assertEq(vault.totalLoss(), loss);
-        assertEq(
-            vault.totalAssets(),
-            vault.convertToAssets(vault.totalSupply()) - loss
-        );
         assertGt(vault.totalAssets(), target);
+        assertApproxEqAbs(
+            vault.convertToAssets(vault.balanceOf(user)),
+            vault.totalAssets() - 10 ether,
+            _drift(10 ether)
+        );
+    }
+
+    function test_setTotalAssets_sharesTheLossProRata() public {
+        _depositAndClaim(user, 50 ether);
+        _depositAndClaim(userTwo, 50 ether);
+        uint256 target = (vault.totalAssets() * 6) / 10;
+        _pause();
+        vm.prank(riskManager);
+        vault.setTotalAssets(target);
+        vm.prank(admin);
+        vault.unpause();
+
+        uint256 shares = vault.balanceOf(user);
+        _coverRedemption(shares);
+        _requestRedeem(user, shares);
+
+        assertApproxEqAbs(vault.maxWithdraw(user), 30 ether, _drift(30 ether));
+        assertApproxEqAbs(
+            vault.convertToAssets(vault.balanceOf(userTwo)),
+            30 ether,
+            _drift(30 ether)
+        );
+    }
+
+    function test_setTotalAssets_pricesNewDepositsAfterTheLoss() public {
+        _depositAndClaim(user, 50 ether);
+        _depositAndClaim(userTwo, 50 ether);
+        uint256 target = (vault.totalAssets() * 6) / 10;
+        _pause();
+        vm.prank(riskManager);
+        vault.setTotalAssets(target);
+        vm.prank(admin);
+        vault.unpause();
+
+        _depositAndClaim(userThree, target / 2);
+
+        assertApproxEqRel(
+            vault.balanceOf(userThree),
+            vault.balanceOf(user),
+            1e12
+        );
     }
 
     function test_setTotalAssets_accruesFirst() public {
@@ -596,46 +703,52 @@ contract VaultManagerUnitTests is QueueHelper {
         );
         uint256 target = indexValue / 2;
 
-        vm.prank(vaultManager);
+        _pause();
+        vm.prank(riskManager);
         vault.setTotalAssets(target);
 
         assertEq(vault.lastAccrual(), block.timestamp);
-        assertEq(vault.totalLoss(), indexValue - target);
         assertEq(vault.totalAssets(), target);
-    }
-
-    function test_setTotalAssets_canClearTheLoss() public {
-        _depositAndClaim(user, 50 ether);
-        uint256 indexValue = vault.totalAssets();
-
-        vm.startPrank(vaultManager);
-        vault.setTotalAssets(indexValue / 2);
-        vault.setTotalAssets(indexValue);
-        vm.stopPrank();
-
-        assertEq(vault.totalLoss(), 0);
-        assertEq(vault.totalAssets(), indexValue);
     }
 
     function test_cannot_setTotalAssets_aboveTheIndexValue() public {
         _depositAndClaim(user, 50 ether);
         uint256 indexValue = vault.totalAssets();
 
-        vm.prank(vaultManager);
+        _pause();
+        vm.prank(riskManager);
         vm.expectRevert(IVaultManagement.TotalAssetsExceedIndexValue.selector);
         vault.setTotalAssets(indexValue + 1);
     }
 
-    function test_cannot_setTotalAssets_withoutVaultManagerRole() public {
+    function test_cannot_setTotalAssets_whenNotPaused() public {
         _depositAndClaim(user, 50 ether);
         uint256 target = vault.totalAssets() / 2;
 
-        vm.prank(rebalancer);
+        vm.prank(riskManager);
+        vm.expectRevert(PausableUpgradeable.ExpectedPause.selector);
+        vault.setTotalAssets(target);
+    }
+
+    function test_cannot_setTotalAssets_toZero() public {
+        _depositAndClaim(user, 50 ether);
+
+        _pause();
+        vm.prank(riskManager);
+        vm.expectRevert(ISparkPrimeVault.ZeroValueProvided.selector);
+        vault.setTotalAssets(0);
+    }
+
+    function test_cannot_setTotalAssets_withoutRiskManagerRole() public {
+        _depositAndClaim(user, 50 ether);
+        uint256 target = vault.totalAssets() / 2;
+
+        vm.prank(vaultManager);
         vm.expectRevert(
             abi.encodeWithSelector(
                 IAccessControl.AccessControlUnauthorizedAccount.selector,
-                rebalancer,
-                VAULT_MANAGER_ROLE
+                vaultManager,
+                RISK_MANAGER_ROLE
             )
         );
         vault.setTotalAssets(target);
@@ -645,24 +758,13 @@ contract VaultManagerUnitTests is QueueHelper {
         _depositAndClaim(user, 50 ether);
         uint256 current = vault.totalAssets();
 
+        _pause();
         vm.expectEmit(address(vault));
         emit IVaultManagement.TotalAssetsUpdated(current, current / 2);
-        vm.prank(vaultManager);
+        vm.prank(riskManager);
         vault.setTotalAssets(current / 2);
     }
 
-    function test_cannot_totalAssets_underflow() public {
-        _depositAndClaim(user, 50 ether);
-        vm.prank(vaultManager);
-        vault.setTotalAssets(0);
-        assertEq(vault.totalAssets(), 0);
-
-        uint256 shares = vault.balanceOf(user) / 2;
-        _coverRedemption(shares);
-        _requestRedeem(user, shares);
-
-        assertEq(vault.totalAssets(), 0);
-    }
 
     function test_setCapacity_emitsCapacityUpdated() public {
         uint256 old = vault.maxCapacity();
@@ -753,22 +855,21 @@ contract VaultManagerUnitTests is QueueHelper {
 
     function _initParams(
         IERC4626 venue
-    ) internal view returns (IVault.InitParams memory) {
-        return
-            IVault.InitParams({
-                name: "spPrime Vault",
-                symbol: "spPRIME",
-                baseAsset: baseAsset,
-                savingsVault: venue,
-                minimumDeposit: MINIMUM_DEPOSIT,
-                minimumWithdraw: MINIMUM_WITHDRAW,
-                capacity: MAXIMUM_VAULT_CAPACITY,
-                ratePerSecond: TEN_PERCENT_APY,
-                admin: admin,
-                vaultManager: vaultManager,
-                liquidityManager: liquidityManager,
-                rebalancer: rebalancer
-            });
+    ) internal view returns (IVault.InitParams memory params) {
+        params.name = "spPrime Vault";
+        params.symbol = "spPRIME";
+        params.baseAsset = baseAsset;
+        params.savingsVault = venue;
+        params.minimumDeposit = MINIMUM_DEPOSIT;
+        params.minimumWithdraw = MINIMUM_WITHDRAW;
+        params.capacity = MAXIMUM_VAULT_CAPACITY;
+        params.ratePerSecond = TEN_PERCENT_APY;
+        params.admin = admin;
+        params.vaultManager = vaultManager;
+        params.liquidityManager = liquidityManager;
+        params.rebalancer = rebalancer;
+        params.guardian = guardian;
+        params.riskManager = riskManager;
     }
 
     function test_cannot_initialize_withASavingsVaultForAnotherAsset() public {
@@ -783,11 +884,179 @@ contract VaultManagerUnitTests is QueueHelper {
         );
     }
 
+    function test_setCapacity_isBoundedByUint128() public {
+        vm.prank(vaultManager);
+        vm.expectRevert(IVaultManagement.CapacityAboveLimit.selector);
+        vault.setCapacity(uint256(type(uint128).max) + 1);
+
+        _setCapacity(type(uint128).max);
+        vm.warp(block.timestamp + 365 days);
+        _requestDeposit(user, 10 ether);
+
+        vm.prank(rebalancer);
+        vault.processQueue(0);
+
+        assertEq(vault.maxDeposit(user), 10 ether);
+    }
+
+    function test_cannot_initialize_aboveTheCapacityLimit() public {
+        VaultHandler implementation = new VaultHandler();
+        IVault.InitParams memory params = _initParams(savingsVault);
+        params.capacity = uint256(type(uint128).max) + 1;
+
+        vm.expectRevert(IVaultManagement.CapacityAboveLimit.selector);
+        new ERC1967Proxy(
+            address(implementation),
+            abi.encodeCall(Vault.initialize, (params))
+        );
+    }
+
+    function test_cannot_initialize_withAZeroRoleAddress() public {
+        VaultHandler implementation = new VaultHandler();
+        IVault.InitParams memory params = _initParams(savingsVault);
+        params.admin = address(0);
+        vm.expectRevert(ISparkPrimeVault.ZeroValueProvided.selector);
+        new ERC1967Proxy(
+            address(implementation),
+            abi.encodeCall(Vault.initialize, (params))
+        );
+
+        params = _initParams(savingsVault);
+        params.vaultManager = address(0);
+        vm.expectRevert(ISparkPrimeVault.ZeroValueProvided.selector);
+        new ERC1967Proxy(
+            address(implementation),
+            abi.encodeCall(Vault.initialize, (params))
+        );
+
+        params = _initParams(savingsVault);
+        params.liquidityManager = address(0);
+        vm.expectRevert(ISparkPrimeVault.ZeroValueProvided.selector);
+        new ERC1967Proxy(
+            address(implementation),
+            abi.encodeCall(Vault.initialize, (params))
+        );
+
+        params = _initParams(savingsVault);
+        params.rebalancer = address(0);
+        vm.expectRevert(ISparkPrimeVault.ZeroValueProvided.selector);
+        new ERC1967Proxy(
+            address(implementation),
+            abi.encodeCall(Vault.initialize, (params))
+        );
+
+        params = _initParams(savingsVault);
+        params.guardian = address(0);
+        vm.expectRevert(ISparkPrimeVault.ZeroValueProvided.selector);
+        new ERC1967Proxy(
+            address(implementation),
+            abi.encodeCall(Vault.initialize, (params))
+        );
+
+        params = _initParams(savingsVault);
+        params.riskManager = address(0);
+        vm.expectRevert(ISparkPrimeVault.ZeroValueProvided.selector);
+        new ERC1967Proxy(
+            address(implementation),
+            abi.encodeCall(Vault.initialize, (params))
+        );
+    }
+
     function test_cannot_initialize_withoutASavingsVault() public {
         VaultHandler implementation = new VaultHandler();
         IVault.InitParams memory params = _initParams(IERC4626(address(0)));
 
         vm.expectRevert();
+        new ERC1967Proxy(
+            address(implementation),
+            abi.encodeCall(Vault.initialize, (params))
+        );
+    }
+
+    function test_updateWithdrawFee() public {
+        vm.expectEmit(address(vault));
+        emit IVaultManagement.WithdrawFeeUpdated(0, 50);
+
+        vm.prank(riskManager);
+        vault.updateWithdrawFee(50);
+
+        assertEq(vault.withdrawFee(), 50);
+    }
+
+    function test_cannot_updateWithdrawFee_aboveTheMaximum() public {
+        vm.prank(riskManager);
+        vm.expectRevert(IVaultManagement.WithdrawFeeAboveMax.selector);
+        vault.updateWithdrawFee(5_001);
+
+        vm.prank(riskManager);
+        vault.updateWithdrawFee(5_000);
+        assertEq(vault.withdrawFee(), 5_000);
+    }
+
+    function test_cannot_updateWithdrawFee_withoutRiskManagerRole() public {
+        vm.prank(vaultManager);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector,
+                vaultManager,
+                RISK_MANAGER_ROLE
+            )
+        );
+        vault.updateWithdrawFee(50);
+    }
+
+    function test_initialize_acceptsTheRateBounds() public {
+        VaultHandler implementation = new VaultHandler();
+        IVault.InitParams memory params = _initParams(savingsVault);
+
+        params.ratePerSecond = RAY;
+        Vault atRay = Vault(
+            address(
+                new ERC1967Proxy(
+                    address(implementation),
+                    abi.encodeCall(Vault.initialize, (params))
+                )
+            )
+        );
+        params.ratePerSecond = InterestLib.MAX_RATE;
+        Vault atMax = Vault(
+            address(
+                new ERC1967Proxy(
+                    address(implementation),
+                    abi.encodeCall(Vault.initialize, (params))
+                )
+            )
+        );
+
+        assertEq(atRay.interestRate(), RAY);
+        assertEq(atMax.interestRate(), InterestLib.MAX_RATE);
+    }
+
+    function test_accrueInterest_atMaxRateDoublesYearlyForFiftyYears() public {
+        vm.prank(vaultManager);
+        vault.setInterestRate(InterestLib.MAX_RATE);
+        uint256 start = vault.index();
+
+        vm.warp(block.timestamp + 50 * 365 days);
+        vm.prank(vaultManager);
+        vault.setInterestRate(RAY);
+
+        assertApproxEqRel(vault.index(), start * 2 ** 50, 1e12);
+    }
+
+    function test_cannot_initialize_withAnInterestRateOutOfBounds() public {
+        VaultHandler implementation = new VaultHandler();
+        IVault.InitParams memory params = _initParams(savingsVault);
+
+        params.ratePerSecond = RAY - 1;
+        vm.expectRevert(IVaultManagement.InterestRateBelowRay.selector);
+        new ERC1967Proxy(
+            address(implementation),
+            abi.encodeCall(Vault.initialize, (params))
+        );
+
+        params.ratePerSecond = InterestLib.MAX_RATE + 1;
+        vm.expectRevert(IVaultManagement.InterestRateAboveMax.selector);
         new ERC1967Proxy(
             address(implementation),
             abi.encodeCall(Vault.initialize, (params))

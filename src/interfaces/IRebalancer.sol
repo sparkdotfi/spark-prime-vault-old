@@ -15,12 +15,15 @@ interface IRebalancer {
     /// @notice Emitted when REBALANCER_ROLE withdraws from Savings Vault
     event SavingsWithdraw(uint256 shares, uint256 outputAssets);
 
+    /// @notice Thrown when withdrawFromSavings would unwind savings shares that are locked to queued deposits
+    error ExceedsFreeSavingsShares(uint256 shares, uint256 free);
+
     /// @notice Move idle base asset from Vault to Savings Vault to earn yield. REBALANCER_ROLE only
-    /// @dev Internals handle conversion to saving vault.
+    /// @dev Internals handle conversion to saving vault. Reverts with ExceedsAvailableLiquidity above availableLiquidAssets()
     function depositToSavings(uint256 assets) external returns (uint256 shares);
 
     /// @notice Withdraws from Savings Vault into Prime vault base asset. REBALANCER_ROLE only
-    /// @dev Internals handle conversion to saving vault.
+    /// @dev Internals handle conversion to saving vault. Reverts with ExceedsFreeSavingsShares if it would unwind shares locked to queued deposits
     function withdrawFromSavings(
         uint256 shares
     ) external returns (uint256 assets);

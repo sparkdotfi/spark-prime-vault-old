@@ -4,8 +4,12 @@ pragma solidity ^0.8.20;
 import {Test} from "forge-std/Test.sol";
 import {VaultHandler} from "./VaultHandler.t.sol";
 import {IVault} from "src/interfaces/IVault.sol";
+import {IQueue} from "src/interfaces/IQueue.sol";
 import {ISparkPrimeVault} from "src/interfaces/ISparkPrimeVault.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import {
+    IERC20Errors
+} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import {IVaultManagement} from "src/interfaces/IVaultManagement.sol";
 import {USDC} from "./mocks/USDC.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
@@ -271,7 +275,7 @@ contract RequestDepositUnitTests is QueueHelper {
         vm.prank(user);
         vm.expectRevert(
             abi.encodeWithSelector(
-                ISparkPrimeVault.MustExceedMinimumRequestAmount.selector,
+                ISparkPrimeVault.BelowMinimumRequestAmount.selector,
                 MINIMUM_DEPOSIT
             )
         );
@@ -292,7 +296,7 @@ contract RequestDepositUnitTests is QueueHelper {
         vm.prank(user);
         vm.expectRevert(
             abi.encodeWithSelector(
-                ISparkPrimeVault.MustExceedMinimumRequestAmount.selector,
+                ISparkPrimeVault.BelowMinimumRequestAmount.selector,
                 MINIMUM_DEPOSIT
             )
         );
@@ -314,7 +318,7 @@ contract RequestDepositUnitTests is QueueHelper {
         vm.prank(userTwo);
         vm.expectRevert(
             abi.encodeWithSelector(
-                ISparkPrimeVault.MustExceedMinimumRequestAmount.selector,
+                ISparkPrimeVault.BelowMinimumRequestAmount.selector,
                 MINIMUM_DEPOSIT
             )
         );
@@ -329,6 +333,14 @@ contract RequestDepositUnitTests is QueueHelper {
         vm.prank(user);
         vm.expectRevert(ISparkPrimeVault.ZeroValueProvided.selector);
         vault.requestDeposit(0, user, user);
+    }
+
+    function test_cannot_requestDeposit_forZeroController() public {
+        _fund(user, 10 ether);
+
+        vm.prank(user);
+        vm.expectRevert(ISparkPrimeVault.ZeroValueProvided.selector);
+        vault.requestDeposit(10 ether, address(0), user);
     }
 
     function test_requestDeposit_anyAmountWhenNoMinimumConfigured() public {
@@ -444,6 +456,20 @@ contract RequestDepositUnitTests is QueueHelper {
         assertEq(vault.totalAssets(), vault.convertToAssets(expected));
     }
 
+    function test_mintWithReferralCode_emitsReferralCode() public {
+        _requestDeposit(user, 40 ether);
+        uint256 shares = vault.maxMint(user);
+
+        vm.expectEmit(address(vault));
+        emit ISparkPrimeVault.ReferralCode(user, 7);
+
+        vm.prank(user);
+        vault.mint(shares, user, user, 7);
+
+        assertEq(vault.balanceOf(user), shares);
+        assertEq(vault.maxMint(user), 0);
+    }
+
     function test_cannot_depositWithReferralCode_asUnauthorizedCaller() public {
         _requestDeposit(user, 40 ether);
 
@@ -544,6 +570,25 @@ contract RequestDepositUnitTests is QueueHelper {
             abi.encodeWithSelector(IVault.ShareConversionFailure.selector, 1)
         );
         vault.requestDeposit(capacity + 1, userTwo, userTwo);
+    }
+
+    function test_requestDeposit_queuesARemainderBelowTheMinimum() public {
+        _openCapacity(30 ether);
+        _nextBlock();
+        uint256 capacity = _capacityValue();
+        uint256 remainder = MINIMUM_DEPOSIT - 1;
+        _fund(user, capacity + remainder);
+
+        vm.prank(user);
+        vault.requestDeposit(capacity + remainder, user, user);
+
+        assertEq(vault.maxDeposit(user), capacity);
+        assertEq(vault.depositQueueLength(), 1);
+        assertApproxEqAbs(
+            savingsVault.previewRedeem(vault.totalPendingDeposits()),
+            remainder,
+            2
+        );
     }
 
     function test_pendingDepositRequest_tracksSavingsYield() public {
@@ -664,13 +709,44 @@ contract RequestDepositUnitTests is QueueHelper {
 
         vm.prank(operator);
         vm.expectRevert(
-            abi.encodeWithSelector(
-                IVault.OperatorMaliciousAction.selector,
-                operator,
-                user
-            )
+            abi.encodeWithSelector(IVault.UnauthorizedCaller.selector, operator)
         );
         vault.mint(shares, operator, user);
+    }
+
+    function test_deposit_emitsTheReducedClaimableDeposit() public {
+        _requestDeposit(user, 40 ether);
+
+        vm.expectEmit(address(vault));
+        emit IQueue.ClaimableDeposit(user, 30 ether);
+
+        vm.prank(user);
+        vault.deposit(10 ether, user, user);
+
+        assertEq(vault.claimableDepositRequest(0, user), 30 ether);
+    }
+
+    function test_cannot_claimDeposit_toTheVaultOrZeroAddress() public {
+        _requestDeposit(user, 40 ether);
+        uint256 shares = vault.maxMint(user);
+
+        vm.startPrank(user);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IERC20Errors.ERC20InvalidReceiver.selector,
+                address(vault)
+            )
+        );
+        vault.deposit(40 ether, address(vault), user);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IERC20Errors.ERC20InvalidReceiver.selector,
+                address(0)
+            )
+        );
+        vault.mint(shares, address(0), user);
+        vm.stopPrank();
     }
 
     function test_cannot_mint_zeroShares() public {

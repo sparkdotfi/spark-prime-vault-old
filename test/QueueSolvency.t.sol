@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import {QueueHelper} from "./utils/QueueHelper.sol";
 import {IQueue} from "src/interfaces/IQueue.sol";
 import {Vm} from "forge-std/Vm.sol";
+import {SavingsVault} from "./mocks/SavingsVault.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
@@ -133,8 +134,8 @@ contract QueueSolvencyTests is QueueHelper {
 
         /// cant sweep immediately because no liquidity
         vm.prank(rebalancer);
-        vm.expectRevert(IQueue.InputVolumeExceedsAvailableCapacity.selector);
         vault.processQueue(dust);
+        assertEq(vault.depositQueueLength(), 1, "dust waits for capacity");
 
         // boost capacity to give liquidity
         _openCapacity(51 ether + dust);
@@ -171,11 +172,10 @@ contract QueueSolvencyTests is QueueHelper {
 
         uint256 fullDemand = vault.convertToAssets(shares);
         vm.prank(rebalancer);
-        vm.expectRevert(IQueue.InputVolumeExceedsLiquidity.selector);
         vault.processQueue(fullDemand);
 
-        vm.prank(rebalancer);
-        vault.processQueue(20 ether);
+        assertEq(vault.depositQueueLength(), 0);
+        assertGt(vault.withdrawQueueLength(), 0);
         assertSolvent();
     }
 
@@ -191,8 +191,8 @@ contract QueueSolvencyTests is QueueHelper {
         assertEq(assetsHeld(), 0, "no liquidity");
 
         vm.prank(rebalancer);
-        vm.expectRevert(IQueue.InputVolumeExceedsLiquidity.selector);
         vault.processQueue(1 ether);
+        assertEq(vault.withdrawQueueLength(), 4);
 
         uint256 volume = vault.convertToAssets(shares);
         _injectLiquidity(volume);
@@ -235,7 +235,7 @@ contract QueueSolvencyTests is QueueHelper {
         assertSolvent();
     }
 
-    function test_takeAfterMatching_makesVaultInsolvent() public {
+    function test_cannot_take_afterMatching_theAssetsOwedToClaimers() public {
         _ensureCapacity(40 ether);
         _mintShares(4, 40 ether, defaultUsers());
         _drainLiquidity();
@@ -251,10 +251,39 @@ contract QueueSolvencyTests is QueueHelper {
         vault.processQueue(volume);
         assertSolvent();
 
-        /// simulate PAU pulling funds that were commited to claimers
-        _drainLiquidity();
+        uint256 held = baseAsset.balanceOf(address(vault));
+        int256 available = vault.availableLiquidAssets();
+        vm.prank(liquidityManager);
+        vm.expectRevert(
+            abi.encodeWithSignature(
+                "ExceedsAvailableLiquidity(uint256,int256)",
+                held,
+                available
+            )
+        );
+        vault.take(held);
 
-        assertInsolvent();
+        _drainLiquidity();
+        assertSolvent();
+    }
+
+    function test_processQueue_fillsDepositsOnlyUpToTheSavingsVaultsLiquidity()
+        public
+    {
+        _depositAndClaim(user, 50 ether);
+        _drainLiquidity();
+        _requestRedeem(user, vault.balanceOf(user));
+        _closeCapacity();
+        _requestDeposit(userTwo, 20 ether);
+        uint256 liquid = baseAsset.balanceOf(address(savingsVault));
+        SavingsVault(address(savingsVault)).lend(liquid - 5 ether);
+
+        vm.prank(rebalancer);
+        vault.processQueue(type(uint256).max);
+
+        assertApproxEqAbs(vault.maxDeposit(userTwo), 5 ether, 2);
+        assertGt(vault.totalPendingDeposits(), 0);
+        assertSolvent();
     }
 
     function test_pendingEscrowIsHeldButNotDeliverable() public {
@@ -573,7 +602,7 @@ contract QueueSolvencyTests is QueueHelper {
         assertSolvent();
     }
 
-    function test_cannot_processQueue_afterTheSavingsBackingIsWithdrawn()
+    function test_cannot_withdrawFromSavings_theDepositQueuesBacking()
         public
     {
         _closeCapacity();
@@ -581,24 +610,15 @@ contract QueueSolvencyTests is QueueHelper {
         uint256 backing = savingsVault.balanceOf(address(vault));
 
         vm.prank(rebalancer);
-        uint256 unwound = vault.withdrawFromSavings(backing);
-        _openCapacity(50 ether);
-
-        vm.prank(rebalancer);
         vm.expectRevert(
             abi.encodeWithSignature(
-                "ERC4626ExceededMaxRedeem(address,uint256,uint256)",
-                address(vault),
+                "ExceedsFreeSavingsShares(uint256,uint256)",
                 backing,
                 0
             )
         );
-        vault.processQueue(10 ether);
-
-        uint256 needed = savingsVault.previewMint(backing);
-        if (needed > unwound) _injectLiquidity(needed - unwound);
-        vm.prank(rebalancer);
-        vault.depositToSavings(needed);
+        vault.withdrawFromSavings(backing);
+        _openCapacity(50 ether);
 
         uint256 value = savingsVault.previewRedeem(
             vault.totalPendingDeposits()
@@ -728,16 +748,10 @@ contract QueueSolvencyTests is QueueHelper {
             vault.totalPendingDeposits()
         );
         uint256 burned = vault.totalPendingWithdraws();
+        assertEq(vault.maxTradeVolume(), vault.convertToAssets(burned));
 
         vm.prank(rebalancer);
-        vm.expectRevert(IQueue.InputVolumeExceedsAvailableCapacity.selector);
         vault.processQueue(volume);
-
-        uint256 maxVolume = vault.maxTradeVolume();
-        assertEq(maxVolume, vault.convertToAssets(burned));
-
-        vm.prank(rebalancer);
-        vault.processQueue(maxVolume);
 
         assertEq(vault.withdrawQueueLength(), 0);
         assertSolvent();
@@ -790,7 +804,7 @@ contract QueueSolvencyTests is QueueHelper {
         assertSolvent();
     }
 
-    function test_cannot_processQueue_volumeAboveMaxTradeVolume() public {
+    function test_processQueue_clampsToMaxTradeVolume() public {
         _mintSharesTo(user, 50 ether);
         _drainLiquidity();
         _requestRedeem(user, vault.balanceOf(user));
@@ -803,11 +817,7 @@ contract QueueSolvencyTests is QueueHelper {
         assertEq(maxVolume, pending);
 
         vm.prank(rebalancer);
-        vm.expectRevert(IQueue.InputVolumeExceedsAvailableCapacity.selector);
         vault.processQueue(maxVolume + 1);
-
-        vm.prank(rebalancer);
-        vault.processQueue(maxVolume);
 
         assertEq(vault.withdrawQueueLength(), 0);
         assertEq(vault.depositQueueLength(), 0);
@@ -822,14 +832,9 @@ contract QueueSolvencyTests is QueueHelper {
         _setCapacity(10 ether - 1);
 
         vm.prank(rebalancer);
-        vm.expectRevert(IQueue.InputVolumeExceedsAvailableCapacity.selector);
         vault.processQueue(10 ether);
 
-        _setCapacity(10 ether);
-        vm.prank(rebalancer);
-        vault.processQueue(10 ether);
-
-        assertEq(vault.maxMint(user), 10 ether);
+        assertEq(vault.maxMint(user), 10 ether - 1);
         assertEq(vault.availableCapacity(), 0);
         assertSolvent();
     }
@@ -885,11 +890,7 @@ contract QueueSolvencyTests is QueueHelper {
         );
 
         vm.prank(rebalancer);
-        vm.expectRevert(IQueue.InputVolumeExceedsLiquidity.selector);
         vault.processQueue(maxVolume + 1);
-
-        vm.prank(rebalancer);
-        vault.processQueue(maxVolume);
 
         assertEq(vault.depositQueueLength(), 0);
         assertSolvent();
@@ -962,6 +963,44 @@ contract QueueSolvencyTests is QueueHelper {
         assertEq(vault.maxMint(userTwo), 0);
         assertEq(vault.pendingDepositRequest(0, userTwo), 10 ether - 1);
         assertSolvent();
+    }
+
+    function test_processQueue_emitsQueueValuationsMatchingTheGetters()
+        public
+    {
+        _depositAndClaim(user, 50 ether);
+        _drainLiquidity();
+        _requestRedeem(user, vault.balanceOf(user));
+        _closeCapacity();
+        _requestDeposit(userTwo, 20 ether);
+        uint256 volume = vault.maxTradeVolume() / 2;
+
+        vm.recordLogs();
+        vm.prank(rebalancer);
+        vault.processQueue(volume);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        uint256 withdrawValuations;
+        uint256 depositValuations;
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].emitter != address(vault)) continue;
+            bytes32 topic = logs[i].topics[0];
+            uint256 value = logs[i].data.length == 32
+                ? abi.decode(logs[i].data, (uint256))
+                : 0;
+            if (topic == IQueue.WithdrawQueueValuation.selector) {
+                ++withdrawValuations;
+                assertEq(value, vault.totalPendingWithdraws());
+            } else if (topic == IQueue.DepositQueueValuation.selector) {
+                ++depositValuations;
+                assertEq(value, vault.totalPendingDeposits());
+            }
+        }
+
+        assertEq(withdrawValuations, 1);
+        assertEq(depositValuations, 1);
+        assertGt(vault.totalPendingWithdraws(), 0);
+        assertGt(vault.totalPendingDeposits(), 0);
     }
 
     function test_processQueue_keepsTheRoundingSurplusOfAPartialFill() public {

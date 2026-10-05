@@ -2,8 +2,10 @@
 pragma solidity ^0.8.20;
 
 import {IVaultManagement} from "../interfaces/IVaultManagement.sol";
+import {ISparkPrimeVault} from "../interfaces/ISparkPrimeVault.sol";
 import {VaultBase} from "./VaultBase.sol";
 import {InterestLib} from "../libraries/InterestLib.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {
     AccessControlUpgradeable
 } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
@@ -13,18 +15,13 @@ abstract contract VaultManagement is
     AccessControlUpgradeable,
     IVaultManagement
 {
-    function pause() public onlyRole(VAULT_MANAGER_ROLE) {
-        _pause();
-    }
-
-    function unpause() public onlyRole(DEFAULT_ADMIN_ROLE) {
-        _unpause();
-    }
+    uint256 constant MAX_WITHDRAW_BPS = 5_000;
 
     function setInterestRate(
         uint256 newRate
     ) public onlyRole(VAULT_MANAGER_ROLE) {
         if (newRate < InterestLib.RAY) revert InterestRateBelowRay();
+        if (newRate > InterestLib.MAX_RATE) revert InterestRateAboveMax();
         Storage storage $ = getStorage();
         InterestLib.accrueInterest($);
         uint256 oldRate = $.ratePerSecond;
@@ -34,18 +31,28 @@ abstract contract VaultManagement is
 
     function setTotalAssets(
         uint256 newTotalAssets
-    ) public onlyRole(VAULT_MANAGER_ROLE) {
+    ) public onlyRole(RISK_MANAGER_ROLE) whenPaused {
+        if (newTotalAssets == 0) revert ISparkPrimeVault.ZeroValueProvided();
         Storage storage $ = getStorage();
 
         InterestLib.accrueInterest($);
 
         uint256 oldTotalAssets = totalAssets();
-        uint256 cappedAssets = convertToAssets(totalSupply());
-
-        if (newTotalAssets > cappedAssets) revert TotalAssetsExceedIndexValue();
-        $.totalLoss = cappedAssets - newTotalAssets;
+        if (newTotalAssets > oldTotalAssets)
+            revert TotalAssetsExceedIndexValue();
+        $.indexRate = Math.mulDiv($.indexRate, newTotalAssets, oldTotalAssets);
 
         emit TotalAssetsUpdated(oldTotalAssets, newTotalAssets);
+    }
+
+    function setCapacity(
+        uint256 newCapacity
+    ) public onlyRole(VAULT_MANAGER_ROLE) {
+        Storage storage $ = getStorage();
+        if (newCapacity > type(uint128).max) revert CapacityAboveLimit();
+        if (newCapacity < totalSupply()) revert CapacityBelowTotalSupply();
+        emit CapacityUpdated($.maximumCapacity, newCapacity);
+        $.maximumCapacity = newCapacity;
     }
 
     function setMinimumDeposit(
@@ -63,17 +70,26 @@ abstract contract VaultManagement is
         $.minimumWithdraw = amount;
         emit MinimumWithdrawUpdated(amount);
     }
+
     function updateWithdrawFee(
         uint256 bps
-    ) public onlyRole(VAULT_MANAGER_ROLE) {}
-
-    function setCapacity(
-        uint256 newCapacity
-    ) public onlyRole(VAULT_MANAGER_ROLE) {
+    ) public onlyRole(RISK_MANAGER_ROLE) {
+        if (bps > MAX_WITHDRAW_BPS) revert WithdrawFeeAboveMax();
         Storage storage $ = getStorage();
-        if (newCapacity < totalSupply())
-            revert MaximumCapacityCannotExceedCurrentTotal();
-        emit CapacityUpdated($.maximumCapacity, newCapacity);
-        $.maximumCapacity = newCapacity;
+        emit WithdrawFeeUpdated($.withdrawFee, bps);
+        $.withdrawFee = bps;
+    }
+
+    function withdrawFee() public view returns (uint256) {
+        Storage storage $ = getStorage();
+        return $.withdrawFee;
+    }
+
+    function pause() public onlyRole(GUARDIAN_ROLE) {
+        _pause();
+    }
+
+    function unpause() public onlyRole(DEFAULT_ADMIN_ROLE) {
+        _unpause();
     }
 }

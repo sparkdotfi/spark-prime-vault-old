@@ -35,7 +35,7 @@ contract VaultHandler is Vault {
         bool value
     ) external {
         Storage storage $ = getStorage();
-        $.operators[user] = value ? operator : address(0);
+        $.operators[user][operator] = value;
     }
 
     function setTotalClaimableDepositShares(uint256 value) external {

@@ -27,7 +27,9 @@ contract VaultScript is Script {
             admin: vm.envAddress("ADMIN"),
             vaultManager: vm.envAddress("VAULT_MANAGER"),
             liquidityManager: vm.envAddress("LIQUIDITY_MANAGER"),
-            rebalancer: vm.envAddress("REBALANCER")
+            rebalancer: vm.envAddress("REBALANCER"),
+            guardian: vm.envAddress("GUARDIAN"),
+            riskManager: vm.envAddress("RISK_MANAGER")
         });
 
         vm.startBroadcast();

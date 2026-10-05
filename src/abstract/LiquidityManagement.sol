@@ -10,7 +10,6 @@ import {
     SafeERC20
 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
-import {console} from "forge-std/console.sol";
 
 abstract contract LiquidityManagement is
     VaultBase,
@@ -20,16 +19,14 @@ abstract contract LiquidityManagement is
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
 
-    /// @notice Provides Spark PAU ability to withdraw the vaults baseAsset balance
     function take(
         uint256 baseAmount
     ) public onlyRole(LIQUIDITY_MANAGER_ROLE) nonReentrant {
+        _requireAvailableLiquidity(baseAmount);
         IERC20(asset()).safeTransfer(msg.sender, baseAmount);
+        emit FundsTaken(msg.sender, baseAmount);
     }
 
-    /// @notice Calculates how many assets the vault can allocate for withdrawals
-    /// @dev It is the Rebalancers responsibility to convert Savings Vault shares back to base asset for them to be considered instant liquidty
-    /// @return totalBaseAssets Instant Withdrawal Liquidity
     function availableLiquidAssets()
         public
         view
@@ -39,5 +36,11 @@ abstract contract LiquidityManagement is
         totalBaseAssets =
             IERC20(asset()).balanceOf(address(this)).toInt256() -
             $.totalClaimableWithdrawAssets.toInt256();
+    }
+
+    function _requireAvailableLiquidity(uint256 amount) internal view {
+        int256 available = availableLiquidAssets();
+        if (amount.toInt256() > available)
+            revert ExceedsAvailableLiquidity(amount, available);
     }
 }
