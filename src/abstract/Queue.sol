@@ -136,10 +136,12 @@ abstract contract Queue is LiquidityManagement, IQueue {
         if (remainder > queue.pending) revert PartialFillFailure();
 
         while (remainder > 0) {
-            (uint256 slot, Transaction storage t) = queue.peek();      // skips holes, reverts QueueEmpty (unreachable after the guard)
-            uint256 fill = Math.min(t.amount, remainder);              // one min replaces the three branches
-            claim($, t, fill, false);                                  // storage struct copies to memory at the call
-            queue.take(slot, fill);                                    // shrink or remove the head
+            (uint256 slot, Transaction storage t) = queue.peek();
+            uint256 fill = Math.min(t.amount, remainder);
+
+            claim($, t, fill, false);
+            queue.take(slot, fill);
+
             remainder -= fill;
         }
     }
