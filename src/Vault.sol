@@ -62,12 +62,12 @@ contract Vault is
     /**********************************************************************************************/
 
     // TODO: These should be removed in favour of inline `.interfaceId`.
-    bytes4 private constant ERC7575_INTERFACE_ID = 0x2f0a18c5;
-    bytes4 private constant ERC7540_DEPOSIT_INTERFACE_ID = 0xce3bbe50;
-    bytes4 private constant ERC7540_REDEEM_INTERFACE_ID = 0x620ee8e4;
+    bytes4 internal constant _ERC7575_INTERFACE_ID = 0x2f0a18c5;
+    bytes4 internal constant _ERC7540_DEPOSIT_INTERFACE_ID = 0xce3bbe50;
+    bytes4 internal constant _ERC7540_REDEEM_INTERFACE_ID = 0x620ee8e4;
 
     // TODO: Investigate need for transient storage and consider alternate transient storage layout.
-    bytes32 private constant SAVINGS_VAULT_PRICE_PER_SHARE =
+    bytes32 internal constant _SAVINGS_VAULT_PRICE_PER_SHARE =
         keccak256("sparkprime.vault.depositFillRate");
 
     // TODO: Interface functions and natspec inherit.
@@ -170,7 +170,7 @@ contract Vault is
     }
 
     /**********************************************************************************************/
-    /*** Admin Functions                                                                        ***/
+    /*** Admin Interactive Functions                                                            ***/
     /**********************************************************************************************/
 
     function unpause() external onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -178,8 +178,20 @@ contract Vault is
     }
 
     /**********************************************************************************************/
-    /*** Vault Manager Functions                                                                ***/
+    /*** Vault Manager Interactive Functions                                                    ***/
     /**********************************************************************************************/
+
+    function setCapacity(uint256 newCapacity) external onlyRole(VAULT_MANAGER_ROLE) {
+        if (newCapacity > type(uint128).max) revert CapacityAboveLimit();
+
+        if (newCapacity < totalSupply()) revert CapacityBelowTotalSupply();
+
+        VaultStorage storage $ = _getStorage();
+
+        emit CapacityUpdated($.maximumCapacity, newCapacity);
+
+        $.maximumCapacity = newCapacity;
+    }
 
     function setInterestRate(uint256 newRate) external onlyRole(VAULT_MANAGER_ROLE) {
         if (newRate < RAY) revert InterestRateBelowRay();
@@ -193,6 +205,14 @@ contract Vault is
         emit RateUpdated($.ratePerSecond, newRate);
 
         $.ratePerSecond = newRate;
+    }
+
+    function setMinimumDeposit(uint256 amount) external onlyRole(VAULT_MANAGER_ROLE) {
+        emit MinimumDepositUpdated(_getStorage().minimumDeposit = amount);
+    }
+
+    function setMinimumWithdraw(uint256 amount) external onlyRole(VAULT_MANAGER_ROLE) {
+        emit MinimumWithdrawUpdated(_getStorage().minimumWithdraw = amount);
     }
 
     function setTotalAssets(uint256 newTotalAssets)
@@ -215,28 +235,8 @@ contract Vault is
         emit TotalAssetsUpdated(oldTotalAssets, newTotalAssets);
     }
 
-    function setCapacity(uint256 newCapacity) external onlyRole(VAULT_MANAGER_ROLE) {
-        if (newCapacity > type(uint128).max) revert CapacityAboveLimit();
-
-        if (newCapacity < totalSupply()) revert CapacityBelowTotalSupply();
-
-        VaultStorage storage $ = _getStorage();
-
-        emit CapacityUpdated($.maximumCapacity, newCapacity);
-
-        $.maximumCapacity = newCapacity;
-    }
-
-    function setMinimumDeposit(uint256 amount) external onlyRole(VAULT_MANAGER_ROLE) {
-        emit MinimumDepositUpdated(_getStorage().minimumDeposit = amount);
-    }
-
-    function setMinimumWithdraw(uint256 amount) external onlyRole(VAULT_MANAGER_ROLE) {
-        emit MinimumWithdrawUpdated(_getStorage().minimumWithdraw = amount);
-    }
-
     /**********************************************************************************************/
-    /*** Rebalancer Functions                                                                   ***/
+    /*** Rebalancer Interactive Functions                                                       ***/
     /**********************************************************************************************/
 
     function depositToSavings(uint256 assets)
@@ -300,7 +300,7 @@ contract Vault is
     }
 
     /**********************************************************************************************/
-    /*** Liquidity Manager Functions                                                            ***/
+    /*** Liquidity Manager Interactive Functions                                                ***/
     /**********************************************************************************************/
 
     function take(uint256 baseAmount) external onlyRole(LIQUIDITY_MANAGER_ROLE) nonReentrant {
@@ -312,7 +312,7 @@ contract Vault is
     }
 
     /**********************************************************************************************/
-    /*** Risk Manager Functions                                                                 ***/
+    /*** Risk Manager Interactive Functions                                                     ***/
     /**********************************************************************************************/
 
     function updateWithdrawFee(uint256 bps) external onlyRole(RISK_MANAGER_ROLE) {
@@ -326,7 +326,7 @@ contract Vault is
     }
 
     /**********************************************************************************************/
-    /*** Guardian Functions                                                                     ***/
+    /*** Guardian Interactive Functions                                                         ***/
     /**********************************************************************************************/
 
     function pause() external onlyRole(GUARDIAN_ROLE) {
@@ -334,10 +334,18 @@ contract Vault is
     }
 
     /**********************************************************************************************/
-    /*** User Functions                                                                         ***/
+    /*** Permissionless Interactive Functions                                                   ***/
     /**********************************************************************************************/
 
-    // TODO: No longer return 0, buy use a global monotonically increasing counter for request IDs.
+    function sanitizeDepositQueue(uint256 maxIterations) external returns (uint256 removed) {
+        return _getStorage().depositQueue.sanitize(maxIterations);
+    }
+
+    /**********************************************************************************************/
+    /*** User Position Lifecycle Interactive Functions                                          ***/
+    /**********************************************************************************************/
+
+    // TODO: Instead of returning 0, consider a global monotonically increasing counter for request IDs.
     function requestDeposit(uint256 assets, address controller, address owner)
         external
         whenNotPaused
@@ -392,20 +400,6 @@ contract Vault is
         emit DepositRequest(controller, owner, 0, msg.sender, assets);
 
         return 0;
-    }
-
-    function _queueDeposit(VaultStorage storage $, Transaction memory transaction) internal {
-        IERC20(asset()).forceApprove($.savingsVault, transaction.amount);
-
-        uint256 shares = IERC4626($.savingsVault).deposit(transaction.amount, address(this));
-
-        if (shares == 0) revert ShareConversionFailure(transaction.amount);
-
-        transaction.amount = shares;
-
-        _pushToDepositQueue($, transaction);
-
-        emit DepositQueued(transaction.controller, transaction.owner, transaction.nonce, shares);
     }
 
     function cancelDepositRequest(address controller, uint256 nonce) external nonReentrant {
@@ -531,7 +525,7 @@ contract Vault is
         return mint(shares, receiver, controller);
     }
 
-    // TODO: No longer return 0, buy use a global monotonically increasing counter for request IDs.
+    // TODO: Instead of returning 0, consider a global monotonically increasing counter for request IDs.
     function requestRedeem(uint256 shares, address controller, address owner)
         public
         whenNotPaused
@@ -602,6 +596,28 @@ contract Vault is
         return 0;
     }
 
+    function redeem(uint256 shares, address receiver, address controller)
+        public
+        override(ERC4626Upgradeable, IERC4626)
+        whenNotPaused
+        nonReentrant
+        returns (uint256 assets)
+    {
+        if (shares == 0) revert ZeroValueProvided();
+
+        _authorizeClaim(receiver, controller);
+
+        Settlement storage settlement = _getStorage().ledger[controller];
+
+        if (settlement.withdrawnShares < shares) {
+            revert InsufficientClaimableAmount(shares, settlement.withdrawnShares);
+        }
+
+        assets = Math.mulDiv(settlement.assetsOwed, shares, settlement.withdrawnShares);
+
+        _claimRedeem(receiver, controller, shares, assets);
+    }
+
     function withdraw(uint256 assets, address receiver, address controller)
         public
         override(ERC4626Upgradeable, IERC4626)
@@ -629,41 +645,308 @@ contract Vault is
         _claimRedeem(receiver, controller, shares, assets);
     }
 
-    function redeem(uint256 shares, address receiver, address controller)
-        public
-        override(ERC4626Upgradeable, IERC4626)
-        whenNotPaused
-        nonReentrant
-        returns (uint256 assets)
-    {
-        if (shares == 0) revert ZeroValueProvided();
+    /**********************************************************************************************/
+    /*** User Position Management Interactive Functions                                         ***/
+    /**********************************************************************************************/
 
-        _authorizeClaim(receiver, controller);
+    function setOperator(address operator, bool approved) external returns (bool) {
+        if (approved && operator == address(0)) revert ZeroValueProvided();
 
-        Settlement storage settlement = _getStorage().ledger[controller];
+        _getStorage().operators[msg.sender][operator] = approved;
 
-        if (settlement.withdrawnShares < shares) {
-            revert InsufficientClaimableAmount(shares, settlement.withdrawnShares);
-        }
+        emit OperatorSet(msg.sender, operator, approved);
 
-        assets = Math.mulDiv(settlement.assetsOwed, shares, settlement.withdrawnShares);
-
-        _claimRedeem(receiver, controller, shares, assets);
+        return true;
     }
 
-    function _authorizeClaim(address receiver, address controller) internal view {
-        if (
-            (controller != msg.sender) &&
-            (
-                !isOperator(controller, msg.sender) || (receiver != controller)
-            )
-        ) {
-            revert UnauthorizedCaller(msg.sender);
-        }
+    /**********************************************************************************************/
+    /*** External/Public Getters (Virtual Variables)                                            ***/
+    /**********************************************************************************************/
 
-        if ((receiver == address(0)) || (receiver == address(this))) {
-            revert ERC20InvalidReceiver(receiver);
-        }
+    function availableCapacity() public view returns (uint256 available) {
+        uint256 maximumCapacity_ = _getStorage().maximumCapacity;
+        uint256 supply           = totalSupply();
+
+        return maximumCapacity_ > supply ? maximumCapacity_ - supply : 0;
+    }
+
+    function availableLiquidAssets() public view returns (int256 totalBaseAssets) {
+        return
+            IERC20(asset()).balanceOf(address(this)).toInt256() -
+            _getStorage().totalClaimableWithdrawAssets.toInt256();
+    }
+
+    function claimableDepositTotal() external view returns (uint256) {
+        return _getStorage().totalClaimableDepositShares;
+    }
+
+    function claimableWithdrawTotal() external view returns (uint256) {
+        return _getStorage().totalClaimableWithdrawAssets;
+    }
+
+    // TODO: I cannot imagine this function being exclusively necessary. Either they can all be
+    //       externally fetched or none of them can be. They are not extremely costly to fetch.
+    function depositQueueHead() external view returns (Transaction memory transaction) {
+        return TransactionQueue.front(_getStorage().depositQueue);
+    }
+
+    function depositQueueLength() external view returns (uint256) {
+        TransactionQueue.RequestQueue storage depositQueue = _getStorage().depositQueue;
+
+        return TransactionQueue.length(depositQueue) - depositQueue.cancelled;
+    }
+
+    // TODO: This function is poorly named.
+    function index() external view returns (uint256) {
+        return _getStorage().indexRate;
+    }
+
+    function interestRate() external view returns (uint256) {
+        return _getStorage().ratePerSecond;
+    }
+
+    function lastAccrual() external view returns (uint256) {
+        return _getStorage().lastAccrualTimestamp;
+    }
+
+    function maxCapacity() external view returns (uint256) {
+        return _getStorage().maximumCapacity;
+    }
+
+    function maxTradeVolume() public view returns (uint256) {
+        return Math.min(_availableDepositLiquidity(), _availableWithdrawLiquidity());
+    }
+
+    function minimumDeposit() external view returns (uint256) {
+        return _getStorage().minimumDeposit;
+    }
+
+    function minimumWithdraw() external view returns (uint256) {
+        return _getStorage().minimumWithdraw;
+    }
+
+    // TODO: This function is poorly named.
+    function previewIndex() external view returns (uint256 newIndexRate) {
+        return _accruedIndexRate();
+    }
+
+    // TODO: This function is poorly named.
+    function share() external view override returns (address shareTokenAddress) {
+        return address(this);
+    }
+
+    function totalAssets() public view override(ERC4626Upgradeable, IERC4626) returns (uint256) {
+        return convertToAssets(totalSupply());
+    }
+
+    function totalPendingDeposits() external view returns (uint256 shares) {
+        return _getStorage().totalDepositQueueSavingsShares;
+    }
+
+    function totalPendingWithdraws() public view returns (uint256 shares) {
+        return _getStorage().totalWithdrawQueueShares;
+    }
+
+    function withdrawFee() external view returns (uint256) {
+        return _getStorage().withdrawFee;
+    }
+
+    // TODO: I cannot imagine this function being exclusively necessary. Either they can all be
+    //       externally fetched or none of them can be. They are not extremely costly to fetch.
+    function withdrawQueueHead() external view returns (Transaction memory transaction) {
+        return TransactionQueue.front(_getStorage().withdrawQueue);
+    }
+
+    function withdrawQueueLength() external view returns (uint256) {
+        return TransactionQueue.length(_getStorage().withdrawQueue);
+    }
+
+    /**********************************************************************************************/
+    /*** External/Public View/Pure Functions                                                    ***/
+    /**********************************************************************************************/
+
+    function claimableDepositRequest(uint256, address controller)
+        external
+        view
+        override
+        returns (uint256 claimableAssets)
+    {
+        claimableAssets = _getStorage().ledger[controller].depositedAssets;
+    }
+
+    function claimableRedeemRequest(uint256, address controller)
+        external
+        view
+        override
+        returns (uint256 claimableShares)
+    {
+        return _getStorage().ledger[controller].withdrawnShares;
+    }
+
+    function convertToAssets(uint256 shares)
+        public
+        view
+        override(IERC4626, ERC4626Upgradeable)
+        returns (uint256)
+    {
+        return _convertToAssets(shares, Math.Rounding.Floor);
+    }
+
+    function convertToShares(uint256 assets)
+        public
+        view
+        virtual
+        override(IERC4626, ERC4626Upgradeable)
+        returns (uint256)
+    {
+        return _convertToShares(assets, Math.Rounding.Floor);
+    }
+
+    function isOperator(address controller, address operator) public view returns (bool status) {
+        return _getStorage().operators[controller][operator];
+    }
+
+    function maxDeposit(address controller)
+        public
+        view
+        override(ERC4626Upgradeable, IERC4626)
+        returns (uint256 claimableAssets)
+    {
+        return paused() ? 0 : _getStorage().ledger[controller].depositedAssets;
+    }
+
+    function maxMint(address controller)
+        public
+        view
+        override(ERC4626Upgradeable, IERC4626)
+        returns (uint256 claimableShares)
+    {
+        return paused() ? 0 : _getStorage().ledger[controller].sharesOwed;
+    }
+
+    function maxRedeem(address controller)
+        public
+        view
+        override(ERC4626Upgradeable, IERC4626)
+        returns (uint256 claimableShares)
+    {
+        return paused() ? 0 : _getStorage().ledger[controller].withdrawnShares;
+    }
+
+    function maxWithdraw(address controller)
+        public
+        view
+        override(ERC4626Upgradeable, IERC4626)
+        returns (uint256 claimValue)
+    {
+        return paused() ? 0 : _getStorage().ledger[controller].assetsOwed;
+    }
+
+    function pendingDepositRequest(uint256, address controller)
+        external
+        view
+        returns (uint256 pendingAssets)
+    {
+        VaultStorage storage $ = _getStorage();
+
+        return IERC4626($.savingsVault).convertToAssets($.ledger[controller].pendingSavingsShares);
+    }
+
+    function pendingRedeemRequest(uint256, address controller)
+        external
+        view
+        returns (uint256 pendingShares)
+    {
+        return _getStorage().ledger[controller].pendingSharesOut;
+    }
+
+    function previewDeposit(uint256)
+        public
+        pure
+        override(ERC4626Upgradeable, IERC4626)
+        returns (uint256)
+    {
+        revert();
+    }
+
+    function previewMint(uint256)
+        public
+        pure
+        override(ERC4626Upgradeable, IERC4626)
+        returns (uint256)
+    {
+        revert();
+    }
+
+    function previewRedeem(uint256)
+        public
+        pure
+        override(ERC4626Upgradeable, IERC4626)
+        returns (uint256)
+    {
+        revert();
+    }
+
+    function previewWithdraw(uint256)
+        public
+        pure
+        override(ERC4626Upgradeable, IERC4626)
+        returns (uint256)
+    {
+        revert();
+    }
+
+    function queuedDepositRequest(address controller, uint256 nonce)
+        external
+        view
+        returns (Transaction memory transaction)
+    {
+        transaction = _getStorage().depositQueue.entries[
+            TransactionQueue.key(controller, nonce)
+        ];
+    }
+
+    // TODO: Should be able to remove this once a global monotonically increasing counter is used for request IDs.
+    function requestNonce(address controller) external view returns (uint256) {
+        return _getStorage().nonces[controller];
+    }
+
+    function supportsInterface(bytes4 interfaceId)
+        public
+        view
+        override(AccessControlUpgradeable, IERC165)
+        returns (bool)
+    {
+        // TODO: Use `.interfaceId` instead of magic values (i.e. `type(IERC7575).interfaceId`).
+        return
+            interfaceId == type(IERC7540Operator).interfaceId ||
+            interfaceId == _ERC7575_INTERFACE_ID ||
+            interfaceId == type(IERC7575Share).interfaceId ||
+            interfaceId == _ERC7540_DEPOSIT_INTERFACE_ID ||
+            interfaceId == _ERC7540_REDEEM_INTERFACE_ID ||
+            super.supportsInterface(interfaceId);
+    }
+
+    function vault(address asset_) external view returns (address) {
+        return asset_ == asset() ? address(this) : address(0);
+    }
+
+    /**********************************************************************************************/
+    /*** Internal Interactive Functions                                                         ***/
+    /**********************************************************************************************/
+
+    function _accrueInterest(VaultStorage storage $) internal {
+        uint256 timeDelta = block.timestamp - $.lastAccrualTimestamp;
+
+        if (timeDelta == 0) return;
+
+        $.lastAccrualTimestamp = block.timestamp;
+
+        uint256 compoundingFactor = _rpow($.ratePerSecond, timeDelta);
+
+        $.indexRate = Math.mulDiv($.indexRate, compoundingFactor, RAY);
+
+        emit IVault.AccruedInterest($.indexRate, block.timestamp);
     }
 
     function _claimDeposit(address receiver, address controller, uint256 assets, uint256 shares)
@@ -705,342 +988,43 @@ contract Vault is
         emit Withdraw(msg.sender, receiver, controller, assets, shares);
     }
 
-    function setOperator(address operator, bool approved) external returns (bool) {
-        if (approved && operator == address(0)) revert ZeroValueProvided();
-
-        _getStorage().operators[msg.sender][operator] = approved;
-
-        emit OperatorSet(msg.sender, operator, approved);
-
-        return true;
-    }
-
-    function isOperator(address controller, address operator) public view returns (bool status) {
-        return _getStorage().operators[controller][operator];
-    }
-
-    function pendingDepositRequest(uint256, address controller)
-        external
-        view
-        returns (uint256 pendingAssets)
-    {
+    function _fillDepositQueue(uint256 tradeVolume) internal {
         VaultStorage storage $ = _getStorage();
 
-        return IERC4626($.savingsVault).convertToAssets($.ledger[controller].pendingSavingsShares);
-    }
+        uint256 totalSavingsSharesInQueue = $.totalDepositQueueSavingsShares;
+        uint256 claimableBefore           = $.totalClaimableDepositShares;
+        uint256 queueValue                = _depositQueueValuation();
+        uint256 volume                    = Math.min(tradeVolume, _fillableDepositValue());
 
-    function pendingRedeemRequest(uint256, address controller)
-        external
-        view
-        returns (uint256 pendingShares)
-    {
-        return _getStorage().ledger[controller].pendingSharesOut;
-    }
+        bool fillAll = volume >= queueValue;
 
-    // TODO: Should be able to remove this once a global monotonically increasing counter is used for request IDs.
-    function requestNonce(address controller) external view returns (uint256) {
-        return _getStorage().nonces[controller];
-    }
+        ( uint256 shares, uint256 credit ) =
+            fillAll
+                ? ( totalSavingsSharesInQueue, queueValue )
+                : ( _savingsSharesFor($.savingsVault, volume), volume );
 
-    function queuedDepositRequest(address controller, uint256 nonce)
-        external
-        view
-        returns (Transaction memory transaction)
-    {
-        transaction = _getStorage().depositQueue.entries[
-            TransactionQueue.key(controller, nonce)
-        ];
-    }
+        _SAVINGS_VAULT_PRICE_PER_SHARE.asUint256().tstore(
+            shares == 0 ? 0 : Math.mulDiv(credit, RAY, shares)
+        );
 
-    function supportsInterface(bytes4 interfaceId)
-        public
-        view
-        override(AccessControlUpgradeable, IERC165)
-        returns (bool)
-    {
-        // TODO: Use `.interfaceId` instead of magic values (i.e. `type(IERC7575).interfaceId`).
-        return
-            interfaceId == type(IERC7540Operator).interfaceId ||
-            interfaceId == ERC7575_INTERFACE_ID ||
-            interfaceId == type(IERC7575Share).interfaceId ||
-            interfaceId == ERC7540_DEPOSIT_INTERFACE_ID ||
-            interfaceId == ERC7540_REDEEM_INTERFACE_ID ||
-            super.supportsInterface(interfaceId);
-    }
+        fillAll
+            ? _fillUnbounded($, $.depositQueue, _markClaimableDeposit)
+            : _fillUntil($, $.depositQueue, _markClaimableDeposit, shares);
 
-    /**********************************************************************************************/
-    /*** Internal Interactive Functions                                                         ***/
-    /**********************************************************************************************/
+        _SAVINGS_VAULT_PRICE_PER_SHARE.asUint256().tstore(0);
 
-    function _accrueInterest(VaultStorage storage $) internal {
-        uint256 timeDelta = block.timestamp - $.lastAccrualTimestamp;
+        uint256 minted = $.totalClaimableDepositShares - claimableBefore;
 
-        if (timeDelta == 0) return;
+        if (minted > 0) _mint(address(this), minted);
 
-        $.lastAccrualTimestamp = block.timestamp;
+        uint256 processedSavingsShares =
+            totalSavingsSharesInQueue - $.totalDepositQueueSavingsShares;
 
-        uint256 compoundingFactor = _rpow($.ratePerSecond, timeDelta);
+        if (processedSavingsShares <= 0) return;
 
-        $.indexRate = Math.mulDiv($.indexRate, compoundingFactor, RAY);
+        IERC4626($.savingsVault).redeem(processedSavingsShares, address(this), address(this));
 
-        emit IVault.AccruedInterest($.indexRate, block.timestamp);
-    }
-
-    /**********************************************************************************************/
-    /*** External/Public View/Pure Functions                                                    ***/
-    /**********************************************************************************************/
-
-    function availableLiquidAssets() public view returns (int256 totalBaseAssets) {
-        return
-            IERC20(asset()).balanceOf(address(this)).toInt256() -
-            _getStorage().totalClaimableWithdrawAssets.toInt256();
-    }
-
-    function withdrawFee() external view returns (uint256) {
-        return _getStorage().withdrawFee;
-    }
-
-    /**********************************************************************************************/
-    /*** Internal View/Pure Functions                                                           ***/
-    /**********************************************************************************************/
-
-    function _requireAvailableLiquidity(uint256 amount) internal view {
-        int256 available = availableLiquidAssets();
-
-        if (amount.toInt256() > available) revert ExceedsAvailableLiquidity(amount, available);
-    }
-
-    function _accruedIndexRate() internal view returns (uint256 newIndexRate) {
-        VaultStorage storage $ = _getStorage();
-
-        uint256 timeDelta = block.timestamp - $.lastAccrualTimestamp;
-
-        if (timeDelta == 0) return $.indexRate;
-
-        uint256 compoundingFactor = _rpow($.ratePerSecond, timeDelta);
-
-        return Math.mulDiv($.indexRate, compoundingFactor, RAY);
-    }
-
-    function _rpow(uint256 x, uint256 n) internal pure returns (uint256 z) {
-        assembly {
-            switch x case 0 {switch n case 0 {z := RAY} default {z := 0}}
-            default {
-                switch mod(n, 2) case 0 { z := RAY } default { z := x }
-                let half := div(RAY, 2)  // for rounding.
-                for { n := div(n, 2) } n { n := div(n,2) } {
-                    let xx := mul(x, x)
-                    if iszero(eq(div(xx, x), x)) { revert(0,0) }
-                    let xxRound := add(xx, half)
-                    if lt(xxRound, xx) { revert(0,0) }
-                    x := div(xxRound, RAY)
-                    if mod(n,2) {
-                        let zx := mul(z, x)
-                        if and(iszero(iszero(x)), iszero(eq(div(zx, x), z))) { revert(0,0) }
-                        let zxRound := add(zx, half)
-                        if lt(zxRound, zx) { revert(0,0) }
-                        z := div(zxRound, RAY)
-                    }
-                }
-            }
-        }
-    }
-
-    /**********************************************************************************************/
-    /*** Vault Base Stuff                                                                       ***/
-    /**********************************************************************************************/
-
-    function convertToShares(uint256 assets)
-        public
-        view
-        virtual
-        override(IERC4626, ERC4626Upgradeable)
-        returns (uint256)
-    {
-        return _convertToShares(assets, Math.Rounding.Floor);
-    }
-
-    function convertToAssets(uint256 shares)
-        public
-        view
-        override(IERC4626, ERC4626Upgradeable)
-        returns (uint256)
-    {
-        return _convertToAssets(shares, Math.Rounding.Floor);
-    }
-
-    function _convertToShares(uint256 assets, Math.Rounding rounding)
-        internal
-        view
-        override(ERC4626Upgradeable)
-        returns (uint256)
-    {
-        return Math.mulDiv(assets, RAY, _accruedIndexRate(), rounding);
-    }
-
-    function _convertToAssets(uint256 shares, Math.Rounding rounding)
-        internal
-        view
-        override(ERC4626Upgradeable)
-        returns (uint256)
-    {
-        return Math.mulDiv(shares, _accruedIndexRate(), RAY, rounding);
-    }
-
-    function totalAssets() public view override(ERC4626Upgradeable, IERC4626) returns (uint256) {
-        return convertToAssets(totalSupply());
-    }
-
-    function interestRate() external view returns (uint256) {
-        return _getStorage().ratePerSecond;
-    }
-
-    function index() external view returns (uint256) {
-        return _getStorage().indexRate;
-    }
-
-    function previewIndex() external view returns (uint256 newIndexRate) {
-        return _accruedIndexRate();
-    }
-
-    function lastAccrual() external view returns (uint256) {
-        return _getStorage().lastAccrualTimestamp;
-    }
-
-    function maxCapacity() external view returns (uint256) {
-        return _getStorage().maximumCapacity;
-    }
-
-    function availableCapacity() public view returns (uint256 available) {
-        uint256 maximumCapacity_ = _getStorage().maximumCapacity;
-        uint256 supply           = totalSupply();
-
-        return maximumCapacity_ > supply ? maximumCapacity_ - supply : 0;
-    }
-
-    function minimumDeposit() external view returns (uint256) {
-        return _getStorage().minimumDeposit;
-    }
-
-    function minimumWithdraw() external view returns (uint256) {
-        return _getStorage().minimumWithdraw;
-    }
-
-    function claimableDepositRequest(uint256, address controller)
-        external
-        view
-        override
-        returns (uint256 claimableAssets)
-    {
-        claimableAssets = _getStorage().ledger[controller].depositedAssets;
-    }
-
-    function maxDeposit(address controller)
-        public
-        view
-        override(ERC4626Upgradeable, IERC4626)
-        returns (uint256 claimableAssets)
-    {
-        return paused() ? 0 : _getStorage().ledger[controller].depositedAssets;
-    }
-
-    function maxMint(address controller)
-        public
-        view
-        override(ERC4626Upgradeable, IERC4626)
-        returns (uint256 claimableShares)
-    {
-        return paused() ? 0 : _getStorage().ledger[controller].sharesOwed;
-    }
-
-    function claimableRedeemRequest(uint256, address controller)
-        external
-        view
-        override
-        returns (uint256 claimableShares)
-    {
-        return _getStorage().ledger[controller].withdrawnShares;
-    }
-
-    function maxWithdraw(address controller)
-        public
-        view
-        override(ERC4626Upgradeable, IERC4626)
-        returns (uint256 claimValue)
-    {
-        return paused() ? 0 : _getStorage().ledger[controller].assetsOwed;
-    }
-
-    function maxRedeem(address controller)
-        public
-        view
-        override(ERC4626Upgradeable, IERC4626)
-        returns (uint256 claimableShares)
-    {
-        return paused() ? 0 : _getStorage().ledger[controller].withdrawnShares;
-    }
-
-    function previewDeposit(uint256)
-        public
-        pure
-        override(ERC4626Upgradeable, IERC4626)
-        returns (uint256)
-    {
-        revert();
-    }
-
-    function previewMint(uint256)
-        public
-        pure
-        override(ERC4626Upgradeable, IERC4626)
-        returns (uint256)
-    {
-        revert();
-    }
-
-    function previewWithdraw(uint256)
-        public
-        pure
-        override(ERC4626Upgradeable, IERC4626)
-        returns (uint256)
-    {
-        revert();
-    }
-
-    function previewRedeem(uint256)
-        public
-        pure
-        override(ERC4626Upgradeable, IERC4626)
-        returns (uint256)
-    {
-        revert();
-    }
-
-    // TODO: This virtual getter needs to be renamed.
-    function share() external view override returns (address shareTokenAddress) {
-        return address(this);
-    }
-
-    function vault(address asset_) external view returns (address) {
-        return asset_ == asset() ? address(this) : address(0);
-    }
-
-    /**********************************************************************************************/
-    /*** Queue Stuff                                                                            ***/
-    /**********************************************************************************************/
-
-    function maxTradeVolume() public view returns (uint256) {
-        return Math.min(_availableDepositLiquidity(), _availableWithdrawLiquidity());
-    }
-
-    function _availableDepositLiquidity() internal view returns (uint256 valueInBaseAssets) {
-        int256 liquidAssets = availableLiquidAssets() + _fillableDepositValue().toInt256();
-
-        return uint256(liquidAssets > 0 ? liquidAssets : int256(0));
-    }
-
-    function _availableWithdrawLiquidity() internal view returns (uint256 valueInBaseAssets) {
-        return convertToAssets(totalPendingWithdraws() + availableCapacity());
+        emit DepositQueueValuation($.totalDepositQueueSavingsShares);
     }
 
     function _fillWithdrawQueue(uint256 tradeVolume) internal {
@@ -1059,45 +1043,6 @@ contract Vault is
         _burn(address(this), matched);
 
         emit WithdrawQueueValuation($.totalWithdrawQueueShares);
-    }
-
-    function _fillDepositQueue(uint256 tradeVolume) internal {
-        VaultStorage storage $ = _getStorage();
-
-        uint256 totalSavingsSharesInQueue = $.totalDepositQueueSavingsShares;
-        uint256 claimableBefore           = $.totalClaimableDepositShares;
-        uint256 queueValue                = _depositQueueValuation();
-        uint256 volume                    = Math.min(tradeVolume, _fillableDepositValue());
-
-        bool fillAll = volume >= queueValue;
-
-        ( uint256 shares, uint256 credit ) =
-            fillAll
-                ? ( totalSavingsSharesInQueue, queueValue )
-                : ( _savingsSharesFor($.savingsVault, volume), volume );
-
-        SAVINGS_VAULT_PRICE_PER_SHARE.asUint256().tstore(
-            shares == 0 ? 0 : Math.mulDiv(credit, RAY, shares)
-        );
-
-        fillAll
-            ? _fillUnbounded($, $.depositQueue, _markClaimableDeposit)
-            : _fillUntil($, $.depositQueue, _markClaimableDeposit, shares);
-
-        SAVINGS_VAULT_PRICE_PER_SHARE.asUint256().tstore(0);
-
-        uint256 minted = $.totalClaimableDepositShares - claimableBefore;
-
-        if (minted > 0) _mint(address(this), minted);
-
-        uint256 processedSavingsShares =
-            totalSavingsSharesInQueue - $.totalDepositQueueSavingsShares;
-
-        if (processedSavingsShares <= 0) return;
-
-        IERC4626($.savingsVault).redeem(processedSavingsShares, address(this), address(this));
-
-        emit DepositQueueValuation($.totalDepositQueueSavingsShares);
     }
 
     function _fillUnbounded(
@@ -1151,15 +1096,6 @@ contract Vault is
         }
     }
 
-    function _pushToDepositQueue(VaultStorage storage $, IVault.Transaction memory data) internal {
-        $.depositQueue.push(data);
-
-        $.totalDepositQueueSavingsShares               += data.amount;
-        $.ledger[data.controller].pendingSavingsShares += data.amount;
-
-        emit DepositQueueValuation($.totalDepositQueueSavingsShares);
-    }
-
     // TODO: Remove code smell of boolean flag. Either the caller knows how to handle the case of an
     //       instant deposit, or there is a `_markClaimableDeposit` and `_markInstantClaimableDeposit`.
     function _markClaimableDeposit(
@@ -1173,7 +1109,7 @@ contract Vault is
         uint256 baseAssets =
             instantClaim
                 ? amount
-                : Math.mulDiv(amount, SAVINGS_VAULT_PRICE_PER_SHARE.asUint256().tload(), RAY);
+                : Math.mulDiv(amount, _SAVINGS_VAULT_PRICE_PER_SHARE.asUint256().tload(), RAY);
 
         uint256 shares = convertToShares(baseAssets);
 
@@ -1191,14 +1127,6 @@ contract Vault is
         }
 
         emit ClaimableDeposit(controller, $.ledger[controller].depositedAssets);
-    }
-
-    function _pushToWithdrawQueue(VaultStorage storage $, IVault.Transaction memory data) internal {
-        $.withdrawQueue.push(data);
-        $.totalWithdrawQueueShares += data.amount;
-        $.ledger[data.controller].pendingSharesOut += data.amount;
-
-        emit WithdrawQueueValuation($.totalWithdrawQueueShares);
     }
 
     // TODO: Remove code smell of boolean flag. Either the caller knows how to handle the case of an
@@ -1229,12 +1157,94 @@ contract Vault is
         emit TotalClaimableWithdraws($.totalClaimableWithdrawAssets);
     }
 
-    function sanitizeDepositQueue(uint256 maxIterations) external returns (uint256 removed) {
-        return _getStorage().depositQueue.sanitize(maxIterations);
+    function _pushToDepositQueue(VaultStorage storage $, IVault.Transaction memory data) internal {
+        $.depositQueue.push(data);
+
+        $.totalDepositQueueSavingsShares               += data.amount;
+        $.ledger[data.controller].pendingSavingsShares += data.amount;
+
+        emit DepositQueueValuation($.totalDepositQueueSavingsShares);
     }
 
-    function totalPendingDeposits() external view returns (uint256 shares) {
-        return _getStorage().totalDepositQueueSavingsShares;
+    function _pushToWithdrawQueue(VaultStorage storage $, IVault.Transaction memory data) internal {
+        $.withdrawQueue.push(data);
+        $.totalWithdrawQueueShares += data.amount;
+        $.ledger[data.controller].pendingSharesOut += data.amount;
+
+        emit WithdrawQueueValuation($.totalWithdrawQueueShares);
+    }
+
+    function _queueDeposit(VaultStorage storage $, Transaction memory transaction) internal {
+        IERC20(asset()).forceApprove($.savingsVault, transaction.amount);
+
+        uint256 shares = IERC4626($.savingsVault).deposit(transaction.amount, address(this));
+
+        if (shares == 0) revert ShareConversionFailure(transaction.amount);
+
+        transaction.amount = shares;
+
+        _pushToDepositQueue($, transaction);
+
+        emit DepositQueued(transaction.controller, transaction.owner, transaction.nonce, shares);
+    }
+
+    /**********************************************************************************************/
+    /*** Internal View/Pure Functions                                                           ***/
+    /**********************************************************************************************/
+
+    function _accruedIndexRate() internal view returns (uint256 newIndexRate) {
+        VaultStorage storage $ = _getStorage();
+
+        uint256 timeDelta = block.timestamp - $.lastAccrualTimestamp;
+
+        if (timeDelta == 0) return $.indexRate;
+
+        uint256 compoundingFactor = _rpow($.ratePerSecond, timeDelta);
+
+        return Math.mulDiv($.indexRate, compoundingFactor, RAY);
+    }
+
+    function _availableDepositLiquidity() internal view returns (uint256 valueInBaseAssets) {
+        int256 liquidAssets = availableLiquidAssets() + _fillableDepositValue().toInt256();
+
+        return uint256(liquidAssets > 0 ? liquidAssets : int256(0));
+    }
+
+    function _availableWithdrawLiquidity() internal view returns (uint256 valueInBaseAssets) {
+        return convertToAssets(totalPendingWithdraws() + availableCapacity());
+    }
+
+    function _authorizeClaim(address receiver, address controller) internal view {
+        if (
+            (controller != msg.sender) &&
+            (
+                !isOperator(controller, msg.sender) || (receiver != controller)
+            )
+        ) {
+            revert UnauthorizedCaller(msg.sender);
+        }
+
+        if ((receiver == address(0)) || (receiver == address(this))) {
+            revert ERC20InvalidReceiver(receiver);
+        }
+    }
+
+    function _convertToAssets(uint256 shares, Math.Rounding rounding)
+        internal
+        view
+        override(ERC4626Upgradeable)
+        returns (uint256)
+    {
+        return Math.mulDiv(shares, _accruedIndexRate(), RAY, rounding);
+    }
+
+    function _convertToShares(uint256 assets, Math.Rounding rounding)
+        internal
+        view
+        override(ERC4626Upgradeable)
+        returns (uint256)
+    {
+        return Math.mulDiv(assets, RAY, _accruedIndexRate(), rounding);
     }
 
     function _depositQueueValuation() internal view returns (uint256 assets) {
@@ -1257,6 +1267,36 @@ contract Vault is
         return Math.min(queued, redeemable);
     }
 
+    function _requireAvailableLiquidity(uint256 amount) internal view {
+        int256 available = availableLiquidAssets();
+
+        if (amount.toInt256() > available) revert ExceedsAvailableLiquidity(amount, available);
+    }
+
+    function _rpow(uint256 x, uint256 n) internal pure returns (uint256 z) {
+        assembly {
+            switch x case 0 {switch n case 0 {z := RAY} default {z := 0}}
+            default {
+                switch mod(n, 2) case 0 { z := RAY } default { z := x }
+                let half := div(RAY, 2)  // for rounding.
+                for { n := div(n, 2) } n { n := div(n,2) } {
+                    let xx := mul(x, x)
+                    if iszero(eq(div(xx, x), x)) { revert(0,0) }
+                    let xxRound := add(xx, half)
+                    if lt(xxRound, xx) { revert(0,0) }
+                    x := div(xxRound, RAY)
+                    if mod(n,2) {
+                        let zx := mul(z, x)
+                        if and(iszero(iszero(x)), iszero(eq(div(zx, x), z))) { revert(0,0) }
+                        let zxRound := add(zx, half)
+                        if lt(zxRound, zx) { revert(0,0) }
+                        z := div(zxRound, RAY)
+                    }
+                }
+            }
+        }
+    }
+
     // TODO: This seems odd as it always assume at most a 1 wei rounding error.
     function _savingsSharesFor(address savingsVault, uint256 assets)
         internal
@@ -1266,40 +1306,6 @@ contract Vault is
         shares = IERC4626(savingsVault).convertToShares(assets);
 
         return IERC4626(savingsVault).convertToAssets(shares) < assets ? shares + 1 : shares;
-    }
-
-    function depositQueueLength() external view returns (uint256) {
-        TransactionQueue.RequestQueue storage depositQueue = _getStorage().depositQueue;
-
-        return TransactionQueue.length(depositQueue) - depositQueue.cancelled;
-    }
-
-    // TODO: I cannot imagine this function being exclusively necessary. Either they can all be
-    //       externally fetched or none of them can be. They are not extremely costly to fetch.
-    function depositQueueHead() external view returns (Transaction memory transaction) {
-        return TransactionQueue.front(_getStorage().depositQueue);
-    }
-
-    function claimableDepositTotal() external view returns (uint256) {
-        return _getStorage().totalClaimableDepositShares;
-    }
-
-    function totalPendingWithdraws() public view returns (uint256 shares) {
-        return _getStorage().totalWithdrawQueueShares;
-    }
-
-    function withdrawQueueLength() external view returns (uint256) {
-        return TransactionQueue.length(_getStorage().withdrawQueue);
-    }
-
-    // TODO: I cannot imagine this function being exclusively necessary. Either they can all be
-    //       externally fetched or none of them can be. They are not extremely costly to fetch.
-    function withdrawQueueHead() external view returns (Transaction memory transaction) {
-        return TransactionQueue.front(_getStorage().withdrawQueue);
-    }
-
-    function claimableWithdrawTotal() external view returns (uint256) {
-        return _getStorage().totalClaimableWithdrawAssets;
     }
 
 }
