@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {Test} from "forge-std/Test.sol";
-import {Vm} from "forge-std/Vm.sol";
-import {IVault} from "src/interfaces/IVault.sol";
-import {ISparkPrimeVault} from "src/interfaces/ISparkPrimeVault.sol";
-import {IQueue} from "src/interfaces/IQueue.sol";
-import {QueueHelper} from "./utils/QueueHelper.sol";
+import { Test } from "forge-std/Test.sol";
+import { Vm }   from "forge-std/Vm.sol";
+
+import { IVault }           from "src/interfaces/IVault.sol";
+import { ISparkPrimeVault } from "src/interfaces/ISparkPrimeVault.sol";
+import { IQueue }           from "src/interfaces/IQueue.sol";
+
+import { QueueHelper } from "./utils/QueueHelper.sol";
 
 contract CancelUnitTests is QueueHelper {
+
     function setUp() public {
         _deployVault();
     }
@@ -24,32 +27,32 @@ contract CancelUnitTests is QueueHelper {
         baseAsset.approve(address(vault), amount);
         vault.requestDeposit(amount, controller_, owner_);
         vm.stopPrank();
-        return vault.requestNonce(controller_);
+        return vault.lastDepositId();
     }
 
     function _queueRedeem(
         address owner_,
         address controller_,
         uint256 assetValue
-    ) internal returns (uint256 shares, uint256 nonce) {
+    ) internal returns (uint256 shares, uint256 id) {
         _depositAndClaim(owner_, assetValue);
         shares = vault.balanceOf(owner_);
         _drainLiquidity();
         _nextBlock();
         vm.prank(owner_);
         vault.requestRedeem(shares, controller_, owner_);
-        nonce = vault.requestNonce(controller_);
+        id = vault.lastWithdrawId();
     }
 
     function test_processQueue_toleratesAFrontRunCancel() public {
         _queueRedeem(user, user, 50 ether);
         _closeCapacity();
         _queueDeposit(userTwo, userTwo, 10 ether);
-        uint256 nonce = _queueDeposit(userThree, userThree, 10 ether);
+        uint256 id = _queueDeposit(userThree, userThree, 10 ether);
         uint256 volume = vault.maxTradeVolume();
 
         vm.prank(userThree);
-        vault.cancelDepositRequest(userThree, nonce);
+        vault.cancelDepositRequest(userThree, id);
         assertLt(vault.maxTradeVolume(), volume);
 
         vm.prank(rebalancer);
@@ -62,8 +65,8 @@ contract CancelUnitTests is QueueHelper {
 
     function test_cancelDepositRequest_refundsTheOwner() public {
         _closeCapacity();
-        uint256 nonce = _queueDeposit(user, user, 10 ether);
-        uint256 shares = vault.queuedDepositRequest(user, nonce).amount;
+        uint256 id = _queueDeposit(user, user, 10 ether);
+        uint256 shares = vault.queuedDepositRequest(id).amount;
         uint256 refund = savingsVault.previewRedeem(shares);
 
         assertEq(vault.totalPendingDeposits(), shares);
@@ -74,14 +77,14 @@ contract CancelUnitTests is QueueHelper {
         assertApproxEqAbs(vault.pendingDepositRequest(0, user), 10 ether, 2);
 
         vm.prank(user);
-        vault.cancelDepositRequest(user, nonce);
+        vault.cancelDepositRequest(user, id);
 
         assertEq(baseAsset.balanceOf(user), refund);
         assertEq(baseAsset.balanceOf(address(vault)), 0);
         assertEq(vault.totalPendingDeposits(), 0);
         assertEq(vault.pendingDepositRequest(0, user), 0);
         assertEq(
-            vault.queuedDepositRequest(user, nonce).controller,
+            vault.queuedDepositRequest(id).controller,
             address(0)
         );
         assertSolvent();
@@ -91,13 +94,13 @@ contract CancelUnitTests is QueueHelper {
         public
     {
         _closeCapacity();
-        uint256 nonce = _queueDeposit(user, userTwo, 10 ether);
+        uint256 id = _queueDeposit(user, userTwo, 10 ether);
         uint256 refund = savingsVault.previewRedeem(
-            vault.queuedDepositRequest(userTwo, nonce).amount
+            vault.queuedDepositRequest(id).amount
         );
 
         vm.prank(userTwo);
-        vault.cancelDepositRequest(userTwo, nonce);
+        vault.cancelDepositRequest(userTwo, id);
 
         assertEq(baseAsset.balanceOf(user), refund);
         assertEq(baseAsset.balanceOf(userTwo), 0);
@@ -105,13 +108,13 @@ contract CancelUnitTests is QueueHelper {
 
     function test_cancelDepositRequest_byGuardian() public {
         _closeCapacity();
-        uint256 nonce = _queueDeposit(user, user, 10 ether);
+        uint256 id = _queueDeposit(user, user, 10 ether);
         uint256 refund = savingsVault.previewRedeem(
-            vault.queuedDepositRequest(user, nonce).amount
+            vault.queuedDepositRequest(id).amount
         );
 
         vm.prank(guardian);
-        vault.cancelDepositRequest(user, nonce);
+        vault.cancelDepositRequest(user, id);
 
         assertEq(baseAsset.balanceOf(user), refund);
         assertEq(vault.totalPendingDeposits(), 0);
@@ -119,19 +122,19 @@ contract CancelUnitTests is QueueHelper {
 
     function test_cannot_cancelDepositRequest_asOperator() public {
         _closeCapacity();
-        uint256 nonce = _queueDeposit(user, user, 10 ether);
+        uint256 id = _queueDeposit(user, user, 10 ether);
         vault.setOperatorForUser(user, operator, true);
 
         vm.prank(operator);
         vm.expectRevert(
             abi.encodeWithSelector(IVault.UnauthorizedCaller.selector, operator)
         );
-        vault.cancelDepositRequest(user, nonce);
+        vault.cancelDepositRequest(user, id);
     }
 
     function test_cannot_cancelDepositRequest_asVaultManager() public {
         _closeCapacity();
-        uint256 nonce = _queueDeposit(user, user, 10 ether);
+        uint256 id = _queueDeposit(user, user, 10 ether);
 
         vm.prank(vaultManager);
         vm.expectRevert(
@@ -140,62 +143,62 @@ contract CancelUnitTests is QueueHelper {
                 vaultManager
             )
         );
-        vault.cancelDepositRequest(user, nonce);
+        vault.cancelDepositRequest(user, id);
     }
 
     function test_cancelDepositRequest_whilePaused() public {
         _closeCapacity();
-        uint256 nonce = _queueDeposit(user, user, 10 ether);
+        uint256 id = _queueDeposit(user, user, 10 ether);
 
         vm.prank(guardian);
         vault.pause();
         uint256 refund = savingsVault.previewRedeem(
-            vault.queuedDepositRequest(user, nonce).amount
+            vault.queuedDepositRequest(id).amount
         );
 
         vm.prank(user);
-        vault.cancelDepositRequest(user, nonce);
+        vault.cancelDepositRequest(user, id);
 
         assertEq(baseAsset.balanceOf(user), refund);
     }
 
     function test_cancelDepositRequest_emitsCancellation() public {
         _closeCapacity();
-        uint256 nonce = _queueDeposit(user, user, 10 ether);
+        uint256 id = _queueDeposit(user, user, 10 ether);
         uint256 refund = savingsVault.previewRedeem(
-            vault.queuedDepositRequest(user, nonce).amount
+            vault.queuedDepositRequest(id).amount
         );
 
         vm.expectEmit(address(vault));
         emit ISparkPrimeVault.DepositRequestCancelled(
             user,
             user,
-            nonce,
+            id,
             refund
         );
 
         vm.prank(user);
-        vault.cancelDepositRequest(user, nonce);
+        vault.cancelDepositRequest(user, id);
     }
 
     function test_cancelDepositRequest_ofAPartiallyFilledRequest() public {
         _depositAndClaim(user, 50 ether);
         _closeCapacity();
-        uint256 nonce = _queueDeposit(userTwo, userTwo, 10 ether);
+        uint256 id = _queueDeposit(userTwo, userTwo, 10 ether);
         _setCapacity(100 ether);
 
         vm.prank(rebalancer);
         vault.processQueue(4 ether);
 
         uint256 credited = vault.maxDeposit(userTwo);
-        uint256 remaining = vault.queuedDepositRequest(userTwo, nonce).amount;
+        uint256 remaining = vault.queuedDepositRequest(id).amount;
         uint256 refund = savingsVault.previewRedeem(remaining);
         assertApproxEqAbs(vault.pendingDepositRequest(0, userTwo), 6 ether, 2);
         assertApproxEqAbs(credited, 4 ether, 1);
         assertLe(credited, 4 ether);
 
         vm.prank(userTwo);
-        vault.cancelDepositRequest(userTwo, nonce);
+        vault.cancelDepositRequest(userTwo, id);
 
         assertEq(baseAsset.balanceOf(userTwo), refund);
         assertEq(vault.pendingDepositRequest(0, userTwo), 0);
@@ -205,7 +208,7 @@ contract CancelUnitTests is QueueHelper {
 
     function test_cannot_cancelDepositRequest_thatIsClaimable() public {
         _requestDeposit(user, 10 ether);
-        uint256 nonce = vault.requestNonce(user);
+        uint256 id = vault.lastDepositId();
 
         assertEq(vault.maxDeposit(user), 10 ether);
 
@@ -214,15 +217,15 @@ contract CancelUnitTests is QueueHelper {
             abi.encodeWithSelector(
                 ISparkPrimeVault.RequestNotQueued.selector,
                 user,
-                nonce
+                id
             )
         );
-        vault.cancelDepositRequest(user, nonce);
+        vault.cancelDepositRequest(user, id);
     }
 
     function test_cannot_cancelDepositRequest_afterProcessing() public {
         _closeCapacity();
-        uint256 nonce = _queueDeposit(user, user, 10 ether);
+        uint256 id = _queueDeposit(user, user, 10 ether);
         _setCapacity(100 ether);
         uint256 volume = savingsVault.previewRedeem(vault.totalPendingDeposits());
 
@@ -234,60 +237,60 @@ contract CancelUnitTests is QueueHelper {
             abi.encodeWithSelector(
                 ISparkPrimeVault.RequestNotQueued.selector,
                 user,
-                nonce
+                id
             )
         );
-        vault.cancelDepositRequest(user, nonce);
+        vault.cancelDepositRequest(user, id);
     }
 
     function test_cannot_cancelDepositRequest_twice() public {
         _closeCapacity();
-        uint256 nonce = _queueDeposit(user, user, 10 ether);
+        uint256 id = _queueDeposit(user, user, 10 ether);
 
         vm.prank(user);
-        vault.cancelDepositRequest(user, nonce);
+        vault.cancelDepositRequest(user, id);
 
         vm.prank(user);
         vm.expectRevert(
             abi.encodeWithSelector(
                 ISparkPrimeVault.RequestNotQueued.selector,
                 user,
-                nonce
+                id
             )
         );
-        vault.cancelDepositRequest(user, nonce);
+        vault.cancelDepositRequest(user, id);
     }
 
     function test_cannot_cancelDepositRequest_asStranger() public {
         _closeCapacity();
-        uint256 nonce = _queueDeposit(user, user, 10 ether);
+        uint256 id = _queueDeposit(user, user, 10 ether);
 
         vm.prank(userTwo);
         vm.expectRevert(
             abi.encodeWithSelector(IVault.UnauthorizedCaller.selector, userTwo)
         );
-        vault.cancelDepositRequest(user, nonce);
+        vault.cancelDepositRequest(user, id);
     }
 
-    function test_cannot_cancelDepositRequest_withARedeemNonce() public {
-        (, uint256 nonce) = _queueRedeem(user, user, 50 ether);
+    function test_cannot_cancelDepositRequest_withARedeemId() public {
+        (, uint256 id) = _queueRedeem(user, user, 50 ether);
 
         vm.prank(user);
         vm.expectRevert(
             abi.encodeWithSelector(
                 ISparkPrimeVault.RequestNotQueued.selector,
                 user,
-                nonce
+                id
             )
         );
-        vault.cancelDepositRequest(user, nonce);
+        vault.cancelDepositRequest(user, id);
     }
 
     function test_cannot_withdrawFromSavings_theBackingOfACancellableDeposit()
         public
     {
         _closeCapacity();
-        uint256 nonce = _queueDeposit(userTwo, userTwo, 10 ether);
+        uint256 id = _queueDeposit(userTwo, userTwo, 10 ether);
         uint256 backing = savingsVault.balanceOf(address(vault));
         uint256 refund = savingsVault.previewRedeem(backing);
 
@@ -302,25 +305,25 @@ contract CancelUnitTests is QueueHelper {
         vault.withdrawFromSavings(backing);
 
         vm.prank(userTwo);
-        vault.cancelDepositRequest(userTwo, nonce);
+        vault.cancelDepositRequest(userTwo, id);
 
         assertEq(baseAsset.balanceOf(userTwo), refund);
     }
 
-    function test_requestDeposit_emitsDepositQueuedWithTheNonce() public {
+    function test_requestDeposit_emitsDepositQueuedWithTheId() public {
         _closeCapacity();
         _fund(user, 10 ether);
-        uint256 nonce = vault.requestNonce(user) + 1;
+        uint256 id = vault.lastDepositId() + 1;
         uint256 shares = savingsVault.previewDeposit(10 ether);
 
         vm.expectEmit(address(vault));
-        emit ISparkPrimeVault.DepositQueued(user, user, nonce, shares);
+        emit ISparkPrimeVault.DepositQueued(user, user, id, shares);
 
         vm.prank(user);
         vault.requestDeposit(10 ether, user, user);
     }
 
-    function test_cancelDepositRequest_byTheEmittedNonceAfterAnotherFunder()
+    function test_cancelDepositRequest_byTheEmittedIdAfterAnotherFunder()
         public
     {
         _closeCapacity();
@@ -329,29 +332,29 @@ contract CancelUnitTests is QueueHelper {
         vm.recordLogs();
         vm.prank(user);
         vault.requestDeposit(10 ether, user, user);
-        uint256 nonce = _queuedNonce(vm.getRecordedLogs());
+        uint256 id = _queuedId(vm.getRecordedLogs());
 
         _queueDeposit(userTwo, user, 10 ether);
-        assertEq(vault.requestNonce(user), nonce + 1);
+        assertEq(vault.lastDepositId(), id + 1);
 
         vm.prank(user);
-        vault.cancelDepositRequest(user, nonce);
+        vault.cancelDepositRequest(user, id);
 
-        assertEq(vault.queuedDepositRequest(user, nonce).owner, address(0));
-        assertEq(vault.queuedDepositRequest(user, nonce + 1).owner, userTwo);
+        assertEq(vault.queuedDepositRequest(id).owner, address(0));
+        assertEq(vault.queuedDepositRequest(id + 1).owner, userTwo);
         assertGt(baseAsset.balanceOf(user), 0);
     }
 
-    function _queuedNonce(
+    function _queuedId(
         Vm.Log[] memory logs
-    ) internal view returns (uint256 nonce) {
+    ) internal view returns (uint256 id) {
         for (uint256 i; i < logs.length; ++i) {
             if (
                 logs[i].emitter == address(vault) &&
                 logs[i].topics[0] == ISparkPrimeVault.DepositQueued.selector
             ) {
-                (nonce, ) = abi.decode(logs[i].data, (uint256, uint256));
-                return nonce;
+                (id, ) = abi.decode(logs[i].data, (uint256, uint256));
+                return id;
             }
         }
         revert("no DepositQueued");
@@ -362,33 +365,33 @@ contract CancelUnitTests is QueueHelper {
         uint256 shares = vault.balanceOf(user);
         _requestRedeem(user, shares);
         _closeCapacity();
-        uint256 nonce = _queueDeposit(userTwo, userTwo, 10 ether);
+        uint256 id = _queueDeposit(userTwo, userTwo, 10 ether);
         uint256 refund = savingsVault.previewRedeem(
-            vault.queuedDepositRequest(userTwo, nonce).amount
+            vault.queuedDepositRequest(id).amount
         );
 
         _drainLiquidity();
         assertEq(vault.availableLiquidAssets(), 0);
 
         vm.prank(userTwo);
-        vault.cancelDepositRequest(userTwo, nonce);
+        vault.cancelDepositRequest(userTwo, id);
 
         assertEq(baseAsset.balanceOf(userTwo), refund);
     }
 
     function test_cancelDepositRequest_refundsSavingsYield() public {
         _closeCapacity();
-        uint256 nonce = _queueDeposit(user, user, 100 ether);
+        uint256 id = _queueDeposit(user, user, 100 ether);
         _accrueSavings(1_000);
         uint256 refund = savingsVault.previewRedeem(
-            vault.queuedDepositRequest(user, nonce).amount
+            vault.queuedDepositRequest(id).amount
         );
 
         vm.expectEmit(address(vault));
-        emit ISparkPrimeVault.DepositRequestCancelled(user, user, nonce, refund);
+        emit ISparkPrimeVault.DepositRequestCancelled(user, user, id, refund);
 
         vm.prank(user);
-        vault.cancelDepositRequest(user, nonce);
+        vault.cancelDepositRequest(user, id);
 
         assertEq(baseAsset.balanceOf(user), refund);
         assertGt(refund, 100 ether);
@@ -397,19 +400,19 @@ contract CancelUnitTests is QueueHelper {
 
     function test_processQueue_skipsACancelledEntry() public {
         _closeCapacity();
-        uint256 nonceOne = _queueDeposit(user, user, 10 ether);
-        uint256 nonceTwo = _queueDeposit(userTwo, userTwo, 10 ether);
-        uint256 nonceThree = _queueDeposit(userThree, userThree, 10 ether);
+        uint256 idOne = _queueDeposit(user, user, 10 ether);
+        uint256 idTwo = _queueDeposit(userTwo, userTwo, 10 ether);
+        uint256 idThree = _queueDeposit(userThree, userThree, 10 ether);
 
         vm.prank(guardian);
-        vault.cancelDepositRequest(userTwo, nonceTwo);
+        vault.cancelDepositRequest(userTwo, idTwo);
 
         _setCapacity(100 ether);
         uint256 owedOne = savingsVault.previewRedeem(
-            vault.queuedDepositRequest(user, nonceOne).amount
+            vault.queuedDepositRequest(idOne).amount
         );
         uint256 owedThree = savingsVault.previewRedeem(
-            vault.queuedDepositRequest(userThree, nonceThree).amount
+            vault.queuedDepositRequest(idThree).amount
         );
         uint256 volume = savingsVault.previewRedeem(vault.totalPendingDeposits());
 
@@ -425,11 +428,11 @@ contract CancelUnitTests is QueueHelper {
 
     function test_processQueue_doesNotClaimForACancelledDeposit() public {
         _closeCapacity();
-        uint256 nonce = _queueDeposit(user, user, 10 ether);
+        uint256 id = _queueDeposit(user, user, 10 ether);
         _queueDeposit(userTwo, userTwo, 10 ether);
 
         vm.prank(user);
-        vault.cancelDepositRequest(user, nonce);
+        vault.cancelDepositRequest(user, id);
 
         _setCapacity(100 ether);
         uint256 volume = savingsVault.previewRedeem(vault.totalPendingDeposits());
@@ -445,11 +448,11 @@ contract CancelUnitTests is QueueHelper {
         public
     {
         _closeCapacity();
-        uint256 nonce = _queueDeposit(user, user, 10 ether);
+        uint256 id = _queueDeposit(user, user, 10 ether);
         _queueDeposit(userTwo, userTwo, 10 ether);
 
         vm.prank(user);
-        vault.cancelDepositRequest(user, nonce);
+        vault.cancelDepositRequest(user, id);
 
         _setCapacity(100 ether);
 
@@ -464,11 +467,11 @@ contract CancelUnitTests is QueueHelper {
 
     function test_processQueue_afterCancellingTheHead() public {
         _closeCapacity();
-        uint256 nonceOne = _queueDeposit(user, user, 10 ether);
+        uint256 idOne = _queueDeposit(user, user, 10 ether);
         _queueDeposit(userTwo, userTwo, 10 ether);
 
         vm.prank(user);
-        vault.cancelDepositRequest(user, nonceOne);
+        vault.cancelDepositRequest(user, idOne);
 
         _setCapacity(100 ether);
         uint256 volume = savingsVault.previewRedeem(vault.totalPendingDeposits());
@@ -483,12 +486,12 @@ contract CancelUnitTests is QueueHelper {
 
     function test_processQueue_afterCancellingEveryEntry() public {
         _closeCapacity();
-        uint256 nonceOne = _queueDeposit(user, user, 10 ether);
-        uint256 nonceTwo = _queueDeposit(userTwo, userTwo, 10 ether);
+        uint256 idOne = _queueDeposit(user, user, 10 ether);
+        uint256 idTwo = _queueDeposit(userTwo, userTwo, 10 ether);
 
         vm.startPrank(guardian);
-        vault.cancelDepositRequest(user, nonceOne);
-        vault.cancelDepositRequest(userTwo, nonceTwo);
+        vault.cancelDepositRequest(user, idOne);
+        vault.cancelDepositRequest(userTwo, idTwo);
         vm.stopPrank();
 
         assertEq(vault.totalPendingDeposits(), 0);
@@ -504,25 +507,25 @@ contract CancelUnitTests is QueueHelper {
 
     function test_queueHead_skipsCancelledEntries() public {
         _closeCapacity();
-        uint256 nonceOne = _queueDeposit(user, user, 10 ether);
+        uint256 idOne = _queueDeposit(user, user, 10 ether);
         _queueDeposit(userTwo, userTwo, 10 ether);
 
         assertEq(vault.depositQueueHead().controller, user);
 
         vm.prank(user);
-        vault.cancelDepositRequest(user, nonceOne);
+        vault.cancelDepositRequest(user, idOne);
 
         assertEq(vault.depositQueueHead().controller, userTwo);
     }
 
     function test_depositQueueLength_ignoresCancelledEntries() public {
         _closeCapacity();
-        uint256 nonce = _queueDeposit(user, user, 10 ether);
+        uint256 id = _queueDeposit(user, user, 10 ether);
 
         assertEq(vault.depositQueueLength(), 1);
 
         vm.prank(user);
-        vault.cancelDepositRequest(user, nonce);
+        vault.cancelDepositRequest(user, id);
 
         assertEq(vault.depositQueueLength(), 0);
         assertEq(vault.totalPendingDeposits(), 0);
@@ -532,10 +535,10 @@ contract CancelUnitTests is QueueHelper {
         public
     {
         _closeCapacity();
-        uint256 nonce = _queueDeposit(user, user, 10 ether);
+        uint256 id = _queueDeposit(user, user, 10 ether);
 
         vm.prank(user);
-        vault.cancelDepositRequest(user, nonce);
+        vault.cancelDepositRequest(user, id);
 
         _setCapacity(100 ether);
         _queueDeposit(userTwo, userTwo, 10 ether);
@@ -548,11 +551,11 @@ contract CancelUnitTests is QueueHelper {
         public
     {
         _closeCapacity();
-        uint256 nonce = _queueDeposit(user, user, 10 ether);
+        uint256 id = _queueDeposit(user, user, 10 ether);
         _queueDeposit(userTwo, userTwo, 10 ether);
 
         vm.prank(user);
-        vault.cancelDepositRequest(user, nonce);
+        vault.cancelDepositRequest(user, id);
 
         _setCapacity(100 ether);
 
@@ -566,29 +569,27 @@ contract CancelUnitTests is QueueHelper {
         assertEq(vault.depositQueueHead().controller, userTwo);
     }
 
-    function test_sanitizeDepositQueue_removesCancelledEntriesInOrder() public {
+    function test_processQueue_walksOverARunOfCancelledEntries() public {
         _closeCapacity();
-        uint256 nonceOne = _queueDeposit(user, user, 10 ether);
+        uint256 idOne = _queueDeposit(user, user, 10 ether);
         for (uint256 i; i < 5; ++i) {
-            uint256 nonce = _queueDeposit(userTwo, userTwo, 10 ether);
+            uint256 id = _queueDeposit(userTwo, userTwo, 10 ether);
             vm.prank(userTwo);
-            vault.cancelDepositRequest(userTwo, nonce);
+            vault.cancelDepositRequest(userTwo, id);
         }
-        uint256 nonceThree = _queueDeposit(userThree, userThree, 10 ether);
+        uint256 idThree = _queueDeposit(userThree, userThree, 10 ether);
 
-        assertEq(vault.sanitizeDepositQueue(3), 2);
-        assertEq(vault.depositQueueHead().controller, user);
-        assertEq(vault.sanitizeDepositQueue(10), 3);
-        assertEq(vault.sanitizeDepositQueue(10), 0);
         assertEq(vault.depositQueueHead().controller, user);
         assertEq(vault.depositQueueLength(), 2);
+        (, uint256 issued) = vault.depositQueueSlots();
+        assertEq(issued, 7);
 
         _setCapacity(100 ether);
         uint256 owedOne = savingsVault.previewRedeem(
-            vault.queuedDepositRequest(user, nonceOne).amount
+            vault.queuedDepositRequest(idOne).amount
         );
         uint256 owedThree = savingsVault.previewRedeem(
-            vault.queuedDepositRequest(userThree, nonceThree).amount
+            vault.queuedDepositRequest(idThree).amount
         );
         uint256 volume = savingsVault.previewRedeem(vault.totalPendingDeposits());
 
@@ -603,15 +604,15 @@ contract CancelUnitTests is QueueHelper {
 
     function test_queuedDepositRequest_reportsOwnerAndAmount() public {
         _closeCapacity();
-        uint256 nonce = _queueDeposit(user, userTwo, 10 ether);
+        uint256 id = _queueDeposit(user, userTwo, 10 ether);
 
-        assertEq(vault.queuedDepositRequest(userTwo, nonce).owner, user);
+        assertEq(vault.queuedDepositRequest(id).owner, user);
         assertEq(
-            vault.queuedDepositRequest(userTwo, nonce).controller,
+            vault.queuedDepositRequest(id).controller,
             userTwo
         );
         assertEq(
-            vault.queuedDepositRequest(userTwo, nonce).amount,
+            vault.queuedDepositRequest(id).amount,
             vault.totalPendingDeposits()
         );
     }

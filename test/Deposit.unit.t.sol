@@ -130,9 +130,10 @@ contract RequestDepositUnitTests is QueueHelper {
         ); /// My remaining ether should be pending (total value of queue)
 
         VaultHandler.Transaction memory data = vault.depositQueueHead();
-        assertEq(data.amount, vault.totalPendingDeposits());
-        assertEq(data.controller, user);
-        assertEq(data.nonce, 1);
+
+        assertEq(data.amount,           vault.totalPendingDeposits());
+        assertEq(data.controller,       user);
+        assertEq(vault.lastDepositId(), 1);
 
         /// It should reject a 200 ether request, because only 100 is actually claimable at the moment
         vm.expectRevert(
@@ -213,9 +214,10 @@ contract RequestDepositUnitTests is QueueHelper {
         ); /// My remaining 10 ether should be pending (total value of queue)
 
         VaultHandler.Transaction memory data = vault.depositQueueHead();
-        assertEq(data.amount, vault.totalPendingDeposits());
-        assertEq(data.controller, user);
-        assertEq(data.nonce, 1);
+
+        assertEq(data.amount,           vault.totalPendingDeposits());
+        assertEq(data.controller,       user);
+        assertEq(vault.lastDepositId(), 1);
     }
 
     function test_overCapacity_fullAmountQueued_capacityEaterHasClaimed()
@@ -255,13 +257,10 @@ contract RequestDepositUnitTests is QueueHelper {
         );
 
         VaultHandler.Transaction memory data = vault.depositQueueHead();
-        assertEq(
-            data.amount,
-            vault.totalPendingDeposits(),
-            "amount matches queue"
-        );
-        assertEq(data.controller, user, "controller is user");
-        assertEq(data.nonce, 1, "nonce is 1");
+
+        assertEq(data.amount,           vault.totalPendingDeposits());
+        assertEq(data.controller,       user);
+        assertEq(vault.lastDepositId(), 1);
     }
 
     function test_minimumDeposit_isSetByInitialize() public view {

@@ -10,7 +10,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 contract CapacityHandler is QueueHelper {
     struct QueuedDeposit {
         address controller;
-        uint256 nonce;
+        uint256 id;
     }
 
     address[] internal actors;
@@ -57,7 +57,7 @@ contract CapacityHandler is QueueHelper {
 
         if (queued > 0)
             queuedDeposits.push(
-                QueuedDeposit(actor, vault.requestNonce(actor))
+                QueuedDeposit(actor, vault.lastDepositId())
             );
     }
 
@@ -120,15 +120,12 @@ contract CapacityHandler is QueueHelper {
         QueuedDeposit memory entry = queuedDeposits[
             bound(index, 0, queuedDeposits.length - 1)
         ];
-        if (
-            vault
-                .queuedDepositRequest(entry.controller, entry.nonce)
-                .controller == address(0)
-        ) return;
+        if (vault.queuedDepositRequest(entry.id).controller == address(0))
+            return;
 
         _nextBlock();
         vm.prank(entry.controller);
-        vault.cancelDepositRequest(entry.controller, entry.nonce);
+        vault.cancelDepositRequest(entry.controller, entry.id);
     }
 
     function processQueue(uint256 volume) external {
@@ -142,10 +139,6 @@ contract CapacityHandler is QueueHelper {
 
         if (vault.totalPendingWithdraws() < withdraws) ++withdrawMatches;
         if (vault.totalPendingDeposits() < deposits) ++depositMatches;
-    }
-
-    function sanitizeDepositQueue(uint256 maxIterations) external {
-        vault.sanitizeDepositQueue(bound(maxIterations, 0, 20));
     }
 
     function setCapacity(uint256 room) external {

@@ -13,20 +13,19 @@ contract CapacityInvariantTests is QueueHelper {
         savingsVault = handler.getSavingsVault();
         baseAsset = handler.getBaseAsset();
 
-        bytes4[] memory selectors = new bytes4[](13);
-        selectors[0] = CapacityHandler.requestDeposit.selector;
-        selectors[1] = CapacityHandler.claimDeposit.selector;
-        selectors[2] = CapacityHandler.requestRedeem.selector;
-        selectors[3] = CapacityHandler.claimRedeem.selector;
-        selectors[4] = CapacityHandler.cancelDeposit.selector;
-        selectors[5] = CapacityHandler.processQueue.selector;
-        selectors[6] = CapacityHandler.setCapacity.selector;
-        selectors[7] = CapacityHandler.injectLiquidity.selector;
-        selectors[8] = CapacityHandler.takeFreeLiquidity.selector;
-        selectors[9] = CapacityHandler.warp.selector;
+        bytes4[] memory selectors = new bytes4[](12);
+        selectors[0]  = CapacityHandler.requestDeposit.selector;
+        selectors[1]  = CapacityHandler.claimDeposit.selector;
+        selectors[2]  = CapacityHandler.requestRedeem.selector;
+        selectors[3]  = CapacityHandler.claimRedeem.selector;
+        selectors[4]  = CapacityHandler.cancelDeposit.selector;
+        selectors[5]  = CapacityHandler.processQueue.selector;
+        selectors[6]  = CapacityHandler.setCapacity.selector;
+        selectors[7]  = CapacityHandler.injectLiquidity.selector;
+        selectors[8]  = CapacityHandler.takeFreeLiquidity.selector;
+        selectors[9]  = CapacityHandler.warp.selector;
         selectors[10] = CapacityHandler.accrueSavings.selector;
-        selectors[11] = CapacityHandler.sanitizeDepositQueue.selector;
-        selectors[12] = CapacityHandler.setWithdrawFee.selector;
+        selectors[11] = CapacityHandler.setWithdrawFee.selector;
 
         targetContract(address(handler));
         targetSelector(

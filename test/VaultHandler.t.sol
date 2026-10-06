@@ -1,15 +1,19 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {Test} from "forge-std/Test.sol";
-import {Vault} from "src/Vault.sol";
-import {IVault} from "src/interfaces/IVault.sol";
-import {USDC} from "./mocks/USDC.sol";
-import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
-import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import { Test } from "forge-std/Test.sol";
+
+import { IERC20 }   from "@openzeppelin/contracts/interfaces/IERC20.sol";
+import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import { Math }     from "@openzeppelin/contracts/utils/math/Math.sol";
+
+import { Vault }            from "src/Vault.sol";
+import { IVault }           from "src/interfaces/IVault.sol";
+import { USDC }             from "./mocks/USDC.sol";
+import { TransactionQueue } from "src/libraries/TransactionQueue.sol";
 
 contract VaultHandler is Vault {
+
     function convertToSharesRounded(
         uint256 assets,
         Math.Rounding rounding
@@ -55,23 +59,50 @@ contract VaultHandler is Vault {
 
     function pushToDepositQueue(IVault.Transaction memory data) external {
         Storage storage $ = getStorage();
-        data.nonce = ++$.nonces[data.controller];
         _pushToDepositQueue($, data);
     }
 
     function pushToWithdrawQueue(IVault.Transaction memory data) external {
         Storage storage $ = getStorage();
-        data.nonce = ++$.nonces[data.controller];
         _pushToWithdrawQueue($, data);
     }
 
     function fillWithdrawQueue() external {
         Storage storage $ = getStorage();
-        fillUnbounded($, $.withdrawQueue, _markClaimableWithdraw);
+        _fill($, $.withdrawQueue, _markClaimableWithdraw, $.withdrawQueue.pending);
     }
 
     function fillUntilWithdrawQueue(uint256 capacity) external {
         Storage storage $ = getStorage();
-        fillUntil($, $.withdrawQueue, _markClaimableWithdraw, capacity);
+        _fill($, $.withdrawQueue, _markClaimableWithdraw, capacity);
     }
+
+    /// Number of live deposit queue entries, walking past cancelled holes
+    function depositQueueLength() external view returns (uint256) {
+        return _liveEntries(getStorage().depositQueue);
+    }
+
+    /// Number of live withdraw queue entries
+    function withdrawQueueLength() external view returns (uint256) {
+        return _liveEntries(getStorage().withdrawQueue);
+    }
+
+    /// Slot id handed to the most recent queued deposit
+    function lastDepositId() external view returns (uint256) {
+        return getStorage().depositQueue.issued;
+    }
+
+    /// Slot id handed to the most recent queued redeem
+    function lastWithdrawId() external view returns (uint256) {
+        return getStorage().withdrawQueue.issued;
+    }
+
+    function _liveEntries(
+        TransactionQueue.RequestQueue storage queue
+    ) internal view returns (uint256 count) {
+        for (uint256 slot = queue.consumed + 1; slot <= queue.issued; ++slot) {
+            if (queue.entries[slot].controller != address(0)) ++count;
+        }
+    }
+
 }
