@@ -33,17 +33,15 @@ interface IQueue {
     /// Reverts with AssetInvariantBroken or ShareInvariantBroken if the result leaves the vault insolvent or above capacity
     function processQueue(uint256 tradeVolume) external;
 
-    /// @notice Removes cancelled keys among the first `maxIterations` deposit queue entries without reordering. Callable by anyone
-    /// @return removed Number of cancelled keys removed
-    function sanitizeDepositQueue(
-        uint256 maxIterations
-    ) external returns (uint256 removed);
-
     /// @notice Total Savings Vault shares currently in the deposit queue
     function totalPendingDeposits() external view returns (uint256 shares);
 
-    /// @notice Number of live deposit queue entries, excluding cancelled ones
-    function depositQueueLength() external view returns (uint256);
+    /// @notice Deposit queue slot bounds. Slots are 1-based; `consumed` is the last slot removed from the front, `issued` the last slot handed out
+    /// @dev Live entries sit in (consumed, issued], minus any cancelled holes. Use totalPendingDeposits for the live total
+    function depositQueueSlots()
+        external
+        view
+        returns (uint256 consumed, uint256 issued);
 
     /// @notice First live deposit queue entry, its amount in savings vault shares
     /// @dev Reverts with QueueEmpty when the queue holds no live entry
@@ -58,8 +56,12 @@ interface IQueue {
     /// @notice Total number of Spark Prime Shares waiting to converted to base asset
     function totalPendingWithdraws() external view returns (uint256 shares);
 
-    /// @notice Number of withdraw queue entries
-    function withdrawQueueLength() external view returns (uint256);
+    /// @notice Withdraw queue slot bounds. Slots are 1-based; `consumed` is the last slot removed from the front, `issued` the last slot handed out
+    /// @dev Live entries sit in (consumed, issued], minus any cancelled holes. Use totalPendingWithdraws for the live total
+    function withdrawQueueSlots()
+        external
+        view
+        returns (uint256 consumed, uint256 issued);
 
     /// @notice First withdraw queue entry, its amount in spPRIME shares
     /// @dev Reverts with QueueEmpty when the queue is empty

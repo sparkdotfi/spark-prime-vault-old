@@ -31,6 +31,7 @@ import {
 } from "./interfaces/IERC7540.sol";
 import {IERC7575Share} from "./interfaces/IERC7575.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+
 contract Vault is Rebalancer, VaultManagement, Queue, ISparkPrimeVault {
     using TransactionQueue for TransactionQueue.RequestQueue;
     using SafeERC20 for IERC20;
@@ -106,7 +107,6 @@ contract Vault is Rebalancer, VaultManagement, Queue, ISparkPrimeVault {
             controller,
             owner,
             assets,
-            ++$.nonces[controller],
             0
         );
         IERC20 baseAsset = IERC20(asset());
@@ -145,35 +145,28 @@ contract Vault is Rebalancer, VaultManagement, Queue, ISparkPrimeVault {
         );
         if (shares == 0) revert ShareConversionFailure(transaction.amount);
         transaction.amount = shares;
-        _pushToDepositQueue($, transaction);
+        uint256 slot = _pushToDepositQueue($, transaction);
         emit DepositQueued(
             transaction.controller,
             transaction.owner,
-            transaction.nonce,
+            slot,
             shares
         );
     }
 
     function cancelDepositRequest(
         address controller,
-        uint256 nonce
+        uint256 id
     ) external nonReentrant {
         Storage storage $ = getStorage();
-        bytes32 element = TransactionQueue.key(controller, nonce);
+        Transaction memory data = $.depositQueue.entries[id];
 
-        (bool active, Transaction memory data) = TransactionQueue.tryGet(
-            $.depositQueue,
-            element
-        );
-        if (!active) revert RequestNotQueued(controller, nonce);
+        if (data.controller != controller) revert RequestNotQueued(controller, id);
         _authorizeCancel(controller, data.owner);
-
-        InterestLib.accrueInterest($);
 
         uint256 shares = data.amount;
 
-        $.depositQueue.cancel(element);
-        $.totalDepositQueueSavingsShares -= shares;
+        $.depositQueue.cancel(id);
         $.ledger[controller].pendingSavingsShares -= shares;
 
         uint256 assets = $.savingsVault.redeem(
@@ -182,8 +175,8 @@ contract Vault is Rebalancer, VaultManagement, Queue, ISparkPrimeVault {
             address(this)
         );
 
-        emit DepositRequestCancelled(controller, data.owner, nonce, assets);
-        emit DepositQueueValuation($.totalDepositQueueSavingsShares);
+        emit DepositRequestCancelled(controller, data.owner, id, assets);
+        emit DepositQueueValuation($.depositQueue.pending);
     }
 
     function deposit(
@@ -294,7 +287,6 @@ contract Vault is Rebalancer, VaultManagement, Queue, ISparkPrimeVault {
             controller,
             owner,
             shares,
-            ++$.nonces[controller],
             $.withdrawFee
         );
 
@@ -493,19 +485,10 @@ contract Vault is Rebalancer, VaultManagement, Queue, ISparkPrimeVault {
         return $.ledger[controller].pendingSharesOut;
     }
 
-    function requestNonce(address controller) public view returns (uint256) {
-        Storage storage $ = getStorage();
-        return $.nonces[controller];
-    }
-
     function queuedDepositRequest(
-        address controller,
-        uint256 nonce
-    ) public view returns (Transaction memory transaction) {
-        Storage storage $ = getStorage();
-        transaction = $.depositQueue.entries[
-            TransactionQueue.key(controller, nonce)
-        ];
+        uint256 id
+    ) public view returns (Transaction memory) {
+        return getStorage().depositQueue.entries[id];
     }
 
     function supportsInterface(

@@ -47,7 +47,6 @@ interface IVault is IERC7540, IERC7575Share {
         address controller;
         address owner;
         uint256 amount;
-        uint256 nonce;
         uint256 fee;
     }
 

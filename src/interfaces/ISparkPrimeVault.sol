@@ -43,11 +43,11 @@ interface ISparkPrimeVault {
     event ReferralCode(address beneficiary, uint256 code);
 
     /// @notice Emitted when a deposit request, or remainder from partial fill, is queued as `savingsShares`
-    /// @dev `nonce` identifies the entry for cancelDepositRequest. requestId is always 0
+    /// @dev `id` is the queue slot and identifies the entry for cancelDepositRequest and queuedDepositRequest. requestId is always 0
     event DepositQueued(
         address indexed controller,
         address indexed owner,
-        uint256 nonce,
+        uint256 id,
         uint256 savingsShares
     );
 
@@ -55,7 +55,7 @@ interface ISparkPrimeVault {
     event DepositRequestCancelled(
         address indexed controller,
         address indexed owner,
-        uint256 nonce,
+        uint256 id,
         uint256 assets
     );
 
@@ -65,8 +65,8 @@ interface ISparkPrimeVault {
     /// @notice Thrown when a request is below the configured minimum `amount`
     error BelowMinimumRequestAmount(uint256 amount);
 
-    /// @notice Thrown when cancelDepositRequest targets a nonce with no queued deposit
-    error RequestNotQueued(address controller, uint256 nonce);
+    /// @notice Thrown when cancelDepositRequest targets a queue id that holds no live deposit for `controller`
+    error RequestNotQueued(address controller, uint256 id);
 
     /// @notice Thrown when a withdraw or redeem claim exceeds the controller's claimable balance
     error InsufficientClaimableAmount(uint256 requested, uint256 actual);
@@ -78,7 +78,7 @@ interface ISparkPrimeVault {
 
     /// @notice Cancels a queued deposit and refunds its savings shares, redeemed to base asset, to the request's owner
     /// @dev Callable by the owner, the controller or GUARDIAN, including while paused
-    function cancelDepositRequest(address controller, uint256 nonce) external;
+    function cancelDepositRequest(address controller, uint256 id) external;
 
     /// @notice Overload of ERC4626 deposit to allow Spark Referal Program support
     function deposit(
@@ -96,12 +96,8 @@ interface ISparkPrimeVault {
         uint256 referralCode
     ) external returns (uint256 assets);
 
-    /// @notice Nonce of the controller's latest request; queued deposits are keyed by (controller, nonce)
-    function requestNonce(address controller) external view returns (uint256);
-
-    /// @notice The queued deposit for (controller, nonce), its amount in savings vault shares; empty once filled or cancelled
+    /// @notice The queued deposit at queue slot `id`, its amount in savings vault shares; empty once filled or cancelled
     function queuedDepositRequest(
-        address controller,
-        uint256 nonce
+        uint256 id
     ) external view returns (IVault.Transaction memory transaction);
 }

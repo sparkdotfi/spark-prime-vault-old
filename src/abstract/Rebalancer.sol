@@ -26,7 +26,7 @@ abstract contract Rebalancer is LiquidityManagement, IRebalancer {
     ) public onlyRole(REBALANCER_ROLE) nonReentrant returns (uint256 assets) {
         Storage storage $ = getStorage();
         uint256 held = $.savingsVault.balanceOf(address(this));
-        uint256 queued = $.totalDepositQueueSavingsShares;
+        uint256 queued = $.depositQueue.pending;
         if (shares + queued > held)
             revert ExceedsFreeSavingsShares(
                 shares,

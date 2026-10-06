@@ -36,7 +36,6 @@ abstract contract VaultBase is
     struct Storage {
         mapping(address => Settlement) ledger;
         mapping(address => mapping(address => bool)) operators;
-        mapping(address => uint256) nonces;
         TransactionQueue.RequestQueue withdrawQueue;
         TransactionQueue.RequestQueue depositQueue;
         IERC20 baseAsset;
@@ -47,8 +46,6 @@ abstract contract VaultBase is
         uint256 ratePerSecond;
         uint256 lastAccrualTimestamp;
         uint256 indexRate;
-        uint256 totalDepositQueueSavingsShares;
-        uint256 totalWithdrawQueueShares;
         uint256 totalClaimableDepositShares;
         uint256 totalClaimableWithdrawAssets;
         uint256 withdrawFee;
