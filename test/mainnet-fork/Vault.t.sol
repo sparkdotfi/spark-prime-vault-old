@@ -6,7 +6,7 @@ import { IQueue }           from "../../src/interfaces/IQueue.sol";
 import { ISparkPrimeVault } from "../../src/interfaces/ISparkPrimeVault.sol";
 import { IVault }           from "../../src/interfaces/IVault.sol";
 
-import { ForkTestBase } from "./ForkTestBase.t.sol";
+import { ForkTestBase, IERC4626Like } from "./ForkTestBase.t.sol";
 
 contract RequestDepositTests is ForkTestBase {
     // TODO : Add failure tests
@@ -631,5 +631,138 @@ contract RequestDepositTests is ForkTestBase {
 }
 
 contract DepositTests is ForkTestBase {
+
+    // TODO : Add failure tests
+
+    // Success tests
+
+    function test_deposit_fullClaim() external {
+        _requestDeposit(user, 100e6);  // Instant claim, 100e6 shares at index 1
+
+        assertEq(usdc.balanceOf(user),                                  0);
+        assertEq(usdc.balanceOf(address(spPrimeVaultUsdc)),             100e6);
+        assertEq(spPrimeVaultUsdc.balanceOf(user),                      0);
+        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), 100e6);
+        assertEq(spUSDCVault.balanceOf(user),                           0);
+        assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),      0);
+
+        _assertVaultState(VaultState({
+            controller              : user,
+            totalSupply             : 100e6,
+            totalAssets             : 100e6,
+            availableCapacity       : VAULT_CAPACITY - 100e6,
+            availableLiquidAssets   : int256(100e6),
+            claimableDepositRequest : 100e6,
+            maxDeposit              : 100e6,
+            maxMint                 : 100e6,
+            claimableDepositTotal   : 100e6,
+            pendingDepositRequest   : 0,
+            totalPendingDeposits    : 0,
+            depositQueueLength      : 0,
+            requestNonce            : 1,
+            index                   : RAY,
+            lastAccrual             : block.timestamp
+        }));
+
+        vm.expectEmit(address(spPrimeVaultUsdc));
+        emit IQueue.ClaimableDeposit(user, 0);
+        vm.expectEmit(address(spPrimeVaultUsdc));
+        emit IERC4626Like.Deposit(user, user, 100e6, 100e6);
+
+        vm.prank(user);
+        uint256 shares = spPrimeVaultUsdc.deposit(100e6, user, user);
+
+        assertEq(shares, 100e6);
+
+        // Claiming only moves escrowed shares from the vault to the receiver
+        assertEq(usdc.balanceOf(user),                                  0);
+        assertEq(usdc.balanceOf(address(spPrimeVaultUsdc)),             100e6);
+        assertEq(spPrimeVaultUsdc.balanceOf(user),                      100e6);
+        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), 0);
+        assertEq(spUSDCVault.balanceOf(user),                           0);
+        assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),      0);
+
+        _assertVaultState(VaultState({
+            controller              : user,
+            totalSupply             : 100e6,
+            totalAssets             : 100e6,
+            availableCapacity       : VAULT_CAPACITY - 100e6,
+            availableLiquidAssets   : int256(100e6),
+            claimableDepositRequest : 0,
+            maxDeposit              : 0,
+            maxMint                 : 0,
+            claimableDepositTotal   : 0,
+            pendingDepositRequest   : 0,
+            totalPendingDeposits    : 0,
+            depositQueueLength      : 0,
+            requestNonce            : 1,
+            index                   : RAY,
+            lastAccrual             : block.timestamp
+        }));
+    }
+
+    function test_deposit_partialClaim() external {
+        _requestDeposit(user, 100e6);  // Instant claim, 100e6 shares at index 1
+
+        assertEq(usdc.balanceOf(user),                                  0);
+        assertEq(usdc.balanceOf(address(spPrimeVaultUsdc)),             100e6);
+        assertEq(spPrimeVaultUsdc.balanceOf(user),                      0);
+        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), 100e6);
+        assertEq(spUSDCVault.balanceOf(user),                           0);
+        assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),      0);
+
+        _assertVaultState(VaultState({
+            controller              : user,
+            totalSupply             : 100e6,
+            totalAssets             : 100e6,
+            availableCapacity       : VAULT_CAPACITY - 100e6,
+            availableLiquidAssets   : int256(100e6),
+            claimableDepositRequest : 100e6,
+            maxDeposit              : 100e6,
+            maxMint                 : 100e6,
+            claimableDepositTotal   : 100e6,
+            pendingDepositRequest   : 0,
+            totalPendingDeposits    : 0,
+            depositQueueLength      : 0,
+            requestNonce            : 1,
+            index                   : RAY,
+            lastAccrual             : block.timestamp
+        }));
+
+        vm.expectEmit(address(spPrimeVaultUsdc));
+        emit IQueue.ClaimableDeposit(user, 60e6);
+        vm.expectEmit(address(spPrimeVaultUsdc));
+        emit IERC4626Like.Deposit(user, user, 40e6, 40e6);
+
+        vm.prank(user);
+        uint256 shares = spPrimeVaultUsdc.deposit(40e6, user, user);
+
+        assertEq(shares, 40e6);
+
+        assertEq(usdc.balanceOf(user),                                  0);
+        assertEq(usdc.balanceOf(address(spPrimeVaultUsdc)),             100e6);
+        assertEq(spPrimeVaultUsdc.balanceOf(user),                      40e6);
+        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), 60e6);
+        assertEq(spUSDCVault.balanceOf(user),                           0);
+        assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),      0);
+
+        _assertVaultState(VaultState({
+            controller              : user,
+            totalSupply             : 100e6,
+            totalAssets             : 100e6,
+            availableCapacity       : VAULT_CAPACITY - 100e6,
+            availableLiquidAssets   : int256(100e6),
+            claimableDepositRequest : 60e6,
+            maxDeposit              : 60e6,
+            maxMint                 : 60e6,
+            claimableDepositTotal   : 60e6,
+            pendingDepositRequest   : 0,
+            totalPendingDeposits    : 0,
+            depositQueueLength      : 0,
+            requestNonce            : 1,
+            index                   : RAY,
+            lastAccrual             : block.timestamp
+        }));
+    }
 
 }

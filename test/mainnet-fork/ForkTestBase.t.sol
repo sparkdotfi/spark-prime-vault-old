@@ -25,6 +25,12 @@ interface IERC20Like {
 
 }
 
+interface IERC4626Like {
+
+    event Deposit(address indexed sender, address indexed owner, uint256 assets, uint256 shares);
+
+}
+
 interface ISparkVaultLike {
 
     function balanceOf(address owner) external view returns (uint256);
