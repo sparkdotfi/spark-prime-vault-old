@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.20;
 
-import {VaultBase} from "../abstract/VaultBase.sol";
+import { IVault } from "./IVault.sol";
+
 interface IQueue {
     /// @notice Emitted when a controller's claimable deposit, in base asset, changes
     event ClaimableDeposit(address controller, uint256 totalAmount);
@@ -50,7 +51,7 @@ interface IQueue {
     function depositQueueHead()
         external
         view
-        returns (VaultBase.Transaction memory transaction);
+        returns (IVault.Transaction memory transaction);
 
     /// @notice Total spPRIME shares held in escrow for claimable deposits
     function claimableDepositTotal() external view returns (uint256);
@@ -66,7 +67,7 @@ interface IQueue {
     function withdrawQueueHead()
         external
         view
-        returns (VaultBase.Transaction memory transaction);
+        returns (IVault.Transaction memory transaction);
 
     /// @notice Total base asset of vault balance that is LOCKED and promised to claimers
     function claimableWithdrawTotal() external view returns (uint256);

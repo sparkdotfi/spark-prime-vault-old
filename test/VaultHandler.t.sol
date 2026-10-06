@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.20;
 
-import {Test} from "forge-std/Test.sol";
-import {Vault} from "src/Vault.sol";
-import {IVault} from "src/interfaces/IVault.sol";
-import {USDC} from "./mocks/USDC.sol";
-import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
-import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import { Test } from "../lib/forge-std/src/Test.sol";
+import { Vault } from "../src/Vault.sol";
+import { IVault } from "../src/interfaces/IVault.sol";
+import { USDC } from "./mocks/USDC.sol";
+import { IERC20 } from "../lib/openzeppelin-contracts/contracts/interfaces/IERC20.sol";
+import { IERC4626 } from "../lib/openzeppelin-contracts/contracts/interfaces/IERC4626.sol";
+import { Math } from "../lib/openzeppelin-contracts/contracts/utils/math/Math.sol";
 
 contract VaultHandler is Vault {
     function convertToSharesRounded(
@@ -25,7 +25,7 @@ contract VaultHandler is Vault {
     }
 
     function setIndexRate(uint256 value) external {
-        Storage storage $ = getStorage();
+        VaultStorage storage $ = _getStorage();
         $.indexRate = value;
     }
 
@@ -34,44 +34,44 @@ contract VaultHandler is Vault {
         address operator,
         bool value
     ) external {
-        Storage storage $ = getStorage();
+        VaultStorage storage $ = _getStorage();
         $.operators[user][operator] = value;
     }
 
     function setTotalClaimableDepositShares(uint256 value) external {
-        Storage storage $ = getStorage();
+        VaultStorage storage $ = _getStorage();
         $.totalClaimableDepositShares = value;
     }
 
     function setMaximumCapacity(uint256 value) external {
-        Storage storage $ = getStorage();
+        VaultStorage storage $ = _getStorage();
         $.maximumCapacity = value;
     }
 
     function setTotalClaimableWithdrawAssets(uint256 value) external {
-        Storage storage $ = getStorage();
+        VaultStorage storage $ = _getStorage();
         $.totalClaimableWithdrawAssets = value;
     }
 
     function pushToDepositQueue(IVault.Transaction memory data) external {
-        Storage storage $ = getStorage();
+        VaultStorage storage $ = _getStorage();
         data.nonce = ++$.nonces[data.controller];
         _pushToDepositQueue($, data);
     }
 
     function pushToWithdrawQueue(IVault.Transaction memory data) external {
-        Storage storage $ = getStorage();
+        VaultStorage storage $ = _getStorage();
         data.nonce = ++$.nonces[data.controller];
         _pushToWithdrawQueue($, data);
     }
 
     function fillWithdrawQueue() external {
-        Storage storage $ = getStorage();
-        fillUnbounded($, $.withdrawQueue, _markClaimableWithdraw);
+        VaultStorage storage $ = _getStorage();
+        _fillUnbounded($, $.withdrawQueue, _markClaimableWithdraw);
     }
 
     function fillUntilWithdrawQueue(uint256 capacity) external {
-        Storage storage $ = getStorage();
-        fillUntil($, $.withdrawQueue, _markClaimableWithdraw, capacity);
+        VaultStorage storage $ = _getStorage();
+        _fillUntil($, $.withdrawQueue, _markClaimableWithdraw, capacity);
     }
 }

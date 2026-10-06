@@ -2,13 +2,14 @@
 
 pragma solidity >=0.8.4;
 
-import {IERC7575} from "./IERC7575.sol";
+import { IERC7575 } from "./IERC7575.sol";
 
 /**
  * @dev Interface for operator management in https://eips.ethereum.org/EIPS/eip-7540[ERC-7540]
  * asynchronous vaults. Operators can manage deposit and redeem requests on behalf of a controller.
  */
 interface IERC7540Operator {
+
     /// @dev Emitted when `controller` sets the `approved` status for an `operator`.
     event OperatorSet(address indexed controller, address indexed operator, bool approved);
 
@@ -23,6 +24,7 @@ interface IERC7540Operator {
 
     /// @dev Returns `true` if the `operator` is approved as an operator for a `controller`.
     function isOperator(address controller, address operator) external view returns (bool status);
+
 }
 
 /**
@@ -31,6 +33,7 @@ interface IERC7540Operator {
  * before being claimed via the standard ERC-4626 deposit/mint functions.
  */
 interface IERC7540Deposit {
+
     /**
      * @dev Emitted when `owner` has locked `assets` in the Vault to request a deposit.
      * `controller` controls this request. `sender` is the caller of `requestDeposit`.
@@ -96,6 +99,7 @@ interface IERC7540Deposit {
      * - controller MUST equal msg.sender unless the controller has approved the msg.sender as an operator.
      */
     function mint(uint256 shares, address receiver, address controller) external returns (uint256 assets);
+
 }
 
 /**
@@ -104,6 +108,7 @@ interface IERC7540Deposit {
  * before being claimed via the standard ERC-4626 redeem/withdraw functions.
  */
 interface IERC7540Redeem {
+
     /**
      * @dev Emitted when `sender` has locked `shares`, owned by `owner`, in the Vault to request a redemption.
      * `controller` controls this request.
@@ -151,6 +156,7 @@ interface IERC7540Redeem {
         uint256 requestId,
         address controller
     ) external view returns (uint256 claimableShares);
+
 }
 
 /**

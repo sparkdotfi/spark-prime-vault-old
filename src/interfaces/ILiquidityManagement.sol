@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 interface ILiquidityManagement {
+
     /**
      * @title ILiquidityManagement
      * @notice Interface used to move base asset funds in/out of the Spark Prime Vault
@@ -28,4 +29,5 @@ interface ILiquidityManagement {
     /// @notice Largest `tradeVolume` processQueue accepts. In base Assets.
     /// @dev min(availableLiquidAssets + deposit queue value the savings vault can redeem now, convertToAssets(totalPendingWithdraws + availableCapacity))
     function maxTradeVolume() external view returns (uint256);
+
 }

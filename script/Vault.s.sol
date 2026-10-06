@@ -1,25 +1,22 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.13;
 
-import {Script} from "forge-std/Script.sol";
-import {Vault} from "../src/Vault.sol";
-import {IVault} from "../src/interfaces/IVault.sol";
-import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
-import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import { Script } from "../lib/forge-std/src/Script.sol";
+import { Vault } from "../src/Vault.sol";
+import { IVault } from "../src/interfaces/IVault.sol";
+
 import {
     ERC1967Proxy
-} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+} from "../lib/openzeppelin-contracts/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract VaultScript is Script {
-    Vault public vault;
-    address public implementation;
 
-    function run() public returns (Vault) {
+    function run() public returns (address proxy) {
         IVault.InitParams memory params = IVault.InitParams({
             name: vm.envString("VAULT_NAME"),
             symbol: vm.envString("VAULT_SYMBOL"),
-            baseAsset: IERC20(vm.envAddress("BASE_ASSET")),
-            savingsVault: IERC4626(vm.envAddress("SAVINGS_VAULT")),
+            baseAsset: vm.envAddress("BASE_ASSET"),
+            savingsVault: vm.envAddress("SAVINGS_VAULT"),
             minimumDeposit: vm.envUint("MINIMUM_DEPOSIT"),
             minimumWithdraw: vm.envUint("MINIMUM_WITHDRAW"),
             capacity: vm.envUint("MAXIMUM_CAPACITY"),
@@ -34,15 +31,14 @@ contract VaultScript is Script {
 
         vm.startBroadcast();
 
-        implementation = address(new Vault());
-        ERC1967Proxy proxy = new ERC1967Proxy(
+        address implementation = address(new Vault());
+
+        proxy = address(new ERC1967Proxy(
             implementation,
             abi.encodeCall(Vault.initialize, (params))
-        );
-        vault = Vault(address(proxy));
+        ));
 
         vm.stopBroadcast();
-
-        return vault;
     }
+
 }

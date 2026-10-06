@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.20;
 
-import {QueueHelper} from "./utils/QueueHelper.sol";
-import {IQueue} from "src/interfaces/IQueue.sol";
-import {Vm} from "forge-std/Vm.sol";
-import {SavingsVault} from "./mocks/SavingsVault.sol";
-import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import { QueueHelper } from "./utils/QueueHelper.sol";
+import { IQueue } from "../src/interfaces/IQueue.sol";
+import { Vm } from "../lib/forge-std/src/Vm.sol";
+import { SavingsVault } from "./mocks/SavingsVault.sol";
+import { IERC4626 } from "../lib/openzeppelin-contracts/contracts/interfaces/IERC4626.sol";
+import { Math } from "../lib/openzeppelin-contracts/contracts/utils/math/Math.sol";
 
 contract QueueSolvencyTests is QueueHelper {
     bytes32 constant TRANSFER_SIG =

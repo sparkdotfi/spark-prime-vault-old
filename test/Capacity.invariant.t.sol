@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.20;
 
-import {QueueHelper} from "./utils/QueueHelper.sol";
-import {CapacityHandler} from "./utils/CapacityHandler.sol";
+import { QueueHelper } from "./utils/QueueHelper.sol";
+import { CapacityHandler } from "./utils/CapacityHandler.sol";
 
 contract CapacityInvariantTests is QueueHelper {
     CapacityHandler internal handler;

@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.20;
-import {
-    IERC7540
-} from "./IERC7540.sol";
-import {IERC7575Share} from "./IERC7575.sol";
-import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
-import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+
+import { IERC7540 } from "./IERC7540.sol";
+
+import { IERC7575Share } from "./IERC7575.sol";
 
 /// @notice ERC-7540 vault core: shared types, initialization, index and limits
 /// @dev Requests carry no request id: requestDeposit and requestRedeem return
@@ -17,11 +15,13 @@ import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 /// claimableDepositRequest and claimableRedeemRequest ignore the pause. Every
 /// preview function reverts.
 interface IVault is IERC7540, IERC7575Share {
+
+    // TODO: No interfaces, just addresses.
     struct InitParams {
         string name;
         string symbol;
-        IERC20 baseAsset;
-        IERC4626 savingsVault;
+        address baseAsset;
+        address savingsVault;
         uint256 minimumDeposit;
         uint256 minimumWithdraw;
         uint256 capacity;
@@ -97,4 +97,5 @@ interface IVault is IERC7540, IERC7575Share {
 
     /// @notice Smallest base asset value, at the current index, of the shares requestRedeem accepts
     function minimumWithdraw() external view returns (uint256);
+
 }

@@ -1,38 +1,43 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.20;
 
-import {Test} from "forge-std/Test.sol";
-import {VaultHandler} from "./VaultHandler.t.sol";
-import {IVault} from "src/interfaces/IVault.sol";
-import {ISparkPrimeVault} from "src/interfaces/ISparkPrimeVault.sol";
-import {IVaultManagement} from "src/interfaces/IVaultManagement.sol";
-import {IRebalancer} from "src/interfaces/IRebalancer.sol";
-import {
-    ILiquidityManagement
-} from "src/interfaces/ILiquidityManagement.sol";
-import {
-    IAccessControl
-} from "@openzeppelin/contracts/access/IAccessControl.sol";
-import {
-    PausableUpgradeable
-} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
-import {USDC} from "./mocks/USDC.sol";
-import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
-import {console} from "forge-std/console.sol";
-import {Vm} from "forge-std/Vm.sol";
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {QueueHelper} from "./utils/QueueHelper.sol";
-import {InterestLib} from "src/libraries/InterestLib.sol";
-import {Vault} from "src/Vault.sol";
-import {SavingsVault} from "./mocks/SavingsVault.sol";
-import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
-import {
-    ERC1967Proxy
-} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import { Test } from "../lib/forge-std/src/Test.sol";
+import { VaultHandler } from "./VaultHandler.t.sol";
+import { IVault } from "../src/interfaces/IVault.sol";
+import { ISparkPrimeVault } from "../src/interfaces/ISparkPrimeVault.sol";
+import { IVaultManagement } from "../src/interfaces/IVaultManagement.sol";
+import { IRebalancer } from "../src/interfaces/IRebalancer.sol";
+import { ILiquidityManagement } from "../src/interfaces/ILiquidityManagement.sol";
+import { IAccessControl } from "../lib/openzeppelin-contracts/contracts/access/IAccessControl.sol";
+import { PausableUpgradeable } from "../lib/openzeppelin-contracts-upgradeable/contracts/utils/PausableUpgradeable.sol";
+import { USDC } from "./mocks/USDC.sol";
+import { IERC20 } from "../lib/openzeppelin-contracts/contracts/interfaces/IERC20.sol";
+import { console } from "../lib/forge-std/src/console.sol";
+import { Vm } from "../lib/forge-std/src/Vm.sol";
+import { Math } from "../lib/openzeppelin-contracts/contracts/utils/math/Math.sol";
+import { QueueHelper } from "./utils/QueueHelper.sol";
+import { Vault } from "../src/Vault.sol";
+import { SavingsVault } from "./mocks/SavingsVault.sol";
+import { IERC4626 } from "../lib/openzeppelin-contracts/contracts/interfaces/IERC4626.sol";
+import { ERC1967Proxy } from "../lib/openzeppelin-contracts/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+
+contract VaultHarness is Vault {
+
+    function rpow(uint256 x, uint256 n) external pure returns (uint256 z) {
+        return _rpow(x, n);
+    }
+
+}
 
 contract VaultManagerUnitTests is QueueHelper {
+    VaultHarness internal _vaultHarness;
+
+    uint256 internal constant _MAX_RATE = 1.000000021979553151239153027e27;
+
     function setUp() public {
         _deployVault();
+
+        _vaultHarness = new VaultHarness();
     }
 
     function test_cannot_setCapacity_belowCommitedSharesPlusMinted() public {
@@ -592,11 +597,11 @@ contract VaultManagerUnitTests is QueueHelper {
     function test_cannot_setInterestRate_aboveMaxRate() public {
         vm.prank(vaultManager);
         vm.expectRevert(IVaultManagement.InterestRateAboveMax.selector);
-        vault.setInterestRate(InterestLib.MAX_RATE + 1);
+        vault.setInterestRate(_MAX_RATE + 1);
 
         vm.prank(vaultManager);
-        vault.setInterestRate(InterestLib.MAX_RATE);
-        assertEq(vault.interestRate(), InterestLib.MAX_RATE);
+        vault.setInterestRate(_MAX_RATE);
+        assertEq(vault.interestRate(), _MAX_RATE);
     }
 
     function test_setInterestRate_accruesAtTheOldRateFirst() public {
@@ -858,8 +863,8 @@ contract VaultManagerUnitTests is QueueHelper {
     ) internal view returns (IVault.InitParams memory params) {
         params.name = "spPrime Vault";
         params.symbol = "spPRIME";
-        params.baseAsset = baseAsset;
-        params.savingsVault = venue;
+        params.baseAsset = address(baseAsset);
+        params.savingsVault = address(venue);
         params.minimumDeposit = MINIMUM_DEPOSIT;
         params.minimumWithdraw = MINIMUM_WITHDRAW;
         params.capacity = MAXIMUM_VAULT_CAPACITY;
@@ -1018,7 +1023,7 @@ contract VaultManagerUnitTests is QueueHelper {
                 )
             )
         );
-        params.ratePerSecond = InterestLib.MAX_RATE;
+        params.ratePerSecond = _MAX_RATE;
         Vault atMax = Vault(
             address(
                 new ERC1967Proxy(
@@ -1029,12 +1034,12 @@ contract VaultManagerUnitTests is QueueHelper {
         );
 
         assertEq(atRay.interestRate(), RAY);
-        assertEq(atMax.interestRate(), InterestLib.MAX_RATE);
+        assertEq(atMax.interestRate(), _MAX_RATE);
     }
 
     function test_accrueInterest_atMaxRateDoublesYearlyForFiftyYears() public {
         vm.prank(vaultManager);
-        vault.setInterestRate(InterestLib.MAX_RATE);
+        vault.setInterestRate(_MAX_RATE);
         uint256 start = vault.index();
 
         vm.warp(block.timestamp + 50 * 365 days);
@@ -1055,7 +1060,7 @@ contract VaultManagerUnitTests is QueueHelper {
             abi.encodeCall(Vault.initialize, (params))
         );
 
-        params.ratePerSecond = InterestLib.MAX_RATE + 1;
+        params.ratePerSecond = _MAX_RATE + 1;
         vm.expectRevert(IVaultManagement.InterestRateAboveMax.selector);
         new ERC1967Proxy(
             address(implementation),
@@ -1077,21 +1082,21 @@ contract VaultManagerUnitTests is QueueHelper {
     function testFuzz_rpow_roundsToNearestLikeSky(
         uint256 rate,
         uint256 elapsed
-    ) public pure {
+    ) public view {
         rate = bound(rate, RAY, RAY + 1e19);
         elapsed = bound(elapsed, 0, 10 * 365 days);
 
-        assertEq(InterestLib._rpow(rate, elapsed), _rpowNearest(rate, elapsed));
+        assertEq(_vaultHarness.rpow(rate, elapsed), _rpowNearest(rate, elapsed));
     }
 
-    function test_rpow_compoundsTheConfiguredRate() public pure {
-        assertEq(InterestLib._rpow(TEN_PERCENT_APY, 0), RAY);
-        assertEq(InterestLib._rpow(TEN_PERCENT_APY, 1), TEN_PERCENT_APY);
-        assertEq(InterestLib._rpow(RAY, 365 days), RAY);
-        assertEq(InterestLib._rpow(0, 0), RAY);
-        assertEq(InterestLib._rpow(0, 365 days), 0);
+    function test_rpow_compoundsTheConfiguredRate() public view {
+        assertEq(_vaultHarness.rpow(TEN_PERCENT_APY, 0), RAY);
+        assertEq(_vaultHarness.rpow(TEN_PERCENT_APY, 1), TEN_PERCENT_APY);
+        assertEq(_vaultHarness.rpow(RAY, 365 days), RAY);
+        assertEq(_vaultHarness.rpow(0, 0), RAY);
+        assertEq(_vaultHarness.rpow(0, 365 days), 0);
         assertApproxEqRel(
-            InterestLib._rpow(TEN_PERCENT_APY, 365 days),
+            _vaultHarness.rpow(TEN_PERCENT_APY, 365 days),
             (RAY * 11) / 10,
             1e9
         );

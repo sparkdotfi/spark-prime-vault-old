@@ -1,19 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.20;
 
-import {Test} from "forge-std/Test.sol";
-import {QueueHelper} from "./utils/QueueHelper.sol";
-import {IERC7575} from "src/interfaces/IERC7575.sol";
-import {IQueue} from "src/interfaces/IQueue.sol";
-import {
-    IERC7540Operator
-} from "src/interfaces/IERC7540.sol";
-import {
-    IAccessControl
-} from "@openzeppelin/contracts/access/IAccessControl.sol";
-import {
-    IERC165
-} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import { Test } from "../lib/forge-std/src/Test.sol";
+import { QueueHelper } from "./utils/QueueHelper.sol";
+import { IERC7575 } from "../src/interfaces/IERC7575.sol";
+import { IQueue } from "../src/interfaces/IQueue.sol";
+import { IERC7540Operator } from "../src/interfaces/IERC7540.sol";
+import { IAccessControl } from "../lib/openzeppelin-contracts/contracts/access/IAccessControl.sol";
+import { IERC165 } from "../lib/openzeppelin-contracts/contracts/utils/introspection/IERC165.sol";
 
 contract Erc165UnitTests is QueueHelper {
     bytes4 constant ERC7540_OPERATOR = 0xe3bc4e65;

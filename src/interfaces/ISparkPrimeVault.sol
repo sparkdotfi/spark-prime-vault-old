@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.20;
 
-import {IVault} from "./IVault.sol";
+import { IVault } from "./IVault.sol";
 
 /**
  * @title ISparkPrimeVault
@@ -39,6 +39,7 @@ import {IVault} from "./IVault.sol";
  */
 
 interface ISparkPrimeVault {
+
     /// @notice Emitted when the user performs deposit or mint with a referral code
     event ReferralCode(address beneficiary, uint256 code);
 
@@ -104,4 +105,5 @@ interface ISparkPrimeVault {
         address controller,
         uint256 nonce
     ) external view returns (IVault.Transaction memory transaction);
+
 }

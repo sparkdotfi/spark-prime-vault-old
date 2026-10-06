@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.20;
 
-import {Test} from "forge-std/Test.sol";
-import {console} from "forge-std/console.sol";
-import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
-import {VaultHandler} from "../VaultHandler.t.sol";
-import {VaultDeployer} from "./VaultDeployer.sol";
-import {USDC} from "../mocks/USDC.sol";
-import {SavingsVault} from "../mocks/SavingsVault.sol";
-import {IVault} from "src/interfaces/IVault.sol";
-import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import { Test } from "../../lib/forge-std/src/Test.sol";
+import { console } from "../../lib/forge-std/src/console.sol";
+import { IERC20 } from "../../lib/openzeppelin-contracts/contracts/interfaces/IERC20.sol";
+import { VaultHandler } from "../VaultHandler.t.sol";
+import { VaultDeployer } from "./VaultDeployer.sol";
+import { USDC } from "../mocks/USDC.sol";
+import { SavingsVault } from "../mocks/SavingsVault.sol";
+import { IVault } from "../../src/interfaces/IVault.sol";
+import { IERC4626 } from "../../lib/openzeppelin-contracts/contracts/interfaces/IERC4626.sol";
+import { Math } from "../../lib/openzeppelin-contracts/contracts/utils/math/Math.sol";
 
 abstract contract QueueHelper is Test {
     VaultHandler internal vault;
@@ -97,8 +97,8 @@ abstract contract QueueHelper is Test {
         IVault.InitParams memory params;
         params.name = VaultDeployer.NAME;
         params.symbol = VaultDeployer.SYMBOL;
-        params.baseAsset = baseAsset;
-        params.savingsVault = savingsVault;
+        params.baseAsset = address(baseAsset);
+        params.savingsVault = address(savingsVault);
         params.minimumDeposit = minimumDeposit;
         params.minimumWithdraw = minimumWithdraw;
         params.capacity = MAXIMUM_VAULT_CAPACITY;

@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 interface IRebalancer {
+
     /**
      * @title IRebalancer
      * @notice Interface used to convert between base asset and savings vault token
@@ -27,4 +28,5 @@ interface IRebalancer {
     function withdrawFromSavings(
         uint256 shares
     ) external returns (uint256 assets);
+
 }

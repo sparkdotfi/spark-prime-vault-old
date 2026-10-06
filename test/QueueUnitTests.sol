@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.20;
 
-import {Test} from "forge-std/Test.sol";
-import {VaultHandler} from "./VaultHandler.t.sol";
-import {IVault} from "src/interfaces/IVault.sol";
-import {USDC} from "./mocks/USDC.sol";
-import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
-import {console} from "forge-std/console.sol";
-import {QueueHelper} from "./utils/QueueHelper.sol";
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import { Test } from "../lib/forge-std/src/Test.sol";
+import { VaultHandler } from "./VaultHandler.t.sol";
+import { IVault } from "../src/interfaces/IVault.sol";
+import { USDC } from "./mocks/USDC.sol";
+import { IERC20 } from "../lib/openzeppelin-contracts/contracts/interfaces/IERC20.sol";
+import { console } from "../lib/forge-std/src/console.sol";
+import { QueueHelper } from "./utils/QueueHelper.sol";
+import { Math } from "../lib/openzeppelin-contracts/contracts/utils/math/Math.sol";
 contract QueueUnitTests is QueueHelper {
     function setUp() public {
         _deployVault();

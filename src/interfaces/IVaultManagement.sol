@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 interface IVaultManagement {
+
     /**
      * @title IVaultManagement
      * @notice Interface used by VAULT_MANAGER (rate, capacity, minimums), RISK_MANAGER (loss, withdraw fee) and GUARDIAN (pause)
@@ -76,4 +77,5 @@ interface IVaultManagement {
 
     /// @notice Resumes requests and claims. DEFAULT_ADMIN only
     function unpause() external;
+
 }
