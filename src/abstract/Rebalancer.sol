@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.20;
 import {IRebalancer} from "../interfaces/IRebalancer.sol";
 import {LiquidityManagement} from "./LiquidityManagement.sol";
