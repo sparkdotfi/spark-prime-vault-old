@@ -45,7 +45,7 @@ contract RequestDepositTests is ForkTestBase {
         });
 
         AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
-            account       : address(spPrimeVaultUsdc),
+            account       : address(spPRIME),
             asset         : 0,
             shares        : 0,
             savingsShares : 0
@@ -56,20 +56,20 @@ contract RequestDepositTests is ForkTestBase {
         _assertBalances(userBalances);
         _assertBalances(spPrimeBalances);
 
-        assertEq(usdc.allowance(user, address(spPrimeVaultUsdc)), 0);
+        assertEq(usdc.allowance(user, address(spPRIME)), 0);
 
         vm.startPrank(user);
-        usdc.approve(address(spPrimeVaultUsdc), 100e6);
+        usdc.approve(address(spPRIME), 100e6);
 
-        vm.expectEmit(address(spPrimeVaultUsdc));
+        vm.expectEmit(address(spPRIME));
         emit IQueue.ClaimableDeposit(user, 100e6);
-        vm.expectEmit(address(spPrimeVaultUsdc));
+        vm.expectEmit(address(spPRIME));
         emit IERC7540Deposit.DepositRequest(user, user, 0, user, 100e6);
 
-        spPrimeVaultUsdc.requestDeposit(100e6, user, user);
+        spPRIME.requestDeposit(100e6, user, user);
         vm.stopPrank();
 
-        assertEq(usdc.allowance(user, address(spPrimeVaultUsdc)), 0);
+        assertEq(usdc.allowance(user, address(spPRIME)), 0);
 
         vaultState.totalSupply           = 100e6;
         vaultState.totalAssets           = 100e6;
@@ -125,7 +125,7 @@ contract RequestDepositTests is ForkTestBase {
         });
 
         AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
-            account       : address(spPrimeVaultUsdc),
+            account       : address(spPRIME),
             asset         : 0,
             shares        : 0,
             savingsShares : 0
@@ -136,20 +136,20 @@ contract RequestDepositTests is ForkTestBase {
         _assertBalances(userBalances);
         _assertBalances(spPrimeBalances);
 
-        assertEq(usdc.allowance(user, address(spPrimeVaultUsdc)), 0);
+        assertEq(usdc.allowance(user, address(spPRIME)), 0);
 
         vm.startPrank(user);
-        usdc.approve(address(spPrimeVaultUsdc), VAULT_CAPACITY);
+        usdc.approve(address(spPRIME), VAULT_CAPACITY);
 
-        vm.expectEmit(address(spPrimeVaultUsdc));
+        vm.expectEmit(address(spPRIME));
         emit IQueue.ClaimableDeposit(user, VAULT_CAPACITY);
-        vm.expectEmit(address(spPrimeVaultUsdc));
+        vm.expectEmit(address(spPRIME));
         emit IERC7540Deposit.DepositRequest(user, user, 0, user, VAULT_CAPACITY);
 
-        spPrimeVaultUsdc.requestDeposit(VAULT_CAPACITY, user, user);
+        spPRIME.requestDeposit(VAULT_CAPACITY, user, user);
         vm.stopPrank();
 
-        assertEq(usdc.allowance(user, address(spPrimeVaultUsdc)), 0);
+        assertEq(usdc.allowance(user, address(spPRIME)), 0);
 
         vaultState.totalSupply           = VAULT_CAPACITY;
         vaultState.totalAssets           = VAULT_CAPACITY;
@@ -175,7 +175,7 @@ contract RequestDepositTests is ForkTestBase {
 
     function test_requestDeposit_partialInstantClaim() external {
         uint256 amount       = VAULT_CAPACITY + 500e6;
-        uint256 queuedShares = spUSDCVault.previewDeposit(500e6);  // spUSDC shares backing this request
+        uint256 queuedShares = spUSDC.previewDeposit(500e6);  // spUSDC shares backing this request
 
         deal(address(usdc), user, amount);
 
@@ -208,7 +208,7 @@ contract RequestDepositTests is ForkTestBase {
         });
 
         AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
-            account       : address(spPrimeVaultUsdc),
+            account       : address(spPRIME),
             asset         : 0,
             shares        : 0,
             savingsShares : 0
@@ -219,28 +219,28 @@ contract RequestDepositTests is ForkTestBase {
         _assertBalances(userBalances);
         _assertBalances(spPrimeBalances);
 
-        assertEq(usdc.allowance(user, address(spPrimeVaultUsdc)),                 0);
-        assertEq(usdc.allowance(address(spPrimeVaultUsdc), address(spUSDCVault)), 0);
+        assertEq(usdc.allowance(user,             address(spPRIME)), 0);
+        assertEq(usdc.allowance(address(spPRIME), address(spUSDC)),  0);
 
         _assertQueuedDepositRequest(user, 1, IVault.Transaction(address(0), address(0), 0, 0, 0));
 
         vm.startPrank(user);
-        usdc.approve(address(spPrimeVaultUsdc), amount);
+        usdc.approve(address(spPRIME), amount);
 
-        vm.expectEmit(address(spPrimeVaultUsdc));
+        vm.expectEmit(address(spPRIME));
         emit IQueue.ClaimableDeposit(user, VAULT_CAPACITY);
-        vm.expectEmit(address(spPrimeVaultUsdc));
+        vm.expectEmit(address(spPRIME));
         emit IQueue.DepositQueueValuation(queuedShares);
-        vm.expectEmit(address(spPrimeVaultUsdc));
+        vm.expectEmit(address(spPRIME));
         emit ISparkPrimeVault.DepositQueued(user, user, 1, queuedShares);
-        vm.expectEmit(address(spPrimeVaultUsdc));
+        vm.expectEmit(address(spPRIME));
         emit IERC7540Deposit.DepositRequest(user, user, 0, user, amount);
 
-        spPrimeVaultUsdc.requestDeposit(amount, user, user);
+        spPRIME.requestDeposit(amount, user, user);
         vm.stopPrank();
 
-        assertEq(usdc.allowance(user, address(spPrimeVaultUsdc)),                 0);
-        assertEq(usdc.allowance(address(spPrimeVaultUsdc), address(spUSDCVault)), 0);
+        assertEq(usdc.allowance(user,             address(spPRIME)), 0);
+        assertEq(usdc.allowance(address(spPRIME), address(spUSDC)),  0);
 
         vaultState.totalSupply           = VAULT_CAPACITY;
         vaultState.totalAssets           = VAULT_CAPACITY;
@@ -251,7 +251,7 @@ contract RequestDepositTests is ForkTestBase {
         depositState.maxDeposit              = VAULT_CAPACITY;
         depositState.maxMint                 = VAULT_CAPACITY;
         depositState.claimableDepositTotal   = VAULT_CAPACITY;
-        depositState.pendingDepositRequest   = spUSDCVault.convertToAssets(queuedShares);
+        depositState.pendingDepositRequest   = spUSDC.convertToAssets(queuedShares);
         depositState.totalPendingDeposits    = queuedShares;
         depositState.depositQueueLength      = 1;
         depositState.requestNonce            = 1;
@@ -269,13 +269,13 @@ contract RequestDepositTests is ForkTestBase {
 
         _assertQueuedDepositRequest(user, 1, IVault.Transaction(user, user, queuedShares, 1, 0));
 
-        assertEq(spPrimeVaultUsdc.pendingDepositRequest(0, user), 500e6 - 1);
+        assertEq(spPRIME.pendingDepositRequest(0, user), 500e6 - 1);
     }
 
     function test_requestDeposit_queued_noCapacity() external {
         _requestDeposit(user2, VAULT_CAPACITY); // Consumed all capacity
 
-        uint256 queuedShares = spUSDCVault.previewDeposit(100e6);  // spUSDC shares backing this request
+        uint256 queuedShares = spUSDC.previewDeposit(100e6);  // spUSDC shares backing this request
 
         deal(address(usdc), user, 100e6);
 
@@ -308,7 +308,7 @@ contract RequestDepositTests is ForkTestBase {
         });
 
         AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
-            account       : address(spPrimeVaultUsdc),
+            account       : address(spPRIME),
             asset         : VAULT_CAPACITY,
             shares        : VAULT_CAPACITY,
             savingsShares : 0
@@ -319,28 +319,28 @@ contract RequestDepositTests is ForkTestBase {
         _assertBalances(userBalances);
         _assertBalances(spPrimeBalances);
 
-        assertEq(usdc.allowance(user, address(spPrimeVaultUsdc)),                 0);
-        assertEq(usdc.allowance(address(spPrimeVaultUsdc), address(spUSDCVault)), 0);
+        assertEq(usdc.allowance(user,             address(spPRIME)), 0);
+        assertEq(usdc.allowance(address(spPRIME), address(spUSDC)),  0);
 
         _assertQueuedDepositRequest(user, 1, IVault.Transaction(address(0), address(0), 0, 0, 0));
 
         vm.startPrank(user);
-        usdc.approve(address(spPrimeVaultUsdc), 100e6);
+        usdc.approve(address(spPRIME), 100e6);
 
-        vm.expectEmit(address(spPrimeVaultUsdc));
+        vm.expectEmit(address(spPRIME));
         emit IQueue.DepositQueueValuation(queuedShares);
-        vm.expectEmit(address(spPrimeVaultUsdc));
+        vm.expectEmit(address(spPRIME));
         emit ISparkPrimeVault.DepositQueued(user, user, 1, queuedShares);
-        vm.expectEmit(address(spPrimeVaultUsdc));
+        vm.expectEmit(address(spPRIME));
         emit IERC7540Deposit.DepositRequest(user, user, 0, user, 100e6);
 
-        spPrimeVaultUsdc.requestDeposit(100e6, user, user);
+        spPRIME.requestDeposit(100e6, user, user);
         vm.stopPrank();
 
-        assertEq(usdc.allowance(user, address(spPrimeVaultUsdc)),                 0);
-        assertEq(usdc.allowance(address(spPrimeVaultUsdc), address(spUSDCVault)), 0);
+        assertEq(usdc.allowance(user,             address(spPRIME)), 0);
+        assertEq(usdc.allowance(address(spPRIME), address(spUSDC)),  0);
 
-        depositState.pendingDepositRequest = spUSDCVault.convertToAssets(queuedShares);
+        depositState.pendingDepositRequest = spUSDC.convertToAssets(queuedShares);
         depositState.totalPendingDeposits  = queuedShares;
         depositState.depositQueueLength    = 1;
         depositState.requestNonce          = 1;
@@ -356,7 +356,7 @@ contract RequestDepositTests is ForkTestBase {
 
         _assertQueuedDepositRequest(user, 1, IVault.Transaction(user, user, queuedShares, 1, 0));
 
-        assertEq(spPrimeVaultUsdc.pendingDepositRequest(0, user), 100e6 - 1);
+        assertEq(spPRIME.pendingDepositRequest(0, user), 100e6 - 1);
     }
 
     function test_requestDeposit_queued_queueNotEmpty() external {
@@ -365,10 +365,10 @@ contract RequestDepositTests is ForkTestBase {
 
         // Increase capacity, but the queue is not empty
         vm.prank(VAULT_MANAGER);
-        spPrimeVaultUsdc.setCapacity(VAULT_CAPACITY + 1_000e6);
+        spPRIME.setCapacity(VAULT_CAPACITY + 1_000e6);
 
-        uint256 totalQueuedShares = spPrimeVaultUsdc.totalPendingDeposits();  // spUSDC shares backing all queued deposits
-        uint256 queuedShares      = spUSDCVault.previewDeposit(100e6);        // spUSDC shares backing this request
+        uint256 totalQueuedShares = spPRIME.totalPendingDeposits();  // spUSDC shares backing all queued deposits
+        uint256 queuedShares      = spUSDC.previewDeposit(100e6);    // spUSDC shares backing this request
 
         deal(address(usdc), user, 100e6);
 
@@ -401,7 +401,7 @@ contract RequestDepositTests is ForkTestBase {
         });
 
         AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
-            account       : address(spPrimeVaultUsdc),
+            account       : address(spPRIME),
             asset         : VAULT_CAPACITY,
             shares        : VAULT_CAPACITY,
             savingsShares : totalQueuedShares
@@ -412,31 +412,31 @@ contract RequestDepositTests is ForkTestBase {
         _assertBalances(userBalances);
         _assertBalances(spPrimeBalances);
 
-        assertEq(usdc.allowance(user, address(spPrimeVaultUsdc)),                 0);
-        assertEq(usdc.allowance(address(spPrimeVaultUsdc), address(spUSDCVault)), 0);
+        assertEq(usdc.allowance(user,             address(spPRIME)), 0);
+        assertEq(usdc.allowance(address(spPRIME), address(spUSDC)),  0);
 
         _assertQueuedDepositRequest(user, 1, IVault.Transaction(address(0), address(0), 0, 0, 0));
 
-        assertEq(spPrimeVaultUsdc.depositQueueHead().controller, user2);
+        assertEq(spPRIME.depositQueueHead().controller, user2);
 
         vm.startPrank(user);
-        usdc.approve(address(spPrimeVaultUsdc), 100e6);
+        usdc.approve(address(spPRIME), 100e6);
 
-        vm.expectEmit(address(spPrimeVaultUsdc));
+        vm.expectEmit(address(spPRIME));
         emit IQueue.DepositQueueValuation(totalQueuedShares + queuedShares);
-        vm.expectEmit(address(spPrimeVaultUsdc));
+        vm.expectEmit(address(spPRIME));
         emit ISparkPrimeVault.DepositQueued(user, user, 1, queuedShares);
-        vm.expectEmit(address(spPrimeVaultUsdc));
+        vm.expectEmit(address(spPRIME));
         emit IERC7540Deposit.DepositRequest(user, user, 0, user, 100e6);
 
-        spPrimeVaultUsdc.requestDeposit(100e6, user, user);
+        spPRIME.requestDeposit(100e6, user, user);
         vm.stopPrank();
 
         // Capacity is free, but the request still queues behind the existing entry (FIFO)
-        assertEq(usdc.allowance(user, address(spPrimeVaultUsdc)),                 0);
-        assertEq(usdc.allowance(address(spPrimeVaultUsdc), address(spUSDCVault)), 0);
+        assertEq(usdc.allowance(user,             address(spPRIME)), 0);
+        assertEq(usdc.allowance(address(spPRIME), address(spUSDC)),  0);
 
-        depositState.pendingDepositRequest = spUSDCVault.convertToAssets(queuedShares);
+        depositState.pendingDepositRequest = spUSDC.convertToAssets(queuedShares);
         depositState.totalPendingDeposits  = totalQueuedShares + queuedShares;
         depositState.depositQueueLength    = 2;
         depositState.requestNonce          = 1;
@@ -452,7 +452,7 @@ contract RequestDepositTests is ForkTestBase {
 
         _assertQueuedDepositRequest(user, 1, IVault.Transaction(user, user, queuedShares, 1, 0));
 
-        assertEq(spPrimeVaultUsdc.depositQueueHead().controller, user2);
+        assertEq(spPRIME.depositQueueHead().controller, user2);
     }
 
     function test_requestDeposit_instantAfterQueueFullyCancelled() external {
@@ -460,10 +460,10 @@ contract RequestDepositTests is ForkTestBase {
         _requestDeposit(user,  100e6);          // Queued as nonce 1, no capacity left
 
         vm.prank(VAULT_MANAGER);
-        spPrimeVaultUsdc.setCapacity(VAULT_CAPACITY + 100e6);
+        spPRIME.setCapacity(VAULT_CAPACITY + 100e6);
 
         vm.prank(user);
-        spPrimeVaultUsdc.cancelDepositRequest(user, 1);
+        spPRIME.cancelDepositRequest(user, 1);
 
         deal(address(usdc), user, 100e6);
 
@@ -496,7 +496,7 @@ contract RequestDepositTests is ForkTestBase {
         });
 
         AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
-            account       : address(spPrimeVaultUsdc),
+            account       : address(spPRIME),
             asset         : VAULT_CAPACITY,
             shares        : VAULT_CAPACITY,
             savingsShares : 0
@@ -507,23 +507,23 @@ contract RequestDepositTests is ForkTestBase {
         _assertBalances(userBalances);
         _assertBalances(spPrimeBalances);
 
-        assertEq(usdc.allowance(user, address(spPrimeVaultUsdc)), 0);
+        assertEq(usdc.allowance(user, address(spPRIME)), 0);
 
         _assertQueuedDepositRequest(user, 1, IVault.Transaction(address(0), address(0), 0, 0, 0));
 
         vm.startPrank(user);
-        usdc.approve(address(spPrimeVaultUsdc), 100e6);
+        usdc.approve(address(spPRIME), 100e6);
 
-        vm.expectEmit(address(spPrimeVaultUsdc));
+        vm.expectEmit(address(spPRIME));
         emit IQueue.ClaimableDeposit(user, 100e6);
-        vm.expectEmit(address(spPrimeVaultUsdc));
+        vm.expectEmit(address(spPRIME));
         emit IERC7540Deposit.DepositRequest(user, user, 0, user, 100e6);
 
-        spPrimeVaultUsdc.requestDeposit(100e6, user, user);
+        spPRIME.requestDeposit(100e6, user, user);
         vm.stopPrank();
 
         // The cancelled entry no longer counts as a queue, so the request fills instantly
-        assertEq(usdc.allowance(user, address(spPrimeVaultUsdc)), 0);
+        assertEq(usdc.allowance(user, address(spPRIME)), 0);
 
         vaultState.totalSupply           = VAULT_CAPACITY + 100e6;
         vaultState.totalAssets           = VAULT_CAPACITY + 100e6;
@@ -552,7 +552,7 @@ contract RequestDepositTests is ForkTestBase {
 
         skip(365 days);
 
-        uint256 expectedIndex  = spPrimeVaultUsdc.previewIndex();
+        uint256 expectedIndex  = spPRIME.previewIndex();
         uint256 expectedShares = 100e6 * RAY / expectedIndex;
 
         // 10% APY over one year
@@ -589,7 +589,7 @@ contract RequestDepositTests is ForkTestBase {
         });
 
         AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
-            account       : address(spPrimeVaultUsdc),
+            account       : address(spPRIME),
             asset         : 0,
             shares        : 0,
             savingsShares : 0
@@ -600,25 +600,25 @@ contract RequestDepositTests is ForkTestBase {
         _assertBalances(userBalances);
         _assertBalances(spPrimeBalances);
 
-        assertEq(usdc.allowance(user, address(spPrimeVaultUsdc)), 0);
+        assertEq(usdc.allowance(user, address(spPRIME)), 0);
 
         vm.startPrank(user);
-        usdc.approve(address(spPrimeVaultUsdc), 100e6);
+        usdc.approve(address(spPRIME), 100e6);
 
-        vm.expectEmit(address(spPrimeVaultUsdc));
+        vm.expectEmit(address(spPRIME));
         emit IVault.AccruedInterest(expectedIndex, block.timestamp);
-        vm.expectEmit(address(spPrimeVaultUsdc));
+        vm.expectEmit(address(spPRIME));
         emit IQueue.ClaimableDeposit(user, 100e6);
-        vm.expectEmit(address(spPrimeVaultUsdc));
+        vm.expectEmit(address(spPRIME));
         emit IERC7540Deposit.DepositRequest(user, user, 0, user, 100e6);
 
-        spPrimeVaultUsdc.requestDeposit(100e6, user, user);
+        spPRIME.requestDeposit(100e6, user, user);
         vm.stopPrank();
 
         // Shares are minted at the accrued index, so fewer shares than assets
         assertLt(expectedShares, 100e6);
 
-        assertEq(usdc.allowance(user, address(spPrimeVaultUsdc)), 0);
+        assertEq(usdc.allowance(user, address(spPRIME)), 0);
 
         vaultState.totalSupply           = expectedShares;
         vaultState.totalAssets           = expectedShares * expectedIndex / RAY;
@@ -649,11 +649,11 @@ contract RequestDepositTests is ForkTestBase {
 
         _requestDeposit(user2, VAULT_CAPACITY); // Consumed all capacity
 
-        uint256 queuedShares = spUSDCVault.previewDeposit(100e6);  // spUSDC shares backing this request
+        uint256 queuedShares = spUSDC.previewDeposit(100e6);  // spUSDC shares backing this request
 
         _requestDeposit(user, 100e6);  // Queued as nonce 1, no capacity left
 
-        uint256 pendingBefore = spPrimeVaultUsdc.pendingDepositRequest(0, user);
+        uint256 pendingBefore = spPRIME.pendingDepositRequest(0, user);
 
         assertEq(pendingBefore, 100e6 - 1);
 
@@ -672,7 +672,7 @@ contract RequestDepositTests is ForkTestBase {
             maxDeposit              : 0,
             maxMint                 : 0,
             claimableDepositTotal   : VAULT_CAPACITY,
-            pendingDepositRequest   : spUSDCVault.convertToAssets(queuedShares),
+            pendingDepositRequest   : spUSDC.convertToAssets(queuedShares),
             totalPendingDeposits    : queuedShares,
             depositQueueLength      : 1,
             requestNonce            : 1
@@ -686,7 +686,7 @@ contract RequestDepositTests is ForkTestBase {
         });
 
         AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
-            account       : address(spPrimeVaultUsdc),
+            account       : address(spPRIME),
             asset         : VAULT_CAPACITY,
             shares        : VAULT_CAPACITY,
             savingsShares : queuedShares
@@ -701,14 +701,14 @@ contract RequestDepositTests is ForkTestBase {
 
         skip(30 days);
 
-        uint256 expectedIndex = spPrimeVaultUsdc.previewIndex();
+        uint256 expectedIndex = spPRIME.previewIndex();
 
         // The spUSDC share count is unchanged, its value grows with the spUSDC rate
-        assertGt(spPrimeVaultUsdc.pendingDepositRequest(0, user), pendingBefore);
+        assertGt(spPRIME.pendingDepositRequest(0, user), pendingBefore);
 
         vaultState.totalAssets = VAULT_CAPACITY * expectedIndex / RAY;
 
-        depositState.pendingDepositRequest = spUSDCVault.convertToAssets(queuedShares);
+        depositState.pendingDepositRequest = spUSDC.convertToAssets(queuedShares);
 
         _assertVaultState(vaultState);
         _assertDepositState(depositState);
@@ -758,7 +758,7 @@ contract DepositTests is ForkTestBase {
         });
 
         AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
-            account       : address(spPrimeVaultUsdc),
+            account       : address(spPRIME),
             asset         : 100e6,
             shares        : 100e6,
             savingsShares : 0
@@ -769,13 +769,13 @@ contract DepositTests is ForkTestBase {
         _assertBalances(userBalances);
         _assertBalances(spPrimeBalances);
 
-        vm.expectEmit(address(spPrimeVaultUsdc));
+        vm.expectEmit(address(spPRIME));
         emit IQueue.ClaimableDeposit(user, 0);
-        vm.expectEmit(address(spPrimeVaultUsdc));
+        vm.expectEmit(address(spPRIME));
         emit IERC4626Like.Deposit(user, user, 100e6, 100e6);
 
         vm.prank(user);
-        uint256 shares = spPrimeVaultUsdc.deposit(100e6, user, user);
+        uint256 shares = spPRIME.deposit(100e6, user, user);
 
         assertEq(shares, 100e6);
 
@@ -827,7 +827,7 @@ contract DepositTests is ForkTestBase {
         });
 
         AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
-            account       : address(spPrimeVaultUsdc),
+            account       : address(spPRIME),
             asset         : 100e6,
             shares        : 100e6,
             savingsShares : 0
@@ -838,13 +838,13 @@ contract DepositTests is ForkTestBase {
         _assertBalances(userBalances);
         _assertBalances(spPrimeBalances);
 
-        vm.expectEmit(address(spPrimeVaultUsdc));
+        vm.expectEmit(address(spPRIME));
         emit IQueue.ClaimableDeposit(user, 60e6);
-        vm.expectEmit(address(spPrimeVaultUsdc));
+        vm.expectEmit(address(spPRIME));
         emit IERC4626Like.Deposit(user, user, 40e6, 40e6);
 
         vm.prank(user);
-        uint256 shares = spPrimeVaultUsdc.deposit(40e6, user, user);
+        uint256 shares = spPRIME.deposit(40e6, user, user);
 
         assertEq(shares, 40e6);
 
@@ -869,7 +869,7 @@ contract DepositTests is ForkTestBase {
 
         _requestDeposit(user, 100e6);
 
-        uint256 index = spPrimeVaultUsdc.index();
+        uint256 index = spPRIME.index();
 
         // 10% APY over one year
         assertApproxEqRel(index, 1.1e27, 0.0001e18);
@@ -909,7 +909,7 @@ contract DepositTests is ForkTestBase {
         });
 
         AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
-            account       : address(spPrimeVaultUsdc),
+            account       : address(spPRIME),
             asset         : 100e6,
             shares        : sharesOwed,
             savingsShares : 0
@@ -921,7 +921,7 @@ contract DepositTests is ForkTestBase {
         _assertBalances(spPrimeBalances);
 
         vm.prank(user);
-        uint256 shares = spPrimeVaultUsdc.deposit(30e6, user, user);
+        uint256 shares = spPRIME.deposit(30e6, user, user);
 
         assertEq(shares, shares1);
 
@@ -940,7 +940,7 @@ contract DepositTests is ForkTestBase {
         _assertBalances(spPrimeBalances);
 
         vm.prank(user);
-        shares = spPrimeVaultUsdc.deposit(30e6, user, user);
+        shares = spPRIME.deposit(30e6, user, user);
 
         assertEq(shares, shares2);
 
@@ -959,7 +959,7 @@ contract DepositTests is ForkTestBase {
         _assertBalances(spPrimeBalances);
 
         vm.prank(user);
-        shares = spPrimeVaultUsdc.deposit(40e6, user, user);
+        shares = spPRIME.deposit(40e6, user, user);
 
         assertEq(shares, shares3);
 
@@ -985,7 +985,7 @@ contract DepositTests is ForkTestBase {
         _requestDeposit(user, 100e6);  // Instant claim, 100e6 shares at index 1
 
         vm.prank(user);
-        spPrimeVaultUsdc.setOperator(operator, true);
+        spPRIME.setOperator(operator, true);
 
         AssertVaultStateParams memory vaultState = AssertVaultStateParams({
             totalSupply           : 100e6,
@@ -1030,7 +1030,7 @@ contract DepositTests is ForkTestBase {
         });
 
         AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
-            account       : address(spPrimeVaultUsdc),
+            account       : address(spPRIME),
             asset         : 100e6,
             shares        : 100e6,
             savingsShares : 0
@@ -1044,13 +1044,13 @@ contract DepositTests is ForkTestBase {
         _assertBalances(spPrimeBalances);
 
         // Operator claims for the controller, and can only send to the controller
-        vm.expectEmit(address(spPrimeVaultUsdc));
+        vm.expectEmit(address(spPRIME));
         emit IQueue.ClaimableDeposit(user, 60e6);
-        vm.expectEmit(address(spPrimeVaultUsdc));
+        vm.expectEmit(address(spPRIME));
         emit IERC4626Like.Deposit(user, user, 40e6, 40e6);
 
         vm.prank(operator);
-        uint256 shares = spPrimeVaultUsdc.deposit(40e6, user, user);
+        uint256 shares = spPRIME.deposit(40e6, user, user);
 
         assertEq(shares, 40e6);
 
@@ -1071,13 +1071,13 @@ contract DepositTests is ForkTestBase {
         _assertBalances(spPrimeBalances);
 
         // Controller claims the rest to a different receiver
-        vm.expectEmit(address(spPrimeVaultUsdc));
+        vm.expectEmit(address(spPRIME));
         emit IQueue.ClaimableDeposit(user, 0);
-        vm.expectEmit(address(spPrimeVaultUsdc));
+        vm.expectEmit(address(spPRIME));
         emit IERC4626Like.Deposit(user, user2, 60e6, 60e6);
 
         vm.prank(user); // user is the controller
-        shares = spPrimeVaultUsdc.deposit(60e6, user2, user);
+        shares = spPRIME.deposit(60e6, user2, user);
 
         assertEq(shares, 60e6);
 
@@ -1130,7 +1130,7 @@ contract DepositTests is ForkTestBase {
         });
 
         AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
-            account       : address(spPrimeVaultUsdc),
+            account       : address(spPRIME),
             asset         : 100e6,
             shares        : 100e6,
             savingsShares : 0
@@ -1142,13 +1142,13 @@ contract DepositTests is ForkTestBase {
         _assertBalances(spPrimeBalances);
 
         // deposit(assets, receiver) uses msg.sender as the controller
-        vm.expectEmit(address(spPrimeVaultUsdc));
+        vm.expectEmit(address(spPRIME));
         emit IQueue.ClaimableDeposit(user, 0);
-        vm.expectEmit(address(spPrimeVaultUsdc));
+        vm.expectEmit(address(spPRIME));
         emit IERC4626Like.Deposit(user, user, 100e6, 100e6);
 
         vm.prank(user);
-        uint256 shares = spPrimeVaultUsdc.deposit(100e6, user);
+        uint256 shares = spPRIME.deposit(100e6, user);
 
         assertEq(shares, 100e6);
 
@@ -1199,7 +1199,7 @@ contract DepositTests is ForkTestBase {
         });
 
         AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
-            account       : address(spPrimeVaultUsdc),
+            account       : address(spPRIME),
             asset         : 100e6,
             shares        : 100e6,
             savingsShares : 0
@@ -1210,15 +1210,15 @@ contract DepositTests is ForkTestBase {
         _assertBalances(userBalances);
         _assertBalances(spPrimeBalances);
 
-        vm.expectEmit(address(spPrimeVaultUsdc));
+        vm.expectEmit(address(spPRIME));
         emit ISparkPrimeVault.ReferralCode(user, 1);
-        vm.expectEmit(address(spPrimeVaultUsdc));
+        vm.expectEmit(address(spPRIME));
         emit IQueue.ClaimableDeposit(user, 0);
-        vm.expectEmit(address(spPrimeVaultUsdc));
+        vm.expectEmit(address(spPRIME));
         emit IERC4626Like.Deposit(user, user, 100e6, 100e6);
 
         vm.prank(user);
-        uint256 shares = spPrimeVaultUsdc.deposit(100e6, user, user, 1);
+        uint256 shares = spPRIME.deposit(100e6, user, user, 1);
 
         assertEq(shares, 100e6);
 
@@ -1250,11 +1250,11 @@ contract DepositTests is ForkTestBase {
 
         _requestDeposit(user, 100e6);  // Instant claim, 100e6 shares at index 1
 
-        assertEq(spPrimeVaultUsdc.convertToAssets(100e6), 100e6);
+        assertEq(spPRIME.convertToAssets(100e6), 100e6);
 
         skip(365 days);
 
-        uint256 expectedIndex = spPrimeVaultUsdc.previewIndex();
+        uint256 expectedIndex = spPRIME.previewIndex();
 
         // 10% APY over one year
         assertApproxEqRel(expectedIndex, 1.1e27, 0.0001e18);
@@ -1288,7 +1288,7 @@ contract DepositTests is ForkTestBase {
         });
 
         AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
-            account       : address(spPrimeVaultUsdc),
+            account       : address(spPRIME),
             asset         : 100e6,
             shares        : 100e6,
             savingsShares : 0
@@ -1299,20 +1299,20 @@ contract DepositTests is ForkTestBase {
         _assertBalances(userBalances);
         _assertBalances(spPrimeBalances);
 
-        vm.expectEmit(address(spPrimeVaultUsdc));
+        vm.expectEmit(address(spPRIME));
         emit IVault.AccruedInterest(expectedIndex, block.timestamp);
-        vm.expectEmit(address(spPrimeVaultUsdc));
+        vm.expectEmit(address(spPRIME));
         emit IQueue.ClaimableDeposit(user, 0);
-        vm.expectEmit(address(spPrimeVaultUsdc));
+        vm.expectEmit(address(spPRIME));
         emit IERC4626Like.Deposit(user, user, 100e6, 100e6);
 
         vm.prank(user);
-        uint256 shares = spPrimeVaultUsdc.deposit(100e6, user, user);
+        uint256 shares = spPRIME.deposit(100e6, user, user);
 
         // Share count is fixed at request time, the shares gained value while escrowed
         assertEq(shares, 100e6);
 
-        assertEq(spPrimeVaultUsdc.convertToAssets(100e6), 109.999999e6);
+        assertEq(spPRIME.convertToAssets(100e6), 109.999999e6);
 
         vaultState.index       = expectedIndex;
         vaultState.lastAccrual = block.timestamp;
