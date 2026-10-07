@@ -526,7 +526,6 @@ contract SparkPrimeVaultForkTest is Test {
         assertEq(vault.totalSupply(),                    v.totalSupply,            "totalSupply");
         assertEq(usdc.balanceOf(address(vault)),         v.usdc,                   "vault usdc");
         assertEq(spUsdc.balanceOf(address(vault)),       v.spUsdc,                 "vault spUsdc");
-        assertEq(vault.totalClaimableDepositShares(),    v.claimableDepositShares, "claimableDepositShares");
         assertEq(vault.totalClaimableRedeemAssets(),     v.claimableRedeemAssets,  "claimableRedeemAssets");
         assertEq(vault.totalQueuedDepositShares(),       v.queuedDepositShares,    "queuedDepositShares");
         assertEq(vault.totalQueuedRedeemShares(),        v.queuedRedeemShares,     "queuedRedeemShares");
@@ -536,7 +535,7 @@ contract SparkPrimeVaultForkTest is Test {
         assertGe(spUsdc.balanceOf(address(vault)), vault.totalQueuedDepositShares(),   "queued spUSDC");
         assertEq(
             vault.balanceOf(address(vault)),
-            vault.totalClaimableDepositShares() + vault.totalQueuedRedeemShares(),
+            v.claimableDepositShares + v.queuedRedeemShares,
             "escrow"
         );
 
@@ -551,12 +550,12 @@ contract SparkPrimeVaultForkTest is Test {
 
         assertEq(usdc.balanceOf(user),                s.usdc,                   "usdc");
         assertEq(vault.balanceOf(user),               s.shares,                 "shares");
-        assertEq(vault.claimableDepositAssets(user),  s.claimableDepositAssets, "claimableDepositAssets");
-        assertEq(vault.claimableDepositShares(user),  s.claimableDepositShares, "claimableDepositShares");
+        assertEq(vault.maxDeposit(user),              s.claimableDepositAssets, "claimableDepositAssets");
+        assertEq(vault.maxMint(user),                 s.claimableDepositShares, "claimableDepositShares");
         assertEq(vault.pendingDepositShares(user),    s.pendingDepositShares,   "pendingDepositShares");
         assertEq(vault.pendingRedeemShares(user),     s.pendingRedeemShares,    "pendingRedeemShares");
-        assertEq(vault.claimableRedeemShares(user),   s.claimableRedeemShares,  "claimableRedeemShares");
-        assertEq(vault.claimableRedeemAssets(user),   s.claimableRedeemAssets,  "claimableRedeemAssets");
+        assertEq(vault.maxRedeem(user),               s.claimableRedeemShares,  "claimableRedeemShares");
+        assertEq(vault.maxWithdraw(user),             s.claimableRedeemAssets,  "claimableRedeemAssets");
     }
 
     function _divup(uint256 x, uint256 y) internal pure returns (uint256) {
