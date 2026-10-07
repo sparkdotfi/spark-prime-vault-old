@@ -752,7 +752,7 @@ contract DepositQueueTest is Test {
     // 0 spPRIME. A residual room of 1 share happens naturally after a capacity-limited fill,
     // so every later processDepositQueue grinds the head entry by one spUSDC share for nothing.
     // The withdraw side guards this (`net == 0 && shares < r.amount`); the deposit side does not.
-    function test_BUG_zeroShareFillGrindsHead() public {
+    function test_zeroShareFillDoesNotGrindHead() public {
         vm.warp(block.timestamp + 365 days);
         _setCapacity(1000e6);
         _req(alice, 2000e6);  // instant up to capacity, rest queued

@@ -281,7 +281,9 @@ contract SparkPrimeVault is AccessControlEnumerableUpgradeable, UUPSUpgradeable 
 
             uint256 value  = spUsdc.convertToAssets(r.amount);
             uint256 assets = _min(value, budget);
-            if (assets == 0) break;
+
+            // A partial fill must mint at least one share, else wait for more room
+            if (assets * RAY / chi_ == 0 && assets < value) break;
 
             // Rounds up so the accepted spUSDC is always worth at least the credited assets
             uint256 shares = _divup(r.amount * assets, value);
@@ -469,7 +471,8 @@ contract SparkPrimeVault is AccessControlEnumerableUpgradeable, UUPSUpgradeable 
             ? _min(assets, availableCapacity() * chi_ / RAY)
             : 0;
 
-        if (instant != 0) _approveDeposit(controller, instant, chi_);
+        if (instant * RAY / chi_ == 0) instant = 0;  // Below one share: queue it all instead
+        else _approveDeposit(controller, instant, chi_);
 
         uint256 shares = assets > instant ? spUsdc.deposit(assets - instant, address(this)) : 0;
 
@@ -692,13 +695,12 @@ contract SparkPrimeVault is AccessControlEnumerableUpgradeable, UUPSUpgradeable 
 
         for (; i < withdrawQueue.length; ++i) {
             Request storage r = withdrawQueue[i];
+            (uint256 shares, uint256 fee) = (r.amount, r.fee);
 
-            // Largest share amount whose net assets fit in the budget, rounding against the user
-            uint256 shares = _min(r.amount, budget * WAD / (WAD - r.fee) * RAY / chi_);
-            if (shares == 0) break;
+            // Partial fill: the largest share amount whose net fits the budget, rounded down
+            if (_net(shares, fee, chi_) > budget) shares = budget * WAD / (WAD - fee) * RAY / chi_;
 
-            uint256 gross = shares * chi_ / RAY;
-            uint256 net   = gross - _divup(gross * r.fee, WAD);  // The fee stays in the vault
+            uint256 net = _net(shares, fee, chi_);
             if (net == 0 && shares < r.amount) break;  // Budget too small to pay anything
 
             // Burn the escrowed shares, their value is fixed in USDC from now on
@@ -725,6 +727,11 @@ contract SparkPrimeVault is AccessControlEnumerableUpgradeable, UUPSUpgradeable 
         if (balance < totalClaimableRedeemAssets) {
             _withdrawFromSavings(totalClaimableRedeemAssets - balance);
         }
+    }
+
+    function _net(uint256 shares, uint256 fee, uint256 chi_) internal pure returns (uint256) {
+        uint256 gross = shares * chi_ / RAY;
+        return gross - _divup(gross * fee, WAD);  // The fee stays in the vault
     }
 
     function _claimDeposit(uint256 assets, uint256 shares, address receiver, address controller)

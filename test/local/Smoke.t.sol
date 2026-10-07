@@ -353,36 +353,35 @@ contract Smoke is Test {
         assertEq(v.getImplementation() != address(0), true);
     }
 
-    // A 1 share-wei entry at the head nets 0 USDC; it must be burned and passed over, not jam
-    // the queue, while a budget-limited partial fill that nets 0 must not grind the head entry.
+    // A 1 share-wei entry nets 0 USDC, so it fits any budget: it is burned for 0 and passed over
+    // (never jams the head), while a budget-limited partial fill that nets 0 does not grind.
     function test_dustHeadDoesNotJam() public {
+        vm.prank(admin); v.setMinimums(100e6, 0);
         vm.prank(alice); v.requestDeposit(1000e6, alice, alice);
         vm.prank(alice); v.mint(1000e6, alice);
         vm.prank(bob);   v.requestDeposit(1000e6, bob, bob);
         vm.prank(bob);   v.mint(1000e6, bob);
-        vm.prank(admin); v.take(1900e6);  // 100e6 liquid, chi == RAY
+        vm.prank(admin); v.take(2000e6);                       // no liquidity, chi == RAY
 
-        uint256 fill = uint256(v.availableLiquidAssets()) * 1e18 / 0.995e18;  // net fits 100e6
-        vm.prank(alice); v.requestRedeem(fill + 1, alice, alice);
-        assertEq(v.maxRedeem(alice), fill);
-        assertEq(v.pendingRedeemRequest(0, alice), 1, "1 share-wei left at the head");
-        assertEq(v.availableLiquidAssets(), 1);
+        vm.prank(bob);   v.requestRedeem(100e6, bob, bob);     // queued
+        vm.prank(alice); v.requestRedeem(1, alice, alice);     // 1 share-wei behind bob, nets 0
+        vm.prank(alice); v.requestRedeem(500e6, alice, alice); // behind the dust
+        assertEq(v.pendingRedeemRequest(0, alice), 500e6 + 1);
 
-        vm.prank(bob); v.requestRedeem(500e6, bob, bob);     // queued behind the dust
-
-        // 1 wei of liquidity: dust entry burned for 0, bob's partial fill would net 0 -> no grind
+        // Exactly bob's net: bob filled, the dust passed over for 0, alice's 500e6 not ground
+        usdc.mint(address(v), 99.5e6);
         vm.prank(admin); v.processWithdrawQueue(type(uint256).max);
-        assertEq(v.pendingRedeemRequest(0, alice), 0);
-        assertEq(v.maxRedeem(alice), fill + 1);
-        assertEq(v.maxWithdraw(alice), 99999999);
-        assertEq(v.pendingRedeemRequest(0, bob), 500e6, "not ground");
-        assertEq(v.withdrawHead(), 1);
+        assertEq(v.maxRedeem(bob), 100e6);
+        assertEq(v.maxRedeem(alice), 1);
+        assertEq(v.maxWithdraw(alice), 0);
+        assertEq(v.pendingRedeemRequest(0, alice), 500e6, "not ground");
+        assertEq(v.withdrawHead(), 2);
         invariants();
 
         usdc.mint(address(v), 1000e6);
         vm.prank(admin); v.processWithdrawQueue(type(uint256).max);
-        assertEq(v.maxRedeem(bob), 500e6);
-        assertEq(v.withdrawHead(), 2);
+        assertEq(v.maxRedeem(alice), 500e6 + 1);
+        assertEq(v.withdrawHead(), 3);
         invariants();
     }
 }

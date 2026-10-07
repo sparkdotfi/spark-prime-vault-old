@@ -163,25 +163,21 @@ contract WithdrawQueueTest is Test {
         assertEq(v.withdrawHead(),                 0);
         assertEq(v.availableLiquidAssets(),        1);
 
-        // 1 wei left would pay 0 for a partial fill: no grind
-        for (uint256 i; i < 5; ++i) _process(type(uint256).max);
-        assertEq(v.pendingRedeemRequest(0, alice), 2);
-        assertEq(v.maxRedeem(alice),               199_999_998);
-
-        // 2 wei: the 2 share-wei settle for 1 wei net, the split cost alice 1 wei of fee rounding
-        usdc.mint(address(v), 1);
+        // The 2 share-wei net 1 wei as a whole, so the 1 wei left settles them; the split cost
+        // alice 1 wei of fee rounding
         _process(type(uint256).max);
         assertEq(v.pendingRedeemRequest(0, alice), 0);
         assertEq(v.maxRedeem(alice),               200e6);
         assertEq(v.maxWithdraw(alice),             199e6 - 1);
         assertEq(v.withdrawHead(),                 1);
+        assertEq(v.availableLiquidAssets(),        0);
         invariants();
     }
 
     // Spec: "instant part = largest share amount whose NET assets fit within availableLiquidAssets()".
     // With a non-round chi, liquidity equal to (or 1 wei above) the full net leaves a share-wei
     // queued at the head, so the request is not complete and the instant path is off for everyone.
-    function test_BUG_instantUndershootsWhenLiquidityCoversNet() public {
+    function test_instantFillsFullyWhenLiquidityCoversNet() public {
         _buy(alice, 1000e6);
         _buy(bob,   1000e6);
         vm.warp(block.timestamp + 1 days);
@@ -203,7 +199,7 @@ contract WithdrawQueueTest is Test {
     }
 
     // Same root cause on the rebalancer path: a budget equal to the head's full net leaves it queued
-    function test_processBudgetExactlyHeadNet_nonRoundChi_headStays() public {
+    function test_processBudgetExactlyHeadNet_nonRoundChi_fillsHead() public {
         _buy(alice, 1000e6);
         _buy(bob,   1000e6);
         _setIdle(0);
@@ -215,10 +211,10 @@ contract WithdrawQueueTest is Test {
         uint256 fullNet = _net(300e6, FEE);
         _process(fullNet);
 
-        // Current behaviour: alice 1 share-wei short, bob untouched
-        assertEq(v.pendingRedeemRequest(0, alice), 300e6 - _fill(fullNet, FEE));
-        assertGt(v.pendingRedeemRequest(0, alice), 0);
-        assertEq(v.withdrawHead(),                 0);
+        // A budget that exactly covers the head's net fills it fully; bob untouched
+        assertEq(v.pendingRedeemRequest(0, alice), 0);
+        assertEq(v.maxWithdraw(alice),             fullNet);
+        assertEq(v.withdrawHead(),                 1);
         assertEq(v.maxRedeem(bob),                 0);
 
         _process(type(uint256).max);
@@ -381,21 +377,23 @@ contract WithdrawQueueTest is Test {
         _buy(bob,   1000e6);
         _setIdle(0);
 
+        // Dust nets 0 after the fee, so it fits a zero budget: burned for 0 at request time
         _redeem(alice, 1);
         _redeem(bob,   1);
         _redeem(alice, 1);
+        assertEq(v.withdrawHead(), 3, "dust passed over");
         _redeem(bob,   500e6);
-        assertEq(v.totalQueuedRedeemShares(), 500e6 + 3);
+        assertEq(v.totalQueuedRedeemShares(), 500e6);
 
         _process(type(uint256).max);  // no liquidity
-        assertEq(v.withdrawHead(), 0);
+        assertEq(v.withdrawHead(), 3);
 
         usdc.mint(address(v), 1);
-        _process(0);                   // zero budget: dust stays
-        assertEq(v.withdrawHead(), 0);
+        _process(0);                   // zero budget
+        assertEq(v.withdrawHead(), 3);
 
         for (uint256 i; i < 10; ++i) _process(type(uint256).max);
-        assertEq(v.withdrawHead(), 3, "dust passed over");
+        assertEq(v.withdrawHead(), 3);
         assertEq(v.maxRedeem(alice),   2);
         assertEq(v.maxWithdraw(alice), 0);
         assertEq(v.maxRedeem(bob),     1);
