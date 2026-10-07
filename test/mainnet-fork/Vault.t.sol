@@ -766,3 +766,272 @@ contract DepositTests is ForkTestBase {
     }
 
 }
+
+contract MintTests is ForkTestBase {
+
+    // Success tests
+
+    function test_mint_fullClaim() external {
+        _requestDeposit(user, 100e6);  // Instant claim, 100e6 shares at index 1
+
+        assertEq(usdc.balanceOf(user),                                  0);
+        assertEq(usdc.balanceOf(address(spPrimeVaultUsdc)),             100e6);
+        assertEq(spPrimeVaultUsdc.balanceOf(user),                      0);
+        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), 100e6);
+        assertEq(spUSDCVault.balanceOf(user),                           0);
+        assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),      0);
+
+        _assertVaultState(VaultState({
+            controller              : user,
+            totalSupply             : 100e6,
+            totalAssets             : 100e6,
+            availableCapacity       : VAULT_CAPACITY - 100e6,
+            availableLiquidAssets   : int256(100e6),
+            claimableDepositRequest : 100e6,
+            maxDeposit              : 100e6,
+            maxMint                 : 100e6,
+            claimableDepositTotal   : 100e6,
+            pendingDepositRequest   : 0,
+            totalPendingDeposits    : 0,
+            depositQueueLength      : 0,
+            requestNonce            : 1,
+            index                   : RAY,
+            lastAccrual             : block.timestamp
+        }));
+
+        vm.expectEmit(address(spPrimeVaultUsdc));
+        emit IQueue.ClaimableDeposit(user, 0);
+        vm.expectEmit(address(spPrimeVaultUsdc));
+        emit IERC4626Like.Deposit(user, user, 100e6, 100e6);
+
+        vm.prank(user);
+        uint256 assets = spPrimeVaultUsdc.mint(100e6, user, user);
+
+        assertEq(assets, 100e6);
+
+        // Minting only moves escrowed shares from the vault to the receiver
+        assertEq(usdc.balanceOf(user),                                  0);
+        assertEq(usdc.balanceOf(address(spPrimeVaultUsdc)),             100e6);
+        assertEq(spPrimeVaultUsdc.balanceOf(user),                      100e6);
+        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), 0);
+        assertEq(spUSDCVault.balanceOf(user),                           0);
+        assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),      0);
+
+        _assertVaultState(VaultState({
+            controller              : user,
+            totalSupply             : 100e6,
+            totalAssets             : 100e6,
+            availableCapacity       : VAULT_CAPACITY - 100e6,
+            availableLiquidAssets   : int256(100e6),
+            claimableDepositRequest : 0,
+            maxDeposit              : 0,
+            maxMint                 : 0,
+            claimableDepositTotal   : 0,
+            pendingDepositRequest   : 0,
+            totalPendingDeposits    : 0,
+            depositQueueLength      : 0,
+            requestNonce            : 1,
+            index                   : RAY,
+            lastAccrual             : block.timestamp
+        }));
+    }
+
+    function test_mint_partialClaim() external {
+        _requestDeposit(user, 100e6);  // Instant claim, 100e6 shares at index 1
+
+        assertEq(usdc.balanceOf(user),                                  0);
+        assertEq(usdc.balanceOf(address(spPrimeVaultUsdc)),             100e6);
+        assertEq(spPrimeVaultUsdc.balanceOf(user),                      0);
+        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), 100e6);
+        assertEq(spUSDCVault.balanceOf(user),                           0);
+        assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),      0);
+
+        _assertVaultState(VaultState({
+            controller              : user,
+            totalSupply             : 100e6,
+            totalAssets             : 100e6,
+            availableCapacity       : VAULT_CAPACITY - 100e6,
+            availableLiquidAssets   : int256(100e6),
+            claimableDepositRequest : 100e6,
+            maxDeposit              : 100e6,
+            maxMint                 : 100e6,
+            claimableDepositTotal   : 100e6,
+            pendingDepositRequest   : 0,
+            totalPendingDeposits    : 0,
+            depositQueueLength      : 0,
+            requestNonce            : 1,
+            index                   : RAY,
+            lastAccrual             : block.timestamp
+        }));
+
+        vm.expectEmit(address(spPrimeVaultUsdc));
+        emit IQueue.ClaimableDeposit(user, 60e6);
+        vm.expectEmit(address(spPrimeVaultUsdc));
+        emit IERC4626Like.Deposit(user, user, 40e6, 40e6);
+
+        vm.prank(user);
+        uint256 assets = spPrimeVaultUsdc.mint(40e6, user, user);
+
+        assertEq(assets, 40e6);
+
+        assertEq(usdc.balanceOf(user),                                  0);
+        assertEq(usdc.balanceOf(address(spPrimeVaultUsdc)),             100e6);
+        assertEq(spPrimeVaultUsdc.balanceOf(user),                      40e6);
+        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), 60e6);
+        assertEq(spUSDCVault.balanceOf(user),                           0);
+        assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),      0);
+
+        _assertVaultState(VaultState({
+            controller              : user,
+            totalSupply             : 100e6,
+            totalAssets             : 100e6,
+            availableCapacity       : VAULT_CAPACITY - 100e6,
+            availableLiquidAssets   : int256(100e6),
+            claimableDepositRequest : 60e6,
+            maxDeposit              : 60e6,
+            maxMint                 : 60e6,
+            claimableDepositTotal   : 60e6,
+            pendingDepositRequest   : 0,
+            totalPendingDeposits    : 0,
+            depositQueueLength      : 0,
+            requestNonce            : 1,
+            index                   : RAY,
+            lastAccrual             : block.timestamp
+        }));
+    }
+
+    function test_mint_receiverOnly() external {
+        _requestDeposit(user, 100e6);  // Instant claim, 100e6 shares at index 1
+
+        assertEq(usdc.balanceOf(user),                                  0);
+        assertEq(usdc.balanceOf(address(spPrimeVaultUsdc)),             100e6);
+        assertEq(spPrimeVaultUsdc.balanceOf(user),                      0);
+        assertEq(spPrimeVaultUsdc.balanceOf(user2),                     0);
+        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), 100e6);
+        assertEq(spUSDCVault.balanceOf(user),                           0);
+        assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),      0);
+
+        _assertVaultState(VaultState({
+            controller              : user,
+            totalSupply             : 100e6,
+            totalAssets             : 100e6,
+            availableCapacity       : VAULT_CAPACITY - 100e6,
+            availableLiquidAssets   : int256(100e6),
+            claimableDepositRequest : 100e6,
+            maxDeposit              : 100e6,
+            maxMint                 : 100e6,
+            claimableDepositTotal   : 100e6,
+            pendingDepositRequest   : 0,
+            totalPendingDeposits    : 0,
+            depositQueueLength      : 0,
+            requestNonce            : 1,
+            index                   : RAY,
+            lastAccrual             : block.timestamp
+        }));
+
+        vm.expectEmit(address(spPrimeVaultUsdc));
+        emit IQueue.ClaimableDeposit(user, 60e6);
+        vm.expectEmit(address(spPrimeVaultUsdc));
+        emit IERC4626Like.Deposit(user, user2, 40e6, 40e6);
+
+        vm.prank(user);
+        uint256 assets = spPrimeVaultUsdc.mint(40e6, user2);
+
+        assertEq(assets, 40e6);
+
+        assertEq(usdc.balanceOf(user),                                  0);
+        assertEq(usdc.balanceOf(address(spPrimeVaultUsdc)),             100e6);
+        assertEq(spPrimeVaultUsdc.balanceOf(user),                      0);
+        assertEq(spPrimeVaultUsdc.balanceOf(user2),                     40e6);
+        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), 60e6);
+        assertEq(spUSDCVault.balanceOf(user),                           0);
+        assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),      0);
+
+        _assertVaultState(VaultState({
+            controller              : user,
+            totalSupply             : 100e6,
+            totalAssets             : 100e6,
+            availableCapacity       : VAULT_CAPACITY - 100e6,
+            availableLiquidAssets   : int256(100e6),
+            claimableDepositRequest : 60e6,
+            maxDeposit              : 60e6,
+            maxMint                 : 60e6,
+            claimableDepositTotal   : 60e6,
+            pendingDepositRequest   : 0,
+            totalPendingDeposits    : 0,
+            depositQueueLength      : 0,
+            requestNonce            : 1,
+            index                   : RAY,
+            lastAccrual             : block.timestamp
+        }));
+    }
+
+    function test_mint_withReferralCode() external {
+        _requestDeposit(user, 100e6);  // Instant claim, 100e6 shares at index 1
+
+        assertEq(usdc.balanceOf(user),                                  0);
+        assertEq(usdc.balanceOf(address(spPrimeVaultUsdc)),             100e6);
+        assertEq(spPrimeVaultUsdc.balanceOf(user),                      0);
+        assertEq(spPrimeVaultUsdc.balanceOf(user2),                     0);
+        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), 100e6);
+        assertEq(spUSDCVault.balanceOf(user),                           0);
+        assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),      0);
+
+        _assertVaultState(VaultState({
+            controller              : user,
+            totalSupply             : 100e6,
+            totalAssets             : 100e6,
+            availableCapacity       : VAULT_CAPACITY - 100e6,
+            availableLiquidAssets   : int256(100e6),
+            claimableDepositRequest : 100e6,
+            maxDeposit              : 100e6,
+            maxMint                 : 100e6,
+            claimableDepositTotal   : 100e6,
+            pendingDepositRequest   : 0,
+            totalPendingDeposits    : 0,
+            depositQueueLength      : 0,
+            requestNonce            : 1,
+            index                   : RAY,
+            lastAccrual             : block.timestamp
+        }));
+
+        vm.expectEmit(address(spPrimeVaultUsdc));
+        emit ISparkPrimeVault.ReferralCode(user2, 123);
+        vm.expectEmit(address(spPrimeVaultUsdc));
+        emit IQueue.ClaimableDeposit(user, 60e6);
+        vm.expectEmit(address(spPrimeVaultUsdc));
+        emit IERC4626Like.Deposit(user, user2, 40e6, 40e6);
+
+        vm.prank(user);
+        uint256 assets = spPrimeVaultUsdc.mint(40e6, user2, user, 123);
+
+        assertEq(assets, 40e6);
+
+        assertEq(usdc.balanceOf(user),                                  0);
+        assertEq(usdc.balanceOf(address(spPrimeVaultUsdc)),             100e6);
+        assertEq(spPrimeVaultUsdc.balanceOf(user),                      0);
+        assertEq(spPrimeVaultUsdc.balanceOf(user2),                     40e6);
+        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), 60e6);
+        assertEq(spUSDCVault.balanceOf(user),                           0);
+        assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),      0);
+
+        _assertVaultState(VaultState({
+            controller              : user,
+            totalSupply             : 100e6,
+            totalAssets             : 100e6,
+            availableCapacity       : VAULT_CAPACITY - 100e6,
+            availableLiquidAssets   : int256(100e6),
+            claimableDepositRequest : 60e6,
+            maxDeposit              : 60e6,
+            maxMint                 : 60e6,
+            claimableDepositTotal   : 60e6,
+            pendingDepositRequest   : 0,
+            totalPendingDeposits    : 0,
+            depositQueueLength      : 0,
+            requestNonce            : 1,
+            index                   : RAY,
+            lastAccrual             : block.timestamp
+        }));
+    }
+
+}
