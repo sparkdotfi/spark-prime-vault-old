@@ -10,3 +10,6 @@
 [submodule "lib/spark-address-registry"]
 	path = lib/spark-address-registry
 	url = https://github.com/sparkdotfi/spark-address-registry
+[submodule "lib/spark-vaults-v2"]
+	path = lib/spark-vaults-v2
+	url = https://github.com/sparkdotfi/spark-vaults-v2
