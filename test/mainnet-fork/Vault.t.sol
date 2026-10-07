@@ -24,7 +24,7 @@ contract RequestDepositTests is ForkTestBase {
         assertEq(spUSDCVault.balanceOf(user),                           0);
         assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),      0);
 
-        _assertVaultState(VaultState({
+        _assertDepositState(DepositState({
             controller              : user,
             totalSupply             : 0,
             totalAssets             : 0,
@@ -61,7 +61,7 @@ contract RequestDepositTests is ForkTestBase {
         assertEq(spUSDCVault.balanceOf(user),                           0);
         assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),      0);
 
-        _assertVaultState(VaultState({
+        _assertDepositState(DepositState({
             controller              : user,
             totalSupply             : 100e6,
             totalAssets             : 100e6,
@@ -91,7 +91,7 @@ contract RequestDepositTests is ForkTestBase {
         assertEq(spUSDCVault.balanceOf(user),                           0);
         assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),      0);
 
-        _assertVaultState(VaultState({
+        _assertDepositState(DepositState({
             controller              : user,
             totalSupply             : 0,
             totalAssets             : 0,
@@ -128,7 +128,7 @@ contract RequestDepositTests is ForkTestBase {
         assertEq(spUSDCVault.balanceOf(user),                           0);
         assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),      0);
 
-        _assertVaultState(VaultState({
+        _assertDepositState(DepositState({
             controller              : user,
             totalSupply             : VAULT_CAPACITY,
             totalAssets             : VAULT_CAPACITY,
@@ -162,7 +162,7 @@ contract RequestDepositTests is ForkTestBase {
         assertEq(spUSDCVault.balanceOf(user),                                     0);
         assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),                0);
 
-        _assertVaultState(VaultState({
+        _assertDepositState(DepositState({
             controller              : user,
             totalSupply             : 0,
             totalAssets             : 0,
@@ -206,7 +206,7 @@ contract RequestDepositTests is ForkTestBase {
         assertEq(spUSDCVault.balanceOf(user),                                     0);
         assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),                queuedShares);
 
-        _assertVaultState(VaultState({
+        _assertDepositState(DepositState({
             controller              : user,
             totalSupply             : VAULT_CAPACITY,
             totalAssets             : VAULT_CAPACITY,
@@ -245,7 +245,7 @@ contract RequestDepositTests is ForkTestBase {
         assertEq(spUSDCVault.balanceOf(user),                                     0);
         assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),                0);
 
-        _assertVaultState(VaultState({
+        _assertDepositState(DepositState({
             controller              : user,
             totalSupply             : VAULT_CAPACITY,
             totalAssets             : VAULT_CAPACITY,
@@ -287,7 +287,7 @@ contract RequestDepositTests is ForkTestBase {
         assertEq(spUSDCVault.balanceOf(user),                                     0);
         assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),                queuedShares);
 
-        _assertVaultState(VaultState({
+        _assertDepositState(DepositState({
             controller              : user,
             totalSupply             : VAULT_CAPACITY,
             totalAssets             : VAULT_CAPACITY,
@@ -332,7 +332,7 @@ contract RequestDepositTests is ForkTestBase {
         assertEq(spUSDCVault.balanceOf(user),                                     0);
         assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),                totalQueuedShares);
 
-        _assertVaultState(VaultState({
+        _assertDepositState(DepositState({
             controller              : user,
             totalSupply             : VAULT_CAPACITY,
             totalAssets             : VAULT_CAPACITY,
@@ -377,7 +377,7 @@ contract RequestDepositTests is ForkTestBase {
         assertEq(spUSDCVault.balanceOf(user),                                     0);
         assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),                totalQueuedShares + queuedShares);
 
-        _assertVaultState(VaultState({
+        _assertDepositState(DepositState({
             controller              : user,
             totalSupply             : VAULT_CAPACITY,
             totalAssets             : VAULT_CAPACITY,
@@ -420,7 +420,7 @@ contract RequestDepositTests is ForkTestBase {
         assertEq(spUSDCVault.balanceOf(user),                           0);
         assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),      0);
 
-        _assertVaultState(VaultState({
+        _assertDepositState(DepositState({
             controller              : user,
             totalSupply             : VAULT_CAPACITY,
             totalAssets             : VAULT_CAPACITY,
@@ -460,7 +460,7 @@ contract RequestDepositTests is ForkTestBase {
         assertEq(spUSDCVault.balanceOf(user),                           0);
         assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),      0);
 
-        _assertVaultState(VaultState({
+        _assertDepositState(DepositState({
             controller              : user,
             totalSupply             : VAULT_CAPACITY + 100e6,
             totalAssets             : VAULT_CAPACITY + 100e6,
@@ -500,7 +500,7 @@ contract RequestDepositTests is ForkTestBase {
         assertEq(spUSDCVault.balanceOf(user),                           0);
         assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),      0);
 
-        _assertVaultState(VaultState({
+        _assertDepositState(DepositState({
             controller              : user,
             totalSupply             : 0,
             totalAssets             : 0,
@@ -542,7 +542,7 @@ contract RequestDepositTests is ForkTestBase {
         assertEq(spUSDCVault.balanceOf(user),                           0);
         assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),      0);
 
-        _assertVaultState(VaultState({
+        _assertDepositState(DepositState({
             controller              : user,
             totalSupply             : expectedShares,
             totalAssets             : expectedShares * expectedIndex / RAY,
@@ -577,7 +577,7 @@ contract RequestDepositTests is ForkTestBase {
         assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), VAULT_CAPACITY);
         assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),      queuedShares);
 
-        _assertVaultState(VaultState({
+        _assertDepositState(DepositState({
             controller              : user,
             totalSupply             : VAULT_CAPACITY,
             totalAssets             : VAULT_CAPACITY,
@@ -607,7 +607,7 @@ contract RequestDepositTests is ForkTestBase {
         assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), VAULT_CAPACITY);
         assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),      queuedShares);
 
-        _assertVaultState(VaultState({
+        _assertDepositState(DepositState({
             controller              : user,
             totalSupply             : VAULT_CAPACITY,
             totalAssets             : VAULT_CAPACITY * expectedIndex / RAY,
@@ -646,7 +646,7 @@ contract DepositTests is ForkTestBase {
         assertEq(spUSDCVault.balanceOf(user),                           0);
         assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),      0);
 
-        _assertVaultState(VaultState({
+        _assertDepositState(DepositState({
             controller              : user,
             totalSupply             : 100e6,
             totalAssets             : 100e6,
@@ -682,7 +682,7 @@ contract DepositTests is ForkTestBase {
         assertEq(spUSDCVault.balanceOf(user),                           0);
         assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),      0);
 
-        _assertVaultState(VaultState({
+        _assertDepositState(DepositState({
             controller              : user,
             totalSupply             : 100e6,
             totalAssets             : 100e6,
@@ -711,7 +711,7 @@ contract DepositTests is ForkTestBase {
         assertEq(spUSDCVault.balanceOf(user),                           0);
         assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),      0);
 
-        _assertVaultState(VaultState({
+        _assertDepositState(DepositState({
             controller              : user,
             totalSupply             : 100e6,
             totalAssets             : 100e6,
@@ -746,7 +746,7 @@ contract DepositTests is ForkTestBase {
         assertEq(spUSDCVault.balanceOf(user),                           0);
         assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),      0);
 
-        _assertVaultState(VaultState({
+        _assertDepositState(DepositState({
             controller              : user,
             totalSupply             : 100e6,
             totalAssets             : 100e6,
@@ -785,7 +785,7 @@ contract DepositTests is ForkTestBase {
         assertEq(spPrimeVaultUsdc.balanceOf(user),                      0);
         assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), sharesOwed);
 
-        _assertVaultState(VaultState({
+        _assertDepositState(DepositState({
             controller              : user,
             totalSupply             : sharesOwed,
             totalAssets             : sharesOwed * index / RAY,
@@ -811,7 +811,7 @@ contract DepositTests is ForkTestBase {
         assertEq(spPrimeVaultUsdc.balanceOf(user),                      shares1);
         assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), sharesOwed - shares1);
 
-        _assertVaultState(VaultState({
+        _assertDepositState(DepositState({
             controller              : user,
             totalSupply             : sharesOwed,
             totalAssets             : sharesOwed * index / RAY,
@@ -837,7 +837,7 @@ contract DepositTests is ForkTestBase {
         assertEq(spPrimeVaultUsdc.balanceOf(user),                      shares1 + shares2);
         assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), shares3);
 
-        _assertVaultState(VaultState({
+        _assertDepositState(DepositState({
             controller              : user,
             totalSupply             : sharesOwed,
             totalAssets             : sharesOwed * index / RAY,
@@ -864,7 +864,7 @@ contract DepositTests is ForkTestBase {
         assertEq(spPrimeVaultUsdc.balanceOf(user),                      sharesOwed);
         assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), 0);
 
-        _assertVaultState(VaultState({
+        _assertDepositState(DepositState({
             controller              : user,
             totalSupply             : sharesOwed,
             totalAssets             : sharesOwed * index / RAY,
@@ -896,7 +896,7 @@ contract DepositTests is ForkTestBase {
         assertEq(spPrimeVaultUsdc.balanceOf(operator),                  0);
         assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), 100e6);
 
-        _assertVaultState(VaultState({
+        _assertDepositState(DepositState({
             controller              : user,
             totalSupply             : 100e6,
             totalAssets             : 100e6,
@@ -930,7 +930,7 @@ contract DepositTests is ForkTestBase {
         assertEq(spPrimeVaultUsdc.balanceOf(operator),                  0);
         assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), 60e6);
 
-        _assertVaultState(VaultState({
+        _assertDepositState(DepositState({
             controller              : user,
             totalSupply             : 100e6,
             totalAssets             : 100e6,
@@ -964,7 +964,7 @@ contract DepositTests is ForkTestBase {
         assertEq(spPrimeVaultUsdc.balanceOf(operator),                  0);
         assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), 0);
 
-        _assertVaultState(VaultState({
+        _assertDepositState(DepositState({
             controller              : user,
             totalSupply             : 100e6,
             totalAssets             : 100e6,
@@ -989,7 +989,7 @@ contract DepositTests is ForkTestBase {
         assertEq(spPrimeVaultUsdc.balanceOf(user),                      0);
         assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), 100e6);
 
-        _assertVaultState(VaultState({
+        _assertDepositState(DepositState({
             controller              : user,
             totalSupply             : 100e6,
             totalAssets             : 100e6,
@@ -1021,7 +1021,7 @@ contract DepositTests is ForkTestBase {
         assertEq(spPrimeVaultUsdc.balanceOf(user),                      100e6);
         assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), 0);
 
-        _assertVaultState(VaultState({
+        _assertDepositState(DepositState({
             controller              : user,
             totalSupply             : 100e6,
             totalAssets             : 100e6,
@@ -1046,7 +1046,7 @@ contract DepositTests is ForkTestBase {
         assertEq(spPrimeVaultUsdc.balanceOf(user),                      0);
         assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), 100e6);
 
-        _assertVaultState(VaultState({
+        _assertDepositState(DepositState({
             controller              : user,
             totalSupply             : 100e6,
             totalAssets             : 100e6,
@@ -1079,7 +1079,7 @@ contract DepositTests is ForkTestBase {
         assertEq(spPrimeVaultUsdc.balanceOf(user),                      100e6);
         assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), 0);
 
-        _assertVaultState(VaultState({
+        _assertDepositState(DepositState({
             controller              : user,
             totalSupply             : 100e6,
             totalAssets             : 100e6,
@@ -1123,7 +1123,7 @@ contract DepositTests is ForkTestBase {
         assertEq(spPrimeVaultUsdc.balanceOf(user),                      0);
         assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), 100e6);
 
-        _assertVaultState(VaultState({
+        _assertDepositState(DepositState({
             controller              : user,
             totalSupply             : 100e6,
             totalAssets             : 100e6 * expectedIndex / RAY,
@@ -1158,7 +1158,7 @@ contract DepositTests is ForkTestBase {
         assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), 0);
         assertEq(spPrimeVaultUsdc.convertToAssets(100e6),               109.999999e6);
 
-        _assertVaultState(VaultState({
+        _assertDepositState(DepositState({
             controller              : user,
             totalSupply             : 100e6,
             totalAssets             : 100e6 * expectedIndex / RAY,

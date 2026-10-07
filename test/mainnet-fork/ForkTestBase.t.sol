@@ -43,7 +43,7 @@ interface ISparkVaultLike {
 
 abstract contract ForkTestBase is Test {
 
-    struct VaultState {
+    struct DepositState {
         address controller;
         uint256 totalSupply;
         uint256 totalAssets;
@@ -128,7 +128,7 @@ abstract contract ForkTestBase is Test {
         vm.stopPrank();
     }
 
-    function _assertVaultState(VaultState memory state) internal view {
+    function _assertDepositState(DepositState memory state) internal view {
         assertEq(spPrimeVaultUsdc.totalSupply(),                                state.totalSupply);
         assertEq(spPrimeVaultUsdc.totalAssets(),                                state.totalAssets);
         assertEq(spPrimeVaultUsdc.availableCapacity(),                          state.availableCapacity);
