@@ -16,20 +16,17 @@ contract RequestDepositTests is ForkTestBase {
     function test_requestDeposit_instantClaim() external {
         deal(address(usdc), user, 100e6);
 
-        assertEq(usdc.balanceOf(user),                                  100e6);
-        assertEq(usdc.balanceOf(address(spPrimeVaultUsdc)),             0);
-        assertEq(usdc.allowance(user, address(spPrimeVaultUsdc)),       0);
-        assertEq(spPrimeVaultUsdc.balanceOf(user),                      0);
-        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), 0);
-        assertEq(spUSDCVault.balanceOf(user),                           0);
-        assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),      0);
+        AssertVaultStateParams memory vaultState = AssertVaultStateParams({
+            totalSupply           : 0,
+            totalAssets           : 0,
+            availableCapacity     : VAULT_CAPACITY,
+            availableLiquidAssets : 0,
+            index                 : RAY,
+            lastAccrual           : block.timestamp
+        });
 
-        _assertDepositState(DepositState({
+        AssertDepositStateParams memory depositState = AssertDepositStateParams({
             controller              : user,
-            totalSupply             : 0,
-            totalAssets             : 0,
-            availableCapacity       : VAULT_CAPACITY,
-            availableLiquidAssets   : 0,
             claimableDepositRequest : 0,
             maxDeposit              : 0,
             maxMint                 : 0,
@@ -37,10 +34,29 @@ contract RequestDepositTests is ForkTestBase {
             pendingDepositRequest   : 0,
             totalPendingDeposits    : 0,
             depositQueueLength      : 0,
-            requestNonce            : 0,
-            index                   : RAY,
-            lastAccrual             : block.timestamp
-        }));
+            requestNonce            : 0
+        });
+
+        AssertBalancesParams memory userBalances = AssertBalancesParams({
+            account       : user,
+            asset         : 100e6,
+            shares        : 0,
+            savingsShares : 0
+        });
+
+        AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
+            account       : address(spPrimeVaultUsdc),
+            asset         : 0,
+            shares        : 0,
+            savingsShares : 0
+        });
+
+        _assertVaultState(vaultState);
+        _assertDepositState(depositState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
+
+        assertEq(usdc.allowance(user, address(spPrimeVaultUsdc)), 0);
 
         vm.startPrank(user);
         usdc.approve(address(spPrimeVaultUsdc), 100e6);
@@ -53,50 +69,44 @@ contract RequestDepositTests is ForkTestBase {
         spPrimeVaultUsdc.requestDeposit(100e6, user, user);
         vm.stopPrank();
 
-        assertEq(usdc.balanceOf(user),                                  0);
-        assertEq(usdc.balanceOf(address(spPrimeVaultUsdc)),             100e6);
-        assertEq(usdc.allowance(user, address(spPrimeVaultUsdc)),       0);
-        assertEq(spPrimeVaultUsdc.balanceOf(user),                      0);
-        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), 100e6);
-        assertEq(spUSDCVault.balanceOf(user),                           0);
-        assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),      0);
+        assertEq(usdc.allowance(user, address(spPrimeVaultUsdc)), 0);
 
-        _assertDepositState(DepositState({
-            controller              : user,
-            totalSupply             : 100e6,
-            totalAssets             : 100e6,
-            availableCapacity       : VAULT_CAPACITY - 100e6,
-            availableLiquidAssets   : int256(100e6),
-            claimableDepositRequest : 100e6,
-            maxDeposit              : 100e6,
-            maxMint                 : 100e6,
-            claimableDepositTotal   : 100e6,
-            pendingDepositRequest   : 0,
-            totalPendingDeposits    : 0,
-            depositQueueLength      : 0,
-            requestNonce            : 1,
-            index                   : RAY,
-            lastAccrual             : block.timestamp
-        }));
+        vaultState.totalSupply           = 100e6;
+        vaultState.totalAssets           = 100e6;
+        vaultState.availableCapacity     = VAULT_CAPACITY - 100e6;
+        vaultState.availableLiquidAssets = int256(100e6);
+
+        depositState.claimableDepositRequest = 100e6;
+        depositState.maxDeposit              = 100e6;
+        depositState.maxMint                 = 100e6;
+        depositState.claimableDepositTotal   = 100e6;
+        depositState.requestNonce            = 1;
+
+        userBalances.asset = 0;
+
+        spPrimeBalances.asset  = 100e6;
+        spPrimeBalances.shares = 100e6;
+
+        _assertVaultState(vaultState);
+        _assertDepositState(depositState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
     }
 
     function test_requestDeposit_instantClaim_exactCapacity() external {
         deal(address(usdc), user, VAULT_CAPACITY);
 
-        assertEq(usdc.balanceOf(user),                                  VAULT_CAPACITY);
-        assertEq(usdc.balanceOf(address(spPrimeVaultUsdc)),             0);
-        assertEq(usdc.allowance(user, address(spPrimeVaultUsdc)),       0);
-        assertEq(spPrimeVaultUsdc.balanceOf(user),                      0);
-        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), 0);
-        assertEq(spUSDCVault.balanceOf(user),                           0);
-        assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),      0);
+        AssertVaultStateParams memory vaultState = AssertVaultStateParams({
+            totalSupply           : 0,
+            totalAssets           : 0,
+            availableCapacity     : VAULT_CAPACITY,
+            availableLiquidAssets : 0,
+            index                 : RAY,
+            lastAccrual           : block.timestamp
+        });
 
-        _assertDepositState(DepositState({
+        AssertDepositStateParams memory depositState = AssertDepositStateParams({
             controller              : user,
-            totalSupply             : 0,
-            totalAssets             : 0,
-            availableCapacity       : VAULT_CAPACITY,
-            availableLiquidAssets   : 0,
             claimableDepositRequest : 0,
             maxDeposit              : 0,
             maxMint                 : 0,
@@ -104,10 +114,29 @@ contract RequestDepositTests is ForkTestBase {
             pendingDepositRequest   : 0,
             totalPendingDeposits    : 0,
             depositQueueLength      : 0,
-            requestNonce            : 0,
-            index                   : RAY,
-            lastAccrual             : block.timestamp
-        }));
+            requestNonce            : 0
+        });
+
+        AssertBalancesParams memory userBalances = AssertBalancesParams({
+            account       : user,
+            asset         : VAULT_CAPACITY,
+            shares        : 0,
+            savingsShares : 0
+        });
+
+        AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
+            account       : address(spPrimeVaultUsdc),
+            asset         : 0,
+            shares        : 0,
+            savingsShares : 0
+        });
+
+        _assertVaultState(vaultState);
+        _assertDepositState(depositState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
+
+        assertEq(usdc.allowance(user, address(spPrimeVaultUsdc)), 0);
 
         vm.startPrank(user);
         usdc.approve(address(spPrimeVaultUsdc), VAULT_CAPACITY);
@@ -120,31 +149,28 @@ contract RequestDepositTests is ForkTestBase {
         spPrimeVaultUsdc.requestDeposit(VAULT_CAPACITY, user, user);
         vm.stopPrank();
 
-        assertEq(usdc.balanceOf(user),                                  0);
-        assertEq(usdc.balanceOf(address(spPrimeVaultUsdc)),             VAULT_CAPACITY);
-        assertEq(usdc.allowance(user, address(spPrimeVaultUsdc)),       0);
-        assertEq(spPrimeVaultUsdc.balanceOf(user),                      0);
-        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), VAULT_CAPACITY);
-        assertEq(spUSDCVault.balanceOf(user),                           0);
-        assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),      0);
+        assertEq(usdc.allowance(user, address(spPrimeVaultUsdc)), 0);
 
-        _assertDepositState(DepositState({
-            controller              : user,
-            totalSupply             : VAULT_CAPACITY,
-            totalAssets             : VAULT_CAPACITY,
-            availableCapacity       : 0,
-            availableLiquidAssets   : int256(VAULT_CAPACITY),
-            claimableDepositRequest : VAULT_CAPACITY,
-            maxDeposit              : VAULT_CAPACITY,
-            maxMint                 : VAULT_CAPACITY,
-            claimableDepositTotal   : VAULT_CAPACITY,
-            pendingDepositRequest   : 0,
-            totalPendingDeposits    : 0,
-            depositQueueLength      : 0,
-            requestNonce            : 1,
-            index                   : RAY,
-            lastAccrual             : block.timestamp
-        }));
+        vaultState.totalSupply           = VAULT_CAPACITY;
+        vaultState.totalAssets           = VAULT_CAPACITY;
+        vaultState.availableCapacity     = 0;
+        vaultState.availableLiquidAssets = int256(VAULT_CAPACITY);
+
+        depositState.claimableDepositRequest = VAULT_CAPACITY;
+        depositState.maxDeposit              = VAULT_CAPACITY;
+        depositState.maxMint                 = VAULT_CAPACITY;
+        depositState.claimableDepositTotal   = VAULT_CAPACITY;
+        depositState.requestNonce            = 1;
+
+        userBalances.asset = 0;
+
+        spPrimeBalances.asset  = VAULT_CAPACITY;
+        spPrimeBalances.shares = VAULT_CAPACITY;
+
+        _assertVaultState(vaultState);
+        _assertDepositState(depositState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
     }
 
     function test_requestDeposit_partialInstantClaim() external {
@@ -153,21 +179,17 @@ contract RequestDepositTests is ForkTestBase {
 
         deal(address(usdc), user, amount);
 
-        assertEq(usdc.balanceOf(user),                                            amount);
-        assertEq(usdc.balanceOf(address(spPrimeVaultUsdc)),                       0);
-        assertEq(usdc.allowance(user, address(spPrimeVaultUsdc)),                 0);
-        assertEq(usdc.allowance(address(spPrimeVaultUsdc), address(spUSDCVault)), 0);
-        assertEq(spPrimeVaultUsdc.balanceOf(user),                                0);
-        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)),           0);
-        assertEq(spUSDCVault.balanceOf(user),                                     0);
-        assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),                0);
+        AssertVaultStateParams memory vaultState = AssertVaultStateParams({
+            totalSupply           : 0,
+            totalAssets           : 0,
+            availableCapacity     : VAULT_CAPACITY,
+            availableLiquidAssets : 0,
+            index                 : RAY,
+            lastAccrual           : block.timestamp
+        });
 
-        _assertDepositState(DepositState({
+        AssertDepositStateParams memory depositState = AssertDepositStateParams({
             controller              : user,
-            totalSupply             : 0,
-            totalAssets             : 0,
-            availableCapacity       : VAULT_CAPACITY,
-            availableLiquidAssets   : 0,
             claimableDepositRequest : 0,
             maxDeposit              : 0,
             maxMint                 : 0,
@@ -175,10 +197,30 @@ contract RequestDepositTests is ForkTestBase {
             pendingDepositRequest   : 0,
             totalPendingDeposits    : 0,
             depositQueueLength      : 0,
-            requestNonce            : 0,
-            index                   : RAY,
-            lastAccrual             : block.timestamp
-        }));
+            requestNonce            : 0
+        });
+
+        AssertBalancesParams memory userBalances = AssertBalancesParams({
+            account       : user,
+            asset         : amount,
+            shares        : 0,
+            savingsShares : 0
+        });
+
+        AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
+            account       : address(spPrimeVaultUsdc),
+            asset         : 0,
+            shares        : 0,
+            savingsShares : 0
+        });
+
+        _assertVaultState(vaultState);
+        _assertDepositState(depositState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
+
+        assertEq(usdc.allowance(user, address(spPrimeVaultUsdc)),                 0);
+        assertEq(usdc.allowance(address(spPrimeVaultUsdc), address(spUSDCVault)), 0);
 
         _assertQueuedDepositRequest(user, 1, IVault.Transaction(address(0), address(0), 0, 0, 0));
 
@@ -197,32 +239,33 @@ contract RequestDepositTests is ForkTestBase {
         spPrimeVaultUsdc.requestDeposit(amount, user, user);
         vm.stopPrank();
 
-        assertEq(usdc.balanceOf(user),                                            0);
-        assertEq(usdc.balanceOf(address(spPrimeVaultUsdc)),                       VAULT_CAPACITY);
         assertEq(usdc.allowance(user, address(spPrimeVaultUsdc)),                 0);
         assertEq(usdc.allowance(address(spPrimeVaultUsdc), address(spUSDCVault)), 0);
-        assertEq(spPrimeVaultUsdc.balanceOf(user),                                0);
-        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)),           VAULT_CAPACITY);
-        assertEq(spUSDCVault.balanceOf(user),                                     0);
-        assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),                queuedShares);
 
-        _assertDepositState(DepositState({
-            controller              : user,
-            totalSupply             : VAULT_CAPACITY,
-            totalAssets             : VAULT_CAPACITY,
-            availableCapacity       : 0,
-            availableLiquidAssets   : int256(VAULT_CAPACITY),
-            claimableDepositRequest : VAULT_CAPACITY,
-            maxDeposit              : VAULT_CAPACITY,
-            maxMint                 : VAULT_CAPACITY,
-            claimableDepositTotal   : VAULT_CAPACITY,
-            pendingDepositRequest   : spUSDCVault.convertToAssets(queuedShares),
-            totalPendingDeposits    : queuedShares,
-            depositQueueLength      : 1,
-            requestNonce            : 1,
-            index                   : RAY,
-            lastAccrual             : block.timestamp
-        }));
+        vaultState.totalSupply           = VAULT_CAPACITY;
+        vaultState.totalAssets           = VAULT_CAPACITY;
+        vaultState.availableCapacity     = 0;
+        vaultState.availableLiquidAssets = int256(VAULT_CAPACITY);
+
+        depositState.claimableDepositRequest = VAULT_CAPACITY;
+        depositState.maxDeposit              = VAULT_CAPACITY;
+        depositState.maxMint                 = VAULT_CAPACITY;
+        depositState.claimableDepositTotal   = VAULT_CAPACITY;
+        depositState.pendingDepositRequest   = spUSDCVault.convertToAssets(queuedShares);
+        depositState.totalPendingDeposits    = queuedShares;
+        depositState.depositQueueLength      = 1;
+        depositState.requestNonce            = 1;
+
+        userBalances.asset = 0;
+
+        spPrimeBalances.asset         = VAULT_CAPACITY;
+        spPrimeBalances.shares        = VAULT_CAPACITY;
+        spPrimeBalances.savingsShares = queuedShares;
+
+        _assertVaultState(vaultState);
+        _assertDepositState(depositState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
 
         _assertQueuedDepositRequest(user, 1, IVault.Transaction(user, user, queuedShares, 1, 0));
 
@@ -236,21 +279,17 @@ contract RequestDepositTests is ForkTestBase {
 
         deal(address(usdc), user, 100e6);
 
-        assertEq(usdc.balanceOf(user),                                            100e6);
-        assertEq(usdc.balanceOf(address(spPrimeVaultUsdc)),                       VAULT_CAPACITY);
-        assertEq(usdc.allowance(user, address(spPrimeVaultUsdc)),                 0);
-        assertEq(usdc.allowance(address(spPrimeVaultUsdc), address(spUSDCVault)), 0);
-        assertEq(spPrimeVaultUsdc.balanceOf(user),                                0);
-        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)),           VAULT_CAPACITY);
-        assertEq(spUSDCVault.balanceOf(user),                                     0);
-        assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),                0);
+        AssertVaultStateParams memory vaultState = AssertVaultStateParams({
+            totalSupply           : VAULT_CAPACITY,
+            totalAssets           : VAULT_CAPACITY,
+            availableCapacity     : 0,
+            availableLiquidAssets : int256(VAULT_CAPACITY),
+            index                 : RAY,
+            lastAccrual           : block.timestamp
+        });
 
-        _assertDepositState(DepositState({
+        AssertDepositStateParams memory depositState = AssertDepositStateParams({
             controller              : user,
-            totalSupply             : VAULT_CAPACITY,
-            totalAssets             : VAULT_CAPACITY,
-            availableCapacity       : 0,
-            availableLiquidAssets   : int256(VAULT_CAPACITY),
             claimableDepositRequest : 0,
             maxDeposit              : 0,
             maxMint                 : 0,
@@ -258,10 +297,30 @@ contract RequestDepositTests is ForkTestBase {
             pendingDepositRequest   : 0,
             totalPendingDeposits    : 0,
             depositQueueLength      : 0,
-            requestNonce            : 0,
-            index                   : RAY,
-            lastAccrual             : block.timestamp
-        }));
+            requestNonce            : 0
+        });
+
+        AssertBalancesParams memory userBalances = AssertBalancesParams({
+            account       : user,
+            asset         : 100e6,
+            shares        : 0,
+            savingsShares : 0
+        });
+
+        AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
+            account       : address(spPrimeVaultUsdc),
+            asset         : VAULT_CAPACITY,
+            shares        : VAULT_CAPACITY,
+            savingsShares : 0
+        });
+
+        _assertVaultState(vaultState);
+        _assertDepositState(depositState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
+
+        assertEq(usdc.allowance(user, address(spPrimeVaultUsdc)),                 0);
+        assertEq(usdc.allowance(address(spPrimeVaultUsdc), address(spUSDCVault)), 0);
 
         _assertQueuedDepositRequest(user, 1, IVault.Transaction(address(0), address(0), 0, 0, 0));
 
@@ -278,32 +337,22 @@ contract RequestDepositTests is ForkTestBase {
         spPrimeVaultUsdc.requestDeposit(100e6, user, user);
         vm.stopPrank();
 
-        assertEq(usdc.balanceOf(user),                                            0);
-        assertEq(usdc.balanceOf(address(spPrimeVaultUsdc)),                       VAULT_CAPACITY);
         assertEq(usdc.allowance(user, address(spPrimeVaultUsdc)),                 0);
         assertEq(usdc.allowance(address(spPrimeVaultUsdc), address(spUSDCVault)), 0);
-        assertEq(spPrimeVaultUsdc.balanceOf(user),                                0);
-        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)),           VAULT_CAPACITY);
-        assertEq(spUSDCVault.balanceOf(user),                                     0);
-        assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),                queuedShares);
 
-        _assertDepositState(DepositState({
-            controller              : user,
-            totalSupply             : VAULT_CAPACITY,
-            totalAssets             : VAULT_CAPACITY,
-            availableCapacity       : 0,
-            availableLiquidAssets   : int256(VAULT_CAPACITY),
-            claimableDepositRequest : 0,
-            maxDeposit              : 0,
-            maxMint                 : 0,
-            claimableDepositTotal   : VAULT_CAPACITY,
-            pendingDepositRequest   : spUSDCVault.convertToAssets(queuedShares),
-            totalPendingDeposits    : queuedShares,
-            depositQueueLength      : 1,
-            requestNonce            : 1,
-            index                   : RAY,
-            lastAccrual             : block.timestamp
-        }));
+        depositState.pendingDepositRequest = spUSDCVault.convertToAssets(queuedShares);
+        depositState.totalPendingDeposits  = queuedShares;
+        depositState.depositQueueLength    = 1;
+        depositState.requestNonce          = 1;
+
+        userBalances.asset = 0;
+
+        spPrimeBalances.savingsShares = queuedShares;
+
+        _assertVaultState(vaultState);
+        _assertDepositState(depositState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
 
         _assertQueuedDepositRequest(user, 1, IVault.Transaction(user, user, queuedShares, 1, 0));
 
@@ -323,21 +372,17 @@ contract RequestDepositTests is ForkTestBase {
 
         deal(address(usdc), user, 100e6);
 
-        assertEq(usdc.balanceOf(user),                                            100e6);
-        assertEq(usdc.balanceOf(address(spPrimeVaultUsdc)),                       VAULT_CAPACITY);
-        assertEq(usdc.allowance(user, address(spPrimeVaultUsdc)),                 0);
-        assertEq(usdc.allowance(address(spPrimeVaultUsdc), address(spUSDCVault)), 0);
-        assertEq(spPrimeVaultUsdc.balanceOf(user),                                0);
-        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)),           VAULT_CAPACITY);
-        assertEq(spUSDCVault.balanceOf(user),                                     0);
-        assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),                totalQueuedShares);
+        AssertVaultStateParams memory vaultState = AssertVaultStateParams({
+            totalSupply           : VAULT_CAPACITY,
+            totalAssets           : VAULT_CAPACITY,
+            availableCapacity     : 1_000e6,
+            availableLiquidAssets : int256(VAULT_CAPACITY),
+            index                 : RAY,
+            lastAccrual           : block.timestamp
+        });
 
-        _assertDepositState(DepositState({
+        AssertDepositStateParams memory depositState = AssertDepositStateParams({
             controller              : user,
-            totalSupply             : VAULT_CAPACITY,
-            totalAssets             : VAULT_CAPACITY,
-            availableCapacity       : 1_000e6,
-            availableLiquidAssets   : int256(VAULT_CAPACITY),
             claimableDepositRequest : 0,
             maxDeposit              : 0,
             maxMint                 : 0,
@@ -345,10 +390,30 @@ contract RequestDepositTests is ForkTestBase {
             pendingDepositRequest   : 0,
             totalPendingDeposits    : totalQueuedShares,
             depositQueueLength      : 1,
-            requestNonce            : 0,
-            index                   : RAY,
-            lastAccrual             : block.timestamp
-        }));
+            requestNonce            : 0
+        });
+
+        AssertBalancesParams memory userBalances = AssertBalancesParams({
+            account       : user,
+            asset         : 100e6,
+            shares        : 0,
+            savingsShares : 0
+        });
+
+        AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
+            account       : address(spPrimeVaultUsdc),
+            asset         : VAULT_CAPACITY,
+            shares        : VAULT_CAPACITY,
+            savingsShares : totalQueuedShares
+        });
+
+        _assertVaultState(vaultState);
+        _assertDepositState(depositState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
+
+        assertEq(usdc.allowance(user, address(spPrimeVaultUsdc)),                 0);
+        assertEq(usdc.allowance(address(spPrimeVaultUsdc), address(spUSDCVault)), 0);
 
         _assertQueuedDepositRequest(user, 1, IVault.Transaction(address(0), address(0), 0, 0, 0));
 
@@ -368,32 +433,22 @@ contract RequestDepositTests is ForkTestBase {
         vm.stopPrank();
 
         // Capacity is free, but the request still queues behind the existing entry (FIFO)
-        assertEq(usdc.balanceOf(user),                                            0);
-        assertEq(usdc.balanceOf(address(spPrimeVaultUsdc)),                       VAULT_CAPACITY);
         assertEq(usdc.allowance(user, address(spPrimeVaultUsdc)),                 0);
         assertEq(usdc.allowance(address(spPrimeVaultUsdc), address(spUSDCVault)), 0);
-        assertEq(spPrimeVaultUsdc.balanceOf(user),                                0);
-        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)),           VAULT_CAPACITY);
-        assertEq(spUSDCVault.balanceOf(user),                                     0);
-        assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),                totalQueuedShares + queuedShares);
 
-        _assertDepositState(DepositState({
-            controller              : user,
-            totalSupply             : VAULT_CAPACITY,
-            totalAssets             : VAULT_CAPACITY,
-            availableCapacity       : 1_000e6,
-            availableLiquidAssets   : int256(VAULT_CAPACITY),
-            claimableDepositRequest : 0,
-            maxDeposit              : 0,
-            maxMint                 : 0,
-            claimableDepositTotal   : VAULT_CAPACITY,
-            pendingDepositRequest   : spUSDCVault.convertToAssets(queuedShares),
-            totalPendingDeposits    : totalQueuedShares + queuedShares,
-            depositQueueLength      : 2,
-            requestNonce            : 1,
-            index                   : RAY,
-            lastAccrual             : block.timestamp
-        }));
+        depositState.pendingDepositRequest = spUSDCVault.convertToAssets(queuedShares);
+        depositState.totalPendingDeposits  = totalQueuedShares + queuedShares;
+        depositState.depositQueueLength    = 2;
+        depositState.requestNonce          = 1;
+
+        userBalances.asset = 0;
+
+        spPrimeBalances.savingsShares = totalQueuedShares + queuedShares;
+
+        _assertVaultState(vaultState);
+        _assertDepositState(depositState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
 
         _assertQueuedDepositRequest(user, 1, IVault.Transaction(user, user, queuedShares, 1, 0));
 
@@ -412,20 +467,17 @@ contract RequestDepositTests is ForkTestBase {
 
         deal(address(usdc), user, 100e6);
 
-        assertEq(usdc.balanceOf(user),                                  100e6);
-        assertEq(usdc.balanceOf(address(spPrimeVaultUsdc)),             VAULT_CAPACITY);
-        assertEq(usdc.allowance(user, address(spPrimeVaultUsdc)),       0);
-        assertEq(spPrimeVaultUsdc.balanceOf(user),                      0);
-        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), VAULT_CAPACITY);
-        assertEq(spUSDCVault.balanceOf(user),                           0);
-        assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),      0);
+        AssertVaultStateParams memory vaultState = AssertVaultStateParams({
+            totalSupply           : VAULT_CAPACITY,
+            totalAssets           : VAULT_CAPACITY,
+            availableCapacity     : 100e6,
+            availableLiquidAssets : int256(VAULT_CAPACITY),
+            index                 : RAY,
+            lastAccrual           : block.timestamp
+        });
 
-        _assertDepositState(DepositState({
+        AssertDepositStateParams memory depositState = AssertDepositStateParams({
             controller              : user,
-            totalSupply             : VAULT_CAPACITY,
-            totalAssets             : VAULT_CAPACITY,
-            availableCapacity       : 100e6,
-            availableLiquidAssets   : int256(VAULT_CAPACITY),
             claimableDepositRequest : 0,
             maxDeposit              : 0,
             maxMint                 : 0,
@@ -433,10 +485,29 @@ contract RequestDepositTests is ForkTestBase {
             pendingDepositRequest   : 0,
             totalPendingDeposits    : 0,
             depositQueueLength      : 0,
-            requestNonce            : 1,
-            index                   : RAY,
-            lastAccrual             : block.timestamp
-        }));
+            requestNonce            : 1
+        });
+
+        AssertBalancesParams memory userBalances = AssertBalancesParams({
+            account       : user,
+            asset         : 100e6,
+            shares        : 0,
+            savingsShares : 0
+        });
+
+        AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
+            account       : address(spPrimeVaultUsdc),
+            asset         : VAULT_CAPACITY,
+            shares        : VAULT_CAPACITY,
+            savingsShares : 0
+        });
+
+        _assertVaultState(vaultState);
+        _assertDepositState(depositState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
+
+        assertEq(usdc.allowance(user, address(spPrimeVaultUsdc)), 0);
 
         _assertQueuedDepositRequest(user, 1, IVault.Transaction(address(0), address(0), 0, 0, 0));
 
@@ -452,31 +523,28 @@ contract RequestDepositTests is ForkTestBase {
         vm.stopPrank();
 
         // The cancelled entry no longer counts as a queue, so the request fills instantly
-        assertEq(usdc.balanceOf(user),                                  0);
-        assertEq(usdc.balanceOf(address(spPrimeVaultUsdc)),             VAULT_CAPACITY + 100e6);
-        assertEq(usdc.allowance(user, address(spPrimeVaultUsdc)),       0);
-        assertEq(spPrimeVaultUsdc.balanceOf(user),                      0);
-        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), VAULT_CAPACITY + 100e6);
-        assertEq(spUSDCVault.balanceOf(user),                           0);
-        assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),      0);
+        assertEq(usdc.allowance(user, address(spPrimeVaultUsdc)), 0);
 
-        _assertDepositState(DepositState({
-            controller              : user,
-            totalSupply             : VAULT_CAPACITY + 100e6,
-            totalAssets             : VAULT_CAPACITY + 100e6,
-            availableCapacity       : 0,
-            availableLiquidAssets   : int256(VAULT_CAPACITY + 100e6),
-            claimableDepositRequest : 100e6,
-            maxDeposit              : 100e6,
-            maxMint                 : 100e6,
-            claimableDepositTotal   : VAULT_CAPACITY + 100e6,
-            pendingDepositRequest   : 0,
-            totalPendingDeposits    : 0,
-            depositQueueLength      : 0,
-            requestNonce            : 2,
-            index                   : RAY,
-            lastAccrual             : block.timestamp
-        }));
+        vaultState.totalSupply           = VAULT_CAPACITY + 100e6;
+        vaultState.totalAssets           = VAULT_CAPACITY + 100e6;
+        vaultState.availableCapacity     = 0;
+        vaultState.availableLiquidAssets = int256(VAULT_CAPACITY + 100e6);
+
+        depositState.claimableDepositRequest = 100e6;
+        depositState.maxDeposit              = 100e6;
+        depositState.maxMint                 = 100e6;
+        depositState.claimableDepositTotal   = VAULT_CAPACITY + 100e6;
+        depositState.requestNonce            = 2;
+
+        userBalances.asset = 0;
+
+        spPrimeBalances.asset  = VAULT_CAPACITY + 100e6;
+        spPrimeBalances.shares = VAULT_CAPACITY + 100e6;
+
+        _assertVaultState(vaultState);
+        _assertDepositState(depositState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
     }
 
     function test_requestDeposit_afterInterestAccrual() external {
@@ -492,20 +560,17 @@ contract RequestDepositTests is ForkTestBase {
 
         deal(address(usdc), user, 100e6);
 
-        assertEq(usdc.balanceOf(user),                                  100e6);
-        assertEq(usdc.balanceOf(address(spPrimeVaultUsdc)),             0);
-        assertEq(usdc.allowance(user, address(spPrimeVaultUsdc)),       0);
-        assertEq(spPrimeVaultUsdc.balanceOf(user),                      0);
-        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), 0);
-        assertEq(spUSDCVault.balanceOf(user),                           0);
-        assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),      0);
+        AssertVaultStateParams memory vaultState = AssertVaultStateParams({
+            totalSupply           : 0,
+            totalAssets           : 0,
+            availableCapacity     : VAULT_CAPACITY,
+            availableLiquidAssets : 0,
+            index                 : RAY,
+            lastAccrual           : deployTimestamp
+        });
 
-        _assertDepositState(DepositState({
+        AssertDepositStateParams memory depositState = AssertDepositStateParams({
             controller              : user,
-            totalSupply             : 0,
-            totalAssets             : 0,
-            availableCapacity       : VAULT_CAPACITY,
-            availableLiquidAssets   : 0,
             claimableDepositRequest : 0,
             maxDeposit              : 0,
             maxMint                 : 0,
@@ -513,10 +578,29 @@ contract RequestDepositTests is ForkTestBase {
             pendingDepositRequest   : 0,
             totalPendingDeposits    : 0,
             depositQueueLength      : 0,
-            requestNonce            : 0,
-            index                   : RAY,
-            lastAccrual             : deployTimestamp
-        }));
+            requestNonce            : 0
+        });
+
+        AssertBalancesParams memory userBalances = AssertBalancesParams({
+            account       : user,
+            asset         : 100e6,
+            shares        : 0,
+            savingsShares : 0
+        });
+
+        AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
+            account       : address(spPrimeVaultUsdc),
+            asset         : 0,
+            shares        : 0,
+            savingsShares : 0
+        });
+
+        _assertVaultState(vaultState);
+        _assertDepositState(depositState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
+
+        assertEq(usdc.allowance(user, address(spPrimeVaultUsdc)), 0);
 
         vm.startPrank(user);
         usdc.approve(address(spPrimeVaultUsdc), 100e6);
@@ -534,31 +618,30 @@ contract RequestDepositTests is ForkTestBase {
         // Shares are minted at the accrued index, so fewer shares than assets
         assertLt(expectedShares, 100e6);
 
-        assertEq(usdc.balanceOf(user),                                  0);
-        assertEq(usdc.balanceOf(address(spPrimeVaultUsdc)),             100e6);
-        assertEq(usdc.allowance(user, address(spPrimeVaultUsdc)),       0);
-        assertEq(spPrimeVaultUsdc.balanceOf(user),                      0);
-        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), expectedShares);
-        assertEq(spUSDCVault.balanceOf(user),                           0);
-        assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),      0);
+        assertEq(usdc.allowance(user, address(spPrimeVaultUsdc)), 0);
 
-        _assertDepositState(DepositState({
-            controller              : user,
-            totalSupply             : expectedShares,
-            totalAssets             : expectedShares * expectedIndex / RAY,
-            availableCapacity       : VAULT_CAPACITY - expectedShares,
-            availableLiquidAssets   : int256(100e6),
-            claimableDepositRequest : 100e6,
-            maxDeposit              : 100e6,
-            maxMint                 : expectedShares,
-            claimableDepositTotal   : expectedShares,
-            pendingDepositRequest   : 0,
-            totalPendingDeposits    : 0,
-            depositQueueLength      : 0,
-            requestNonce            : 1,
-            index                   : expectedIndex,
-            lastAccrual             : block.timestamp
-        }));
+        vaultState.totalSupply           = expectedShares;
+        vaultState.totalAssets           = expectedShares * expectedIndex / RAY;
+        vaultState.availableCapacity     = VAULT_CAPACITY - expectedShares;
+        vaultState.availableLiquidAssets = int256(100e6);
+        vaultState.index                 = expectedIndex;
+        vaultState.lastAccrual           = block.timestamp;
+
+        depositState.claimableDepositRequest = 100e6;
+        depositState.maxDeposit              = 100e6;
+        depositState.maxMint                 = expectedShares;
+        depositState.claimableDepositTotal   = expectedShares;
+        depositState.requestNonce            = 1;
+
+        userBalances.asset = 0;
+
+        spPrimeBalances.asset  = 100e6;
+        spPrimeBalances.shares = expectedShares;
+
+        _assertVaultState(vaultState);
+        _assertDepositState(depositState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
     }
 
     function test_requestDeposit_queued_pendingValueAccruesSavingsYield() external {
@@ -574,15 +657,17 @@ contract RequestDepositTests is ForkTestBase {
 
         assertEq(pendingBefore, 100e6 - 1);
 
-        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), VAULT_CAPACITY);
-        assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),      queuedShares);
+        AssertVaultStateParams memory vaultState = AssertVaultStateParams({
+            totalSupply           : VAULT_CAPACITY,
+            totalAssets           : VAULT_CAPACITY,
+            availableCapacity     : 0,
+            availableLiquidAssets : int256(VAULT_CAPACITY),
+            index                 : RAY,
+            lastAccrual           : deployTimestamp
+        });
 
-        _assertDepositState(DepositState({
+        AssertDepositStateParams memory depositState = AssertDepositStateParams({
             controller              : user,
-            totalSupply             : VAULT_CAPACITY,
-            totalAssets             : VAULT_CAPACITY,
-            availableCapacity       : 0,
-            availableLiquidAssets   : int256(VAULT_CAPACITY),
             claimableDepositRequest : 0,
             maxDeposit              : 0,
             maxMint                 : 0,
@@ -590,10 +675,27 @@ contract RequestDepositTests is ForkTestBase {
             pendingDepositRequest   : spUSDCVault.convertToAssets(queuedShares),
             totalPendingDeposits    : queuedShares,
             depositQueueLength      : 1,
-            requestNonce            : 1,
-            index                   : RAY,
-            lastAccrual             : deployTimestamp
-        }));
+            requestNonce            : 1
+        });
+
+        AssertBalancesParams memory userBalances = AssertBalancesParams({
+            account       : user,
+            asset         : 0,
+            shares        : 0,
+            savingsShares : 0
+        });
+
+        AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
+            account       : address(spPrimeVaultUsdc),
+            asset         : VAULT_CAPACITY,
+            shares        : VAULT_CAPACITY,
+            savingsShares : queuedShares
+        });
+
+        _assertVaultState(vaultState);
+        _assertDepositState(depositState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
 
         _assertQueuedDepositRequest(user, 1, IVault.Transaction(user, user, queuedShares, 1, 0));
 
@@ -604,26 +706,14 @@ contract RequestDepositTests is ForkTestBase {
         // The spUSDC share count is unchanged, its value grows with the spUSDC rate
         assertGt(spPrimeVaultUsdc.pendingDepositRequest(0, user), pendingBefore);
 
-        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), VAULT_CAPACITY);
-        assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),      queuedShares);
+        vaultState.totalAssets = VAULT_CAPACITY * expectedIndex / RAY;
 
-        _assertDepositState(DepositState({
-            controller              : user,
-            totalSupply             : VAULT_CAPACITY,
-            totalAssets             : VAULT_CAPACITY * expectedIndex / RAY,
-            availableCapacity       : 0,
-            availableLiquidAssets   : int256(VAULT_CAPACITY),
-            claimableDepositRequest : 0,
-            maxDeposit              : 0,
-            maxMint                 : 0,
-            claimableDepositTotal   : VAULT_CAPACITY,
-            pendingDepositRequest   : spUSDCVault.convertToAssets(queuedShares),
-            totalPendingDeposits    : queuedShares,
-            depositQueueLength      : 1,
-            requestNonce            : 1,
-            index                   : RAY,
-            lastAccrual             : deployTimestamp
-        }));
+        depositState.pendingDepositRequest = spUSDCVault.convertToAssets(queuedShares);
+
+        _assertVaultState(vaultState);
+        _assertDepositState(depositState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
 
         _assertQueuedDepositRequest(user, 1, IVault.Transaction(user, user, queuedShares, 1, 0));
     }
@@ -639,19 +729,17 @@ contract DepositTests is ForkTestBase {
     function test_deposit_fullClaim() external {
         _requestDeposit(user, 100e6);  // Instant claim, 100e6 shares at index 1
 
-        assertEq(usdc.balanceOf(user),                                  0);
-        assertEq(usdc.balanceOf(address(spPrimeVaultUsdc)),             100e6);
-        assertEq(spPrimeVaultUsdc.balanceOf(user),                      0);
-        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), 100e6);
-        assertEq(spUSDCVault.balanceOf(user),                           0);
-        assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),      0);
+        AssertVaultStateParams memory vaultState = AssertVaultStateParams({
+            totalSupply           : 100e6,
+            totalAssets           : 100e6,
+            availableCapacity     : VAULT_CAPACITY - 100e6,
+            availableLiquidAssets : int256(100e6),
+            index                 : RAY,
+            lastAccrual           : block.timestamp
+        });
 
-        _assertDepositState(DepositState({
+        AssertDepositStateParams memory depositState = AssertDepositStateParams({
             controller              : user,
-            totalSupply             : 100e6,
-            totalAssets             : 100e6,
-            availableCapacity       : VAULT_CAPACITY - 100e6,
-            availableLiquidAssets   : int256(100e6),
             claimableDepositRequest : 100e6,
             maxDeposit              : 100e6,
             maxMint                 : 100e6,
@@ -659,10 +747,27 @@ contract DepositTests is ForkTestBase {
             pendingDepositRequest   : 0,
             totalPendingDeposits    : 0,
             depositQueueLength      : 0,
-            requestNonce            : 1,
-            index                   : RAY,
-            lastAccrual             : block.timestamp
-        }));
+            requestNonce            : 1
+        });
+
+        AssertBalancesParams memory userBalances = AssertBalancesParams({
+            account       : user,
+            asset         : 0,
+            shares        : 0,
+            savingsShares : 0
+        });
+
+        AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
+            account       : address(spPrimeVaultUsdc),
+            asset         : 100e6,
+            shares        : 100e6,
+            savingsShares : 0
+        });
+
+        _assertVaultState(vaultState);
+        _assertDepositState(depositState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
 
         vm.expectEmit(address(spPrimeVaultUsdc));
         emit IQueue.ClaimableDeposit(user, 0);
@@ -675,48 +780,35 @@ contract DepositTests is ForkTestBase {
         assertEq(shares, 100e6);
 
         // Claiming only moves escrowed shares from the vault to the receiver
-        assertEq(usdc.balanceOf(user),                                  0);
-        assertEq(usdc.balanceOf(address(spPrimeVaultUsdc)),             100e6);
-        assertEq(spPrimeVaultUsdc.balanceOf(user),                      100e6);
-        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), 0);
-        assertEq(spUSDCVault.balanceOf(user),                           0);
-        assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),      0);
+        depositState.claimableDepositRequest = 0;
+        depositState.maxDeposit              = 0;
+        depositState.maxMint                 = 0;
+        depositState.claimableDepositTotal   = 0;
 
-        _assertDepositState(DepositState({
-            controller              : user,
-            totalSupply             : 100e6,
-            totalAssets             : 100e6,
-            availableCapacity       : VAULT_CAPACITY - 100e6,
-            availableLiquidAssets   : int256(100e6),
-            claimableDepositRequest : 0,
-            maxDeposit              : 0,
-            maxMint                 : 0,
-            claimableDepositTotal   : 0,
-            pendingDepositRequest   : 0,
-            totalPendingDeposits    : 0,
-            depositQueueLength      : 0,
-            requestNonce            : 1,
-            index                   : RAY,
-            lastAccrual             : block.timestamp
-        }));
+        userBalances.shares = 100e6;
+
+        spPrimeBalances.shares = 0;
+
+        _assertVaultState(vaultState);
+        _assertDepositState(depositState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
     }
 
     function test_deposit_partialClaim() external {
         _requestDeposit(user, 100e6);  // Instant claim, 100e6 shares at index 1
 
-        assertEq(usdc.balanceOf(user),                                  0);
-        assertEq(usdc.balanceOf(address(spPrimeVaultUsdc)),             100e6);
-        assertEq(spPrimeVaultUsdc.balanceOf(user),                      0);
-        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), 100e6);
-        assertEq(spUSDCVault.balanceOf(user),                           0);
-        assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),      0);
+        AssertVaultStateParams memory vaultState = AssertVaultStateParams({
+            totalSupply           : 100e6,
+            totalAssets           : 100e6,
+            availableCapacity     : VAULT_CAPACITY - 100e6,
+            availableLiquidAssets : int256(100e6),
+            index                 : RAY,
+            lastAccrual           : block.timestamp
+        });
 
-        _assertDepositState(DepositState({
+        AssertDepositStateParams memory depositState = AssertDepositStateParams({
             controller              : user,
-            totalSupply             : 100e6,
-            totalAssets             : 100e6,
-            availableCapacity       : VAULT_CAPACITY - 100e6,
-            availableLiquidAssets   : int256(100e6),
             claimableDepositRequest : 100e6,
             maxDeposit              : 100e6,
             maxMint                 : 100e6,
@@ -724,10 +816,27 @@ contract DepositTests is ForkTestBase {
             pendingDepositRequest   : 0,
             totalPendingDeposits    : 0,
             depositQueueLength      : 0,
-            requestNonce            : 1,
-            index                   : RAY,
-            lastAccrual             : block.timestamp
-        }));
+            requestNonce            : 1
+        });
+
+        AssertBalancesParams memory userBalances = AssertBalancesParams({
+            account       : user,
+            asset         : 0,
+            shares        : 0,
+            savingsShares : 0
+        });
+
+        AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
+            account       : address(spPrimeVaultUsdc),
+            asset         : 100e6,
+            shares        : 100e6,
+            savingsShares : 0
+        });
+
+        _assertVaultState(vaultState);
+        _assertDepositState(depositState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
 
         vm.expectEmit(address(spPrimeVaultUsdc));
         emit IQueue.ClaimableDeposit(user, 60e6);
@@ -739,30 +848,19 @@ contract DepositTests is ForkTestBase {
 
         assertEq(shares, 40e6);
 
-        assertEq(usdc.balanceOf(user),                                  0);
-        assertEq(usdc.balanceOf(address(spPrimeVaultUsdc)),             100e6);
-        assertEq(spPrimeVaultUsdc.balanceOf(user),                      40e6);
-        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), 60e6);
-        assertEq(spUSDCVault.balanceOf(user),                           0);
-        assertEq(spUSDCVault.balanceOf(address(spPrimeVaultUsdc)),      0);
+        depositState.claimableDepositRequest = 60e6;
+        depositState.maxDeposit              = 60e6;
+        depositState.maxMint                 = 60e6;
+        depositState.claimableDepositTotal   = 60e6;
 
-        _assertDepositState(DepositState({
-            controller              : user,
-            totalSupply             : 100e6,
-            totalAssets             : 100e6,
-            availableCapacity       : VAULT_CAPACITY - 100e6,
-            availableLiquidAssets   : int256(100e6),
-            claimableDepositRequest : 60e6,
-            maxDeposit              : 60e6,
-            maxMint                 : 60e6,
-            claimableDepositTotal   : 60e6,
-            pendingDepositRequest   : 0,
-            totalPendingDeposits    : 0,
-            depositQueueLength      : 0,
-            requestNonce            : 1,
-            index                   : RAY,
-            lastAccrual             : block.timestamp
-        }));
+        userBalances.shares = 40e6;
+
+        spPrimeBalances.shares = 60e6;
+
+        _assertVaultState(vaultState);
+        _assertDepositState(depositState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
     }
 
     function test_deposit_multiplePartialClaims() external {
@@ -782,15 +880,17 @@ contract DepositTests is ForkTestBase {
         uint256 shares2 = (sharesOwed - shares1) * 30e6 / 70e6;
         uint256 shares3 = sharesOwed - shares1 - shares2;  // Last claim takes every remaining share
 
-        assertEq(spPrimeVaultUsdc.balanceOf(user),                      0);
-        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), sharesOwed);
+        AssertVaultStateParams memory vaultState = AssertVaultStateParams({
+            totalSupply           : sharesOwed,
+            totalAssets           : sharesOwed * index / RAY,
+            availableCapacity     : VAULT_CAPACITY - sharesOwed,
+            availableLiquidAssets : int256(100e6),
+            index                 : index,
+            lastAccrual           : block.timestamp
+        });
 
-        _assertDepositState(DepositState({
+        AssertDepositStateParams memory depositState = AssertDepositStateParams({
             controller              : user,
-            totalSupply             : sharesOwed,
-            totalAssets             : sharesOwed * index / RAY,
-            availableCapacity       : VAULT_CAPACITY - sharesOwed,
-            availableLiquidAssets   : int256(100e6),
             claimableDepositRequest : 100e6,
             maxDeposit              : 100e6,
             maxMint                 : sharesOwed,
@@ -798,62 +898,65 @@ contract DepositTests is ForkTestBase {
             pendingDepositRequest   : 0,
             totalPendingDeposits    : 0,
             depositQueueLength      : 0,
-            requestNonce            : 1,
-            index                   : index,
-            lastAccrual             : block.timestamp
-        }));
+            requestNonce            : 1
+        });
+
+        AssertBalancesParams memory userBalances = AssertBalancesParams({
+            account       : user,
+            asset         : 0,
+            shares        : 0,
+            savingsShares : 0
+        });
+
+        AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
+            account       : address(spPrimeVaultUsdc),
+            asset         : 100e6,
+            shares        : sharesOwed,
+            savingsShares : 0
+        });
+
+        _assertVaultState(vaultState);
+        _assertDepositState(depositState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
 
         vm.prank(user);
         uint256 shares = spPrimeVaultUsdc.deposit(30e6, user, user);
 
         assertEq(shares, shares1);
 
-        assertEq(spPrimeVaultUsdc.balanceOf(user),                      shares1);
-        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), sharesOwed - shares1);
+        depositState.claimableDepositRequest = 70e6;
+        depositState.maxDeposit              = 70e6;
+        depositState.maxMint                 = sharesOwed - shares1;
+        depositState.claimableDepositTotal   = sharesOwed - shares1;
 
-        _assertDepositState(DepositState({
-            controller              : user,
-            totalSupply             : sharesOwed,
-            totalAssets             : sharesOwed * index / RAY,
-            availableCapacity       : VAULT_CAPACITY - sharesOwed,
-            availableLiquidAssets   : int256(100e6),
-            claimableDepositRequest : 70e6,
-            maxDeposit              : 70e6,
-            maxMint                 : sharesOwed - shares1,
-            claimableDepositTotal   : sharesOwed - shares1,
-            pendingDepositRequest   : 0,
-            totalPendingDeposits    : 0,
-            depositQueueLength      : 0,
-            requestNonce            : 1,
-            index                   : index,
-            lastAccrual             : block.timestamp
-        }));
+        userBalances.shares = shares1;
+
+        spPrimeBalances.shares = sharesOwed - shares1;
+
+        _assertVaultState(vaultState);
+        _assertDepositState(depositState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
 
         vm.prank(user);
         shares = spPrimeVaultUsdc.deposit(30e6, user, user);
 
         assertEq(shares, shares2);
 
-        assertEq(spPrimeVaultUsdc.balanceOf(user),                      shares1 + shares2);
-        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), shares3);
+        depositState.claimableDepositRequest = 40e6;
+        depositState.maxDeposit              = 40e6;
+        depositState.maxMint                 = shares3;
+        depositState.claimableDepositTotal   = shares3;
 
-        _assertDepositState(DepositState({
-            controller              : user,
-            totalSupply             : sharesOwed,
-            totalAssets             : sharesOwed * index / RAY,
-            availableCapacity       : VAULT_CAPACITY - sharesOwed,
-            availableLiquidAssets   : int256(100e6),
-            claimableDepositRequest : 40e6,
-            maxDeposit              : 40e6,
-            maxMint                 : shares3,
-            claimableDepositTotal   : shares3,
-            pendingDepositRequest   : 0,
-            totalPendingDeposits    : 0,
-            depositQueueLength      : 0,
-            requestNonce            : 1,
-            index                   : index,
-            lastAccrual             : block.timestamp
-        }));
+        userBalances.shares = shares1 + shares2;
+
+        spPrimeBalances.shares = shares3;
+
+        _assertVaultState(vaultState);
+        _assertDepositState(depositState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
 
         vm.prank(user);
         shares = spPrimeVaultUsdc.deposit(40e6, user, user);
@@ -861,26 +964,19 @@ contract DepositTests is ForkTestBase {
         assertEq(shares, shares3);
 
         // Every owed share reaches the user, no dust is left in escrow
-        assertEq(spPrimeVaultUsdc.balanceOf(user),                      sharesOwed);
-        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), 0);
+        depositState.claimableDepositRequest = 0;
+        depositState.maxDeposit              = 0;
+        depositState.maxMint                 = 0;
+        depositState.claimableDepositTotal   = 0;
 
-        _assertDepositState(DepositState({
-            controller              : user,
-            totalSupply             : sharesOwed,
-            totalAssets             : sharesOwed * index / RAY,
-            availableCapacity       : VAULT_CAPACITY - sharesOwed,
-            availableLiquidAssets   : int256(100e6),
-            claimableDepositRequest : 0,
-            maxDeposit              : 0,
-            maxMint                 : 0,
-            claimableDepositTotal   : 0,
-            pendingDepositRequest   : 0,
-            totalPendingDeposits    : 0,
-            depositQueueLength      : 0,
-            requestNonce            : 1,
-            index                   : index,
-            lastAccrual             : block.timestamp
-        }));
+        userBalances.shares = sharesOwed;
+
+        spPrimeBalances.shares = 0;
+
+        _assertVaultState(vaultState);
+        _assertDepositState(depositState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
     }
 
     function test_deposit_operatorAndDifferentReceiver() external {
@@ -891,17 +987,17 @@ contract DepositTests is ForkTestBase {
         vm.prank(user);
         spPrimeVaultUsdc.setOperator(operator, true);
 
-        assertEq(spPrimeVaultUsdc.balanceOf(user),                      0);
-        assertEq(spPrimeVaultUsdc.balanceOf(user2),                     0);
-        assertEq(spPrimeVaultUsdc.balanceOf(operator),                  0);
-        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), 100e6);
+        AssertVaultStateParams memory vaultState = AssertVaultStateParams({
+            totalSupply           : 100e6,
+            totalAssets           : 100e6,
+            availableCapacity     : VAULT_CAPACITY - 100e6,
+            availableLiquidAssets : int256(100e6),
+            index                 : RAY,
+            lastAccrual           : block.timestamp
+        });
 
-        _assertDepositState(DepositState({
+        AssertDepositStateParams memory depositState = AssertDepositStateParams({
             controller              : user,
-            totalSupply             : 100e6,
-            totalAssets             : 100e6,
-            availableCapacity       : VAULT_CAPACITY - 100e6,
-            availableLiquidAssets   : int256(100e6),
             claimableDepositRequest : 100e6,
             maxDeposit              : 100e6,
             maxMint                 : 100e6,
@@ -909,10 +1005,43 @@ contract DepositTests is ForkTestBase {
             pendingDepositRequest   : 0,
             totalPendingDeposits    : 0,
             depositQueueLength      : 0,
-            requestNonce            : 1,
-            index                   : RAY,
-            lastAccrual             : block.timestamp
-        }));
+            requestNonce            : 1
+        });
+
+        AssertBalancesParams memory userBalances = AssertBalancesParams({
+            account       : user,
+            asset         : 0,
+            shares        : 0,
+            savingsShares : 0
+        });
+
+        AssertBalancesParams memory user2Balances = AssertBalancesParams({
+            account       : user2,
+            asset         : 0,
+            shares        : 0,
+            savingsShares : 0
+        });
+
+        AssertBalancesParams memory operatorBalances = AssertBalancesParams({
+            account       : operator,
+            asset         : 0,
+            shares        : 0,
+            savingsShares : 0
+        });
+
+        AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
+            account       : address(spPrimeVaultUsdc),
+            asset         : 100e6,
+            shares        : 100e6,
+            savingsShares : 0
+        });
+
+        _assertVaultState(vaultState);
+        _assertDepositState(depositState);
+        _assertBalances(userBalances);
+        _assertBalances(user2Balances);
+        _assertBalances(operatorBalances);
+        _assertBalances(spPrimeBalances);
 
         // Operator claims for the controller, and can only send to the controller
         vm.expectEmit(address(spPrimeVaultUsdc));
@@ -925,28 +1054,21 @@ contract DepositTests is ForkTestBase {
 
         assertEq(shares, 40e6);
 
-        assertEq(spPrimeVaultUsdc.balanceOf(user),                      40e6);
-        assertEq(spPrimeVaultUsdc.balanceOf(user2),                     0);
-        assertEq(spPrimeVaultUsdc.balanceOf(operator),                  0);
-        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), 60e6);
+        depositState.claimableDepositRequest = 60e6;
+        depositState.maxDeposit              = 60e6;
+        depositState.maxMint                 = 60e6;
+        depositState.claimableDepositTotal   = 60e6;
 
-        _assertDepositState(DepositState({
-            controller              : user,
-            totalSupply             : 100e6,
-            totalAssets             : 100e6,
-            availableCapacity       : VAULT_CAPACITY - 100e6,
-            availableLiquidAssets   : int256(100e6),
-            claimableDepositRequest : 60e6,
-            maxDeposit              : 60e6,
-            maxMint                 : 60e6,
-            claimableDepositTotal   : 60e6,
-            pendingDepositRequest   : 0,
-            totalPendingDeposits    : 0,
-            depositQueueLength      : 0,
-            requestNonce            : 1,
-            index                   : RAY,
-            lastAccrual             : block.timestamp
-        }));
+        userBalances.shares = 40e6;
+
+        spPrimeBalances.shares = 60e6;
+
+        _assertVaultState(vaultState);
+        _assertDepositState(depositState);
+        _assertBalances(userBalances);
+        _assertBalances(user2Balances);
+        _assertBalances(operatorBalances);
+        _assertBalances(spPrimeBalances);
 
         // Controller claims the rest to a different receiver
         vm.expectEmit(address(spPrimeVaultUsdc));
@@ -959,42 +1081,37 @@ contract DepositTests is ForkTestBase {
 
         assertEq(shares, 60e6);
 
-        assertEq(spPrimeVaultUsdc.balanceOf(user),                      40e6);
-        assertEq(spPrimeVaultUsdc.balanceOf(user2),                     60e6);
-        assertEq(spPrimeVaultUsdc.balanceOf(operator),                  0);
-        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), 0);
+        depositState.claimableDepositRequest = 0;
+        depositState.maxDeposit              = 0;
+        depositState.maxMint                 = 0;
+        depositState.claimableDepositTotal   = 0;
 
-        _assertDepositState(DepositState({
-            controller              : user,
-            totalSupply             : 100e6,
-            totalAssets             : 100e6,
-            availableCapacity       : VAULT_CAPACITY - 100e6,
-            availableLiquidAssets   : int256(100e6),
-            claimableDepositRequest : 0,
-            maxDeposit              : 0,
-            maxMint                 : 0,
-            claimableDepositTotal   : 0,
-            pendingDepositRequest   : 0,
-            totalPendingDeposits    : 0,
-            depositQueueLength      : 0,
-            requestNonce            : 1,
-            index                   : RAY,
-            lastAccrual             : block.timestamp
-        }));
+        user2Balances.shares = 60e6;
+
+        spPrimeBalances.shares = 0;
+
+        _assertVaultState(vaultState);
+        _assertDepositState(depositState);
+        _assertBalances(userBalances);
+        _assertBalances(user2Balances);
+        _assertBalances(operatorBalances);
+        _assertBalances(spPrimeBalances);
     }
 
     function test_deposit_erc4626Overload() external {
         _requestDeposit(user, 100e6);  // Instant claim, 100e6 shares at index 1
 
-        assertEq(spPrimeVaultUsdc.balanceOf(user),                      0);
-        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), 100e6);
+        AssertVaultStateParams memory vaultState = AssertVaultStateParams({
+            totalSupply           : 100e6,
+            totalAssets           : 100e6,
+            availableCapacity     : VAULT_CAPACITY - 100e6,
+            availableLiquidAssets : int256(100e6),
+            index                 : RAY,
+            lastAccrual           : block.timestamp
+        });
 
-        _assertDepositState(DepositState({
+        AssertDepositStateParams memory depositState = AssertDepositStateParams({
             controller              : user,
-            totalSupply             : 100e6,
-            totalAssets             : 100e6,
-            availableCapacity       : VAULT_CAPACITY - 100e6,
-            availableLiquidAssets   : int256(100e6),
             claimableDepositRequest : 100e6,
             maxDeposit              : 100e6,
             maxMint                 : 100e6,
@@ -1002,10 +1119,27 @@ contract DepositTests is ForkTestBase {
             pendingDepositRequest   : 0,
             totalPendingDeposits    : 0,
             depositQueueLength      : 0,
-            requestNonce            : 1,
-            index                   : RAY,
-            lastAccrual             : block.timestamp
-        }));
+            requestNonce            : 1
+        });
+
+        AssertBalancesParams memory userBalances = AssertBalancesParams({
+            account       : user,
+            asset         : 0,
+            shares        : 0,
+            savingsShares : 0
+        });
+
+        AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
+            account       : address(spPrimeVaultUsdc),
+            asset         : 100e6,
+            shares        : 100e6,
+            savingsShares : 0
+        });
+
+        _assertVaultState(vaultState);
+        _assertDepositState(depositState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
 
         // deposit(assets, receiver) uses msg.sender as the controller
         vm.expectEmit(address(spPrimeVaultUsdc));
@@ -1018,40 +1152,35 @@ contract DepositTests is ForkTestBase {
 
         assertEq(shares, 100e6);
 
-        assertEq(spPrimeVaultUsdc.balanceOf(user),                      100e6);
-        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), 0);
+        depositState.claimableDepositRequest = 0;
+        depositState.maxDeposit              = 0;
+        depositState.maxMint                 = 0;
+        depositState.claimableDepositTotal   = 0;
 
-        _assertDepositState(DepositState({
-            controller              : user,
-            totalSupply             : 100e6,
-            totalAssets             : 100e6,
-            availableCapacity       : VAULT_CAPACITY - 100e6,
-            availableLiquidAssets   : int256(100e6),
-            claimableDepositRequest : 0,
-            maxDeposit              : 0,
-            maxMint                 : 0,
-            claimableDepositTotal   : 0,
-            pendingDepositRequest   : 0,
-            totalPendingDeposits    : 0,
-            depositQueueLength      : 0,
-            requestNonce            : 1,
-            index                   : RAY,
-            lastAccrual             : block.timestamp
-        }));
+        userBalances.shares = 100e6;
+
+        spPrimeBalances.shares = 0;
+
+        _assertVaultState(vaultState);
+        _assertDepositState(depositState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
     }
 
     function test_deposit_withReferral() external {
         _requestDeposit(user, 100e6);  // Instant claim, 100e6 shares at index 1
 
-        assertEq(spPrimeVaultUsdc.balanceOf(user),                      0);
-        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), 100e6);
+        AssertVaultStateParams memory vaultState = AssertVaultStateParams({
+            totalSupply           : 100e6,
+            totalAssets           : 100e6,
+            availableCapacity     : VAULT_CAPACITY - 100e6,
+            availableLiquidAssets : int256(100e6),
+            index                 : RAY,
+            lastAccrual           : block.timestamp
+        });
 
-        _assertDepositState(DepositState({
+        AssertDepositStateParams memory depositState = AssertDepositStateParams({
             controller              : user,
-            totalSupply             : 100e6,
-            totalAssets             : 100e6,
-            availableCapacity       : VAULT_CAPACITY - 100e6,
-            availableLiquidAssets   : int256(100e6),
             claimableDepositRequest : 100e6,
             maxDeposit              : 100e6,
             maxMint                 : 100e6,
@@ -1059,10 +1188,27 @@ contract DepositTests is ForkTestBase {
             pendingDepositRequest   : 0,
             totalPendingDeposits    : 0,
             depositQueueLength      : 0,
-            requestNonce            : 1,
-            index                   : RAY,
-            lastAccrual             : block.timestamp
-        }));
+            requestNonce            : 1
+        });
+
+        AssertBalancesParams memory userBalances = AssertBalancesParams({
+            account       : user,
+            asset         : 0,
+            shares        : 0,
+            savingsShares : 0
+        });
+
+        AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
+            account       : address(spPrimeVaultUsdc),
+            asset         : 100e6,
+            shares        : 100e6,
+            savingsShares : 0
+        });
+
+        _assertVaultState(vaultState);
+        _assertDepositState(depositState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
 
         vm.expectEmit(address(spPrimeVaultUsdc));
         emit ISparkPrimeVault.ReferralCode(user, 1);
@@ -1076,26 +1222,19 @@ contract DepositTests is ForkTestBase {
 
         assertEq(shares, 100e6);
 
-        assertEq(spPrimeVaultUsdc.balanceOf(user),                      100e6);
-        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), 0);
+        depositState.claimableDepositRequest = 0;
+        depositState.maxDeposit              = 0;
+        depositState.maxMint                 = 0;
+        depositState.claimableDepositTotal   = 0;
 
-        _assertDepositState(DepositState({
-            controller              : user,
-            totalSupply             : 100e6,
-            totalAssets             : 100e6,
-            availableCapacity       : VAULT_CAPACITY - 100e6,
-            availableLiquidAssets   : int256(100e6),
-            claimableDepositRequest : 0,
-            maxDeposit              : 0,
-            maxMint                 : 0,
-            claimableDepositTotal   : 0,
-            pendingDepositRequest   : 0,
-            totalPendingDeposits    : 0,
-            depositQueueLength      : 0,
-            requestNonce            : 1,
-            index                   : RAY,
-            lastAccrual             : block.timestamp
-        }));
+        userBalances.shares = 100e6;
+
+        spPrimeBalances.shares = 0;
+
+        _assertVaultState(vaultState);
+        _assertDepositState(depositState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
     }
 
     function test_deposit_afterProcessQueue() external {
@@ -1120,15 +1259,17 @@ contract DepositTests is ForkTestBase {
         // 10% APY over one year
         assertApproxEqRel(expectedIndex, 1.1e27, 0.0001e18);
 
-        assertEq(spPrimeVaultUsdc.balanceOf(user),                      0);
-        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), 100e6);
+        AssertVaultStateParams memory vaultState = AssertVaultStateParams({
+            totalSupply           : 100e6,
+            totalAssets           : 100e6 * expectedIndex / RAY,
+            availableCapacity     : VAULT_CAPACITY - 100e6,
+            availableLiquidAssets : int256(100e6),
+            index                 : RAY,
+            lastAccrual           : requestTimestamp
+        });
 
-        _assertDepositState(DepositState({
+        AssertDepositStateParams memory depositState = AssertDepositStateParams({
             controller              : user,
-            totalSupply             : 100e6,
-            totalAssets             : 100e6 * expectedIndex / RAY,
-            availableCapacity       : VAULT_CAPACITY - 100e6,
-            availableLiquidAssets   : int256(100e6),
             claimableDepositRequest : 100e6,
             maxDeposit              : 100e6,
             maxMint                 : 100e6,
@@ -1136,10 +1277,27 @@ contract DepositTests is ForkTestBase {
             pendingDepositRequest   : 0,
             totalPendingDeposits    : 0,
             depositQueueLength      : 0,
-            requestNonce            : 1,
-            index                   : RAY,
-            lastAccrual             : requestTimestamp
-        }));
+            requestNonce            : 1
+        });
+
+        AssertBalancesParams memory userBalances = AssertBalancesParams({
+            account       : user,
+            asset         : 0,
+            shares        : 0,
+            savingsShares : 0
+        });
+
+        AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
+            account       : address(spPrimeVaultUsdc),
+            asset         : 100e6,
+            shares        : 100e6,
+            savingsShares : 0
+        });
+
+        _assertVaultState(vaultState);
+        _assertDepositState(depositState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
 
         vm.expectEmit(address(spPrimeVaultUsdc));
         emit IVault.AccruedInterest(expectedIndex, block.timestamp);
@@ -1154,27 +1312,24 @@ contract DepositTests is ForkTestBase {
         // Share count is fixed at request time, the shares gained value while escrowed
         assertEq(shares, 100e6);
 
-        assertEq(spPrimeVaultUsdc.balanceOf(user),                      100e6);
-        assertEq(spPrimeVaultUsdc.balanceOf(address(spPrimeVaultUsdc)), 0);
-        assertEq(spPrimeVaultUsdc.convertToAssets(100e6),               109.999999e6);
+        assertEq(spPrimeVaultUsdc.convertToAssets(100e6), 109.999999e6);
 
-        _assertDepositState(DepositState({
-            controller              : user,
-            totalSupply             : 100e6,
-            totalAssets             : 100e6 * expectedIndex / RAY,
-            availableCapacity       : VAULT_CAPACITY - 100e6,
-            availableLiquidAssets   : int256(100e6),
-            claimableDepositRequest : 0,
-            maxDeposit              : 0,
-            maxMint                 : 0,
-            claimableDepositTotal   : 0,
-            pendingDepositRequest   : 0,
-            totalPendingDeposits    : 0,
-            depositQueueLength      : 0,
-            requestNonce            : 1,
-            index                   : expectedIndex,
-            lastAccrual             : block.timestamp
-        }));
+        vaultState.index       = expectedIndex;
+        vaultState.lastAccrual = block.timestamp;
+
+        depositState.claimableDepositRequest = 0;
+        depositState.maxDeposit              = 0;
+        depositState.maxMint                 = 0;
+        depositState.claimableDepositTotal   = 0;
+
+        userBalances.shares = 100e6;
+
+        spPrimeBalances.shares = 0;
+
+        _assertVaultState(vaultState);
+        _assertDepositState(depositState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
     }
 
 }

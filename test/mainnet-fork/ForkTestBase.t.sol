@@ -43,22 +43,32 @@ interface ISparkVaultLike {
 
 abstract contract ForkTestBase is Test {
 
-    struct DepositState {
-        address controller;
-        uint256 totalSupply;
-        uint256 totalAssets;
-        uint256 availableCapacity;
-        int256  availableLiquidAssets;
-        uint256 claimableDepositRequest;
-        uint256 maxDeposit;
-        uint256 maxMint;
-        uint256 claimableDepositTotal;
-        uint256 pendingDepositRequest;
-        uint256 totalPendingDeposits;
-        uint256 depositQueueLength;
-        uint256 requestNonce;
-        uint256 index;
-        uint256 lastAccrual;
+    struct AssertVaultStateParams {
+        uint256 totalSupply;           // spPrime shares total supply
+        uint256 totalAssets;           // USDC value of supply
+        uint256 availableCapacity;     // spPrime shares left to mint
+        int256  availableLiquidAssets; // free USDC in vault
+        uint256 index;                 // stored index in RAY
+        uint256 lastAccrual;           // last accrual timestamp
+    }
+
+    struct AssertDepositStateParams {
+        address controller;              // controller being checked
+        uint256 claimableDepositRequest; // controller USDC ready to claim
+        uint256 maxDeposit;              // controller USDC ready to claim
+        uint256 maxMint;                 // controller spPrime shares claimable
+        uint256 claimableDepositTotal;   // all spPrime shares claimable
+        uint256 pendingDepositRequest;   // controller queued USDC value
+        uint256 totalPendingDeposits;    // all spUSDC shares in queue
+        uint256 depositQueueLength;      // active requests in queue
+        uint256 requestNonce;            // controller last request nonce
+    }
+
+    struct AssertBalancesParams {
+        address account;       // account being checked
+        uint256 asset;         // USDC held
+        uint256 shares;        // spPrime shares held
+        uint256 savingsShares; // spUSDC shares held
     }
 
     address internal constant ADMIN             = Ethereum.SPARK_PROXY;
@@ -128,11 +138,22 @@ abstract contract ForkTestBase is Test {
         vm.stopPrank();
     }
 
-    function _assertDepositState(DepositState memory state) internal view {
-        assertEq(spPrimeVaultUsdc.totalSupply(),                                state.totalSupply);
-        assertEq(spPrimeVaultUsdc.totalAssets(),                                state.totalAssets);
-        assertEq(spPrimeVaultUsdc.availableCapacity(),                          state.availableCapacity);
-        assertEq(spPrimeVaultUsdc.availableLiquidAssets(),                      state.availableLiquidAssets);
+    function _assertBalances(AssertBalancesParams memory balances) internal view {
+        assertEq(usdc.balanceOf(balances.account),             balances.asset);
+        assertEq(spPrimeVaultUsdc.balanceOf(balances.account), balances.shares);
+        assertEq(spUSDCVault.balanceOf(balances.account),      balances.savingsShares);
+    }
+
+    function _assertVaultState(AssertVaultStateParams memory state) internal view {
+        assertEq(spPrimeVaultUsdc.totalSupply(),           state.totalSupply);
+        assertEq(spPrimeVaultUsdc.totalAssets(),           state.totalAssets);
+        assertEq(spPrimeVaultUsdc.availableCapacity(),     state.availableCapacity);
+        assertEq(spPrimeVaultUsdc.availableLiquidAssets(), state.availableLiquidAssets);
+        assertEq(spPrimeVaultUsdc.index(),                 state.index);
+        assertEq(spPrimeVaultUsdc.lastAccrual(),           state.lastAccrual);
+    }
+
+    function _assertDepositState(AssertDepositStateParams memory state) internal view {
         assertEq(spPrimeVaultUsdc.claimableDepositRequest(0, state.controller), state.claimableDepositRequest);
         assertEq(spPrimeVaultUsdc.maxDeposit(state.controller),                 state.maxDeposit);
         assertEq(spPrimeVaultUsdc.maxMint(state.controller),                    state.maxMint);
@@ -141,8 +162,6 @@ abstract contract ForkTestBase is Test {
         assertEq(spPrimeVaultUsdc.totalPendingDeposits(),                       state.totalPendingDeposits);
         assertEq(spPrimeVaultUsdc.depositQueueLength(),                         state.depositQueueLength);
         assertEq(spPrimeVaultUsdc.requestNonce(state.controller),               state.requestNonce);
-        assertEq(spPrimeVaultUsdc.index(),                                      state.index);
-        assertEq(spPrimeVaultUsdc.lastAccrual(),                                state.lastAccrual);
     }
 
     function _assertQueuedDepositRequest(
