@@ -43,22 +43,32 @@ interface ISparkVaultLike {
 
 abstract contract ForkTestBase is Test {
 
-    struct VaultState {
-        address controller;
-        uint256 totalSupply;
-        uint256 totalAssets;
-        uint256 availableCapacity;
-        int256  availableLiquidAssets;
-        uint256 claimableDepositRequest;
-        uint256 maxDeposit;
-        uint256 maxMint;
-        uint256 claimableDepositTotal;
-        uint256 pendingDepositRequest;
-        uint256 totalPendingDeposits;
-        uint256 depositQueueLength;
-        uint256 requestNonce;
-        uint256 index;
-        uint256 lastAccrual;
+    struct AssertVaultStateParams {
+        uint256 totalSupply;           // spPrime shares total supply
+        uint256 totalAssets;           // USDC value of supply
+        uint256 availableCapacity;     // spPrime shares left to mint
+        int256  availableLiquidAssets; // free USDC in vault
+        uint256 index;                 // stored index in RAY
+        uint256 lastAccrual;           // last accrual timestamp
+    }
+
+    struct AssertDepositStateParams {
+        address controller;              // controller being checked
+        uint256 claimableDepositRequest; // controller USDC ready to claim
+        uint256 maxDeposit;              // controller USDC ready to claim
+        uint256 maxMint;                 // controller spPrime shares claimable
+        uint256 claimableDepositTotal;   // all spPrime shares claimable
+        uint256 pendingDepositRequest;   // controller queued USDC value
+        uint256 totalPendingDeposits;    // all spUSDC shares in queue
+        uint256 depositQueueLength;      // active requests in queue
+        uint256 requestNonce;            // controller last request nonce
+    }
+
+    struct AssertBalancesParams {
+        address account;       // account being checked
+        uint256 asset;         // USDC held
+        uint256 shares;        // spPrime shares held
+        uint256 savingsShares; // spUSDC shares held
     }
 
     address internal constant ADMIN             = Ethereum.SPARK_PROXY;
@@ -75,20 +85,20 @@ abstract contract ForkTestBase is Test {
 
     uint256 internal constant RAY = 1e27;
 
-    IERC20Like      internal constant usdc        = IERC20Like(Ethereum.USDC);
-    ISparkVaultLike internal constant spUSDCVault = ISparkVaultLike(Ethereum.SPARK_VAULT_V2_SPUSDC);
+    IERC20Like      internal constant usdc   = IERC20Like(Ethereum.USDC);
+    ISparkVaultLike internal constant spUSDC = ISparkVaultLike(Ethereum.SPARK_VAULT_V2_SPUSDC);
 
     address internal user  = makeAddr("user");
     address internal user2 = makeAddr("user2");
 
-    Vault internal spPrimeVaultUsdc;
+    Vault internal spPRIME;
 
     function setUp() public virtual {
         vm.createSelectFork(getChain("mainnet").rpcUrl, _getBlock());
 
         IVault.InitParams memory params = _getInitParams();
 
-        spPrimeVaultUsdc = Vault(
+        spPRIME = Vault(
             address(new ERC1967Proxy(
                 address(new Vault()),
                 abi.encodeWithSelector(Vault.initialize.selector, params)
@@ -105,7 +115,7 @@ abstract contract ForkTestBase is Test {
             name             : "Spark Prime Vault USDC",
             symbol           : "spPrimeUSDC",
             baseAsset        : IERC20(address(usdc)),
-            savingsVault     : IERC4626(address(spUSDCVault)),
+            savingsVault     : IERC4626(address(spUSDC)),
             minimumDeposit   : MINIMUM_DEPOSIT,
             minimumWithdraw  : MINIMUM_WITHDRAW,
             capacity         : VAULT_CAPACITY,
@@ -123,26 +133,35 @@ abstract contract ForkTestBase is Test {
         deal(address(usdc), account, amount);
 
         vm.startPrank(account);
-        usdc.approve(address(spPrimeVaultUsdc), amount);
-        spPrimeVaultUsdc.requestDeposit(amount, account, account);
+        usdc.approve(address(spPRIME), amount);
+        spPRIME.requestDeposit(amount, account, account);
         vm.stopPrank();
     }
 
-    function _assertVaultState(VaultState memory state) internal view {
-        assertEq(spPrimeVaultUsdc.totalSupply(),                                state.totalSupply);
-        assertEq(spPrimeVaultUsdc.totalAssets(),                                state.totalAssets);
-        assertEq(spPrimeVaultUsdc.availableCapacity(),                          state.availableCapacity);
-        assertEq(spPrimeVaultUsdc.availableLiquidAssets(),                      state.availableLiquidAssets);
-        assertEq(spPrimeVaultUsdc.claimableDepositRequest(0, state.controller), state.claimableDepositRequest);
-        assertEq(spPrimeVaultUsdc.maxDeposit(state.controller),                 state.maxDeposit);
-        assertEq(spPrimeVaultUsdc.maxMint(state.controller),                    state.maxMint);
-        assertEq(spPrimeVaultUsdc.claimableDepositTotal(),                      state.claimableDepositTotal);
-        assertEq(spPrimeVaultUsdc.pendingDepositRequest(0, state.controller),   state.pendingDepositRequest);
-        assertEq(spPrimeVaultUsdc.totalPendingDeposits(),                       state.totalPendingDeposits);
-        assertEq(spPrimeVaultUsdc.depositQueueLength(),                         state.depositQueueLength);
-        assertEq(spPrimeVaultUsdc.requestNonce(state.controller),               state.requestNonce);
-        assertEq(spPrimeVaultUsdc.index(),                                      state.index);
-        assertEq(spPrimeVaultUsdc.lastAccrual(),                                state.lastAccrual);
+    function _assertBalances(AssertBalancesParams memory balances) internal view {
+        assertEq(usdc.balanceOf(balances.account),    balances.asset);
+        assertEq(spPRIME.balanceOf(balances.account), balances.shares);
+        assertEq(spUSDC.balanceOf(balances.account),  balances.savingsShares);
+    }
+
+    function _assertVaultState(AssertVaultStateParams memory state) internal view {
+        assertEq(spPRIME.totalSupply(),           state.totalSupply);
+        assertEq(spPRIME.totalAssets(),           state.totalAssets);
+        assertEq(spPRIME.availableCapacity(),     state.availableCapacity);
+        assertEq(spPRIME.availableLiquidAssets(), state.availableLiquidAssets);
+        assertEq(spPRIME.index(),                 state.index);
+        assertEq(spPRIME.lastAccrual(),           state.lastAccrual);
+    }
+
+    function _assertDepositState(AssertDepositStateParams memory state) internal view {
+        assertEq(spPRIME.claimableDepositRequest(0, state.controller), state.claimableDepositRequest);
+        assertEq(spPRIME.maxDeposit(state.controller),                 state.maxDeposit);
+        assertEq(spPRIME.maxMint(state.controller),                    state.maxMint);
+        assertEq(spPRIME.claimableDepositTotal(),                      state.claimableDepositTotal);
+        assertEq(spPRIME.pendingDepositRequest(0, state.controller),   state.pendingDepositRequest);
+        assertEq(spPRIME.totalPendingDeposits(),                       state.totalPendingDeposits);
+        assertEq(spPRIME.depositQueueLength(),                         state.depositQueueLength);
+        assertEq(spPRIME.requestNonce(state.controller),               state.requestNonce);
     }
 
     function _assertQueuedDepositRequest(
@@ -152,7 +171,7 @@ abstract contract ForkTestBase is Test {
     )
         internal view
     {
-        IVault.Transaction memory queued = spPrimeVaultUsdc.queuedDepositRequest(controller, nonce);
+        IVault.Transaction memory queued = spPRIME.queuedDepositRequest(controller, nonce);
 
         assertEq(queued.controller, expected.controller);
         assertEq(queued.owner,      expected.owner);
