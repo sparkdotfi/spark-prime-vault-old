@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import { IERC7540Deposit }  from "../../src/interfaces/IERC7540.sol";
-import { IQueue }           from "../../src/interfaces/IQueue.sol";
-import { ISparkPrimeVault } from "../../src/interfaces/ISparkPrimeVault.sol";
-import { IVault }           from "../../src/interfaces/IVault.sol";
+import { IERC7540Deposit, IERC7540Redeem } from "../../src/interfaces/IERC7540.sol";
+import { IQueue }                          from "../../src/interfaces/IQueue.sol";
+import { ISparkPrimeVault }                from "../../src/interfaces/ISparkPrimeVault.sol";
+import { IVault }                          from "../../src/interfaces/IVault.sol";
 
 import { ForkTestBase, IERC4626Like } from "./ForkTestBase.t.sol";
 
@@ -1331,5 +1331,695 @@ contract DepositTests is ForkTestBase {
         _assertBalances(userBalances);
         _assertBalances(spPrimeBalances);
     }
+
+}
+
+contract RequestRedeemTests is ForkTestBase {
+    // TODO : Add failure tests
+
+    // Success tests
+
+    function test_requestRedeem_instantClaim() external {
+        _deposit(user, 200e6);  // 200e6 shares at index 1
+
+        AssertVaultStateParams memory vaultState = AssertVaultStateParams({
+            totalSupply           : 200e6,
+            totalAssets           : 200e6,
+            availableCapacity     : VAULT_CAPACITY - 200e6,
+            availableLiquidAssets : int256(200e6),
+            index                 : RAY,
+            lastAccrual           : block.timestamp
+        });
+
+        AssertRedeemStateParams memory redeemState = AssertRedeemStateParams({
+            controller             : user,
+            claimableRedeemRequest : 0,
+            maxRedeem              : 0,
+            maxWithdraw            : 0,
+            claimableWithdrawTotal : 0,
+            pendingRedeemRequest   : 0,
+            totalPendingWithdraws  : 0,
+            withdrawQueueLength    : 0,
+            requestNonce           : 1
+        });
+
+        AssertBalancesParams memory userBalances = AssertBalancesParams({
+            account       : user,
+            asset         : 0,
+            shares        : 200e6,
+            savingsShares : 0
+        });
+
+        AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
+            account       : address(spPRIME),
+            asset         : 200e6,
+            shares        : 0,
+            savingsShares : 0
+        });
+
+        _assertVaultState(vaultState);
+        _assertRedeemState(redeemState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
+
+        vm.expectEmit(address(spPRIME));
+        emit IERC7540Redeem.RedeemRequest(user, user, 0, user, 100e6);
+        vm.expectEmit(address(spPRIME));
+        emit IQueue.ClaimableWithdraw(user, 100e6);
+        vm.expectEmit(address(spPRIME));
+        emit IQueue.TotalClaimableWithdraws(100e6);
+
+        vm.prank(user);
+        uint256 requestId = spPRIME.requestRedeem(100e6, user, user);
+
+        assertEq(requestId, 0);
+
+        // Shares are burned on the spot, assets stay in the vault until claimed
+        vaultState.totalSupply           = 100e6;
+        vaultState.totalAssets           = 100e6;
+        vaultState.availableCapacity     = VAULT_CAPACITY - 100e6;
+        vaultState.availableLiquidAssets = int256(100e6);
+
+        redeemState.claimableRedeemRequest = 100e6;
+        redeemState.maxRedeem              = 100e6;
+        redeemState.maxWithdraw            = 100e6;
+        redeemState.claimableWithdrawTotal = 100e6;
+        redeemState.requestNonce           = 2;
+
+        userBalances.shares = 100e6;
+
+        _assertVaultState(vaultState);
+        _assertRedeemState(redeemState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
+    }
+
+    function test_requestRedeem_instantClaim_exactLiquidity() external {
+        _deposit(user, 100e6);  // 100e6 shares at index 1
+
+        AssertVaultStateParams memory vaultState = AssertVaultStateParams({
+            totalSupply           : 100e6,
+            totalAssets           : 100e6,
+            availableCapacity     : VAULT_CAPACITY - 100e6,
+            availableLiquidAssets : int256(100e6),
+            index                 : RAY,
+            lastAccrual           : block.timestamp
+        });
+
+        AssertRedeemStateParams memory redeemState = AssertRedeemStateParams({
+            controller             : user,
+            claimableRedeemRequest : 0,
+            maxRedeem              : 0,
+            maxWithdraw            : 0,
+            claimableWithdrawTotal : 0,
+            pendingRedeemRequest   : 0,
+            totalPendingWithdraws  : 0,
+            withdrawQueueLength    : 0,
+            requestNonce           : 1
+        });
+
+        AssertBalancesParams memory userBalances = AssertBalancesParams({
+            account       : user,
+            asset         : 0,
+            shares        : 100e6,
+            savingsShares : 0
+        });
+
+        AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
+            account       : address(spPRIME),
+            asset         : 100e6,
+            shares        : 0,
+            savingsShares : 0
+        });
+
+        _assertVaultState(vaultState);
+        _assertRedeemState(redeemState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
+
+        vm.expectEmit(address(spPRIME));
+        emit IERC7540Redeem.RedeemRequest(user, user, 0, user, 100e6);
+        vm.expectEmit(address(spPRIME));
+        emit IQueue.ClaimableWithdraw(user, 100e6);
+        vm.expectEmit(address(spPRIME));
+        emit IQueue.TotalClaimableWithdraws(100e6);
+
+        vm.prank(user);
+        uint256 requestId = spPRIME.requestRedeem(100e6, user, user);
+
+        assertEq(requestId, 0);
+
+        // Liquid assets exactly cover the request, so it fills instantly and leaves no free liquidity
+        vaultState.totalSupply           = 0;
+        vaultState.totalAssets           = 0;
+        vaultState.availableCapacity     = VAULT_CAPACITY;
+        vaultState.availableLiquidAssets = 0;
+
+        redeemState.claimableRedeemRequest = 100e6;
+        redeemState.maxRedeem              = 100e6;
+        redeemState.maxWithdraw            = 100e6;
+        redeemState.claimableWithdrawTotal = 100e6;
+        redeemState.requestNonce           = 2;
+
+        userBalances.shares = 0;
+
+        _assertVaultState(vaultState);
+        _assertRedeemState(redeemState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
+    }
+
+    function test_requestRedeem_partialInstantClaim() external {
+        _deposit(user, 100e6);  // 100e6 shares at index 1
+
+        vm.prank(LIQUIDITY_MANAGER);
+        spPRIME.take(40e6);  // Only 60e6 liquid assets left
+
+        AssertVaultStateParams memory vaultState = AssertVaultStateParams({
+            totalSupply           : 100e6,
+            totalAssets           : 100e6,
+            availableCapacity     : VAULT_CAPACITY - 100e6,
+            availableLiquidAssets : int256(60e6),
+            index                 : RAY,
+            lastAccrual           : block.timestamp
+        });
+
+        AssertRedeemStateParams memory redeemState = AssertRedeemStateParams({
+            controller             : user,
+            claimableRedeemRequest : 0,
+            maxRedeem              : 0,
+            maxWithdraw            : 0,
+            claimableWithdrawTotal : 0,
+            pendingRedeemRequest   : 0,
+            totalPendingWithdraws  : 0,
+            withdrawQueueLength    : 0,
+            requestNonce           : 1
+        });
+
+        AssertBalancesParams memory userBalances = AssertBalancesParams({
+            account       : user,
+            asset         : 0,
+            shares        : 100e6,
+            savingsShares : 0
+        });
+
+        AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
+            account       : address(spPRIME),
+            asset         : 60e6,
+            shares        : 0,
+            savingsShares : 0
+        });
+
+        _assertVaultState(vaultState);
+        _assertRedeemState(redeemState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
+
+        vm.expectEmit(address(spPRIME));
+        emit IERC7540Redeem.RedeemRequest(user, user, 0, user, 100e6);
+        vm.expectEmit(address(spPRIME));
+        emit IQueue.ClaimableWithdraw(user, 60e6);
+        vm.expectEmit(address(spPRIME));
+        emit IQueue.TotalClaimableWithdraws(60e6);
+        vm.expectEmit(address(spPRIME));
+        emit IQueue.WithdrawQueueValuation(40e6);
+
+        vm.prank(user);
+        spPRIME.requestRedeem(100e6, user, user);
+
+        // 60e6 shares fill instantly and are burned, the other 40e6 stay escrowed in the queue
+        vaultState.totalSupply           = 40e6;
+        vaultState.totalAssets           = 40e6;
+        vaultState.availableCapacity     = VAULT_CAPACITY - 40e6;
+        vaultState.availableLiquidAssets = 0;
+
+        redeemState.claimableRedeemRequest = 60e6;
+        redeemState.maxRedeem              = 60e6;
+        redeemState.maxWithdraw            = 60e6;
+        redeemState.claimableWithdrawTotal = 60e6;
+        redeemState.pendingRedeemRequest   = 40e6;
+        redeemState.totalPendingWithdraws  = 40e6;
+        redeemState.withdrawQueueLength    = 1;
+        redeemState.requestNonce           = 2;
+
+        userBalances.shares = 0;
+
+        spPrimeBalances.shares = 40e6;
+
+        _assertVaultState(vaultState);
+        _assertRedeemState(redeemState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
+
+        _assertWithdrawQueueHead(IVault.Transaction(user, user, 40e6, 2, 0));
+    }
+
+    function test_requestRedeem_queued_noLiquidity() external {
+        _deposit(user, 100e6);  // 100e6 shares at index 1
+
+        vm.prank(LIQUIDITY_MANAGER);
+        spPRIME.take(100e6);  // No liquid assets left
+
+        AssertVaultStateParams memory vaultState = AssertVaultStateParams({
+            totalSupply           : 100e6,
+            totalAssets           : 100e6,
+            availableCapacity     : VAULT_CAPACITY - 100e6,
+            availableLiquidAssets : 0,
+            index                 : RAY,
+            lastAccrual           : block.timestamp
+        });
+
+        AssertRedeemStateParams memory redeemState = AssertRedeemStateParams({
+            controller             : user,
+            claimableRedeemRequest : 0,
+            maxRedeem              : 0,
+            maxWithdraw            : 0,
+            claimableWithdrawTotal : 0,
+            pendingRedeemRequest   : 0,
+            totalPendingWithdraws  : 0,
+            withdrawQueueLength    : 0,
+            requestNonce           : 1
+        });
+
+        AssertBalancesParams memory userBalances = AssertBalancesParams({
+            account       : user,
+            asset         : 0,
+            shares        : 100e6,
+            savingsShares : 0
+        });
+
+        AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
+            account       : address(spPRIME),
+            asset         : 0,
+            shares        : 0,
+            savingsShares : 0
+        });
+
+        _assertVaultState(vaultState);
+        _assertRedeemState(redeemState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
+
+        vm.expectEmit(address(spPRIME));
+        emit IERC7540Redeem.RedeemRequest(user, user, 0, user, 100e6);
+        vm.expectEmit(address(spPRIME));
+        emit IQueue.WithdrawQueueValuation(100e6);
+
+        vm.prank(user);
+        spPRIME.requestRedeem(100e6, user, user);
+
+        // Shares move into escrow and are not burned until the queue is processed
+        redeemState.pendingRedeemRequest  = 100e6;
+        redeemState.totalPendingWithdraws = 100e6;
+        redeemState.withdrawQueueLength   = 1;
+        redeemState.requestNonce          = 2;
+
+        userBalances.shares = 0;
+
+        spPrimeBalances.shares = 100e6;
+
+        _assertVaultState(vaultState);
+        _assertRedeemState(redeemState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
+
+        _assertWithdrawQueueHead(IVault.Transaction(user, user, 100e6, 2, 0));
+    }
+
+    function test_requestRedeem_queued_queueNotEmpty() external {
+        _deposit(user2, 100e6);  // 100e6 shares at index 1
+        _deposit(user,  100e6);  // 100e6 shares at index 1
+
+        vm.prank(LIQUIDITY_MANAGER);
+        spPRIME.take(200e6);  // No liquid assets left
+
+        _requestRedeem(user2, 100e6);  // Queued as user2 nonce 2, no liquidity
+
+        // Liquidity returns, but the queue is not empty
+        deal(address(usdc), address(spPRIME), 200e6);
+
+        AssertVaultStateParams memory vaultState = AssertVaultStateParams({
+            totalSupply           : 200e6,
+            totalAssets           : 200e6,
+            availableCapacity     : VAULT_CAPACITY - 200e6,
+            availableLiquidAssets : int256(200e6),
+            index                 : RAY,
+            lastAccrual           : block.timestamp
+        });
+
+        AssertRedeemStateParams memory redeemState = AssertRedeemStateParams({
+            controller             : user,
+            claimableRedeemRequest : 0,
+            maxRedeem              : 0,
+            maxWithdraw            : 0,
+            claimableWithdrawTotal : 0,
+            pendingRedeemRequest   : 0,
+            totalPendingWithdraws  : 100e6,
+            withdrawQueueLength    : 1,
+            requestNonce           : 1
+        });
+
+        AssertBalancesParams memory userBalances = AssertBalancesParams({
+            account       : user,
+            asset         : 0,
+            shares        : 100e6,
+            savingsShares : 0
+        });
+
+        AssertBalancesParams memory user2Balances = AssertBalancesParams({
+            account       : user2,
+            asset         : 0,
+            shares        : 0,
+            savingsShares : 0
+        });
+
+        AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
+            account       : address(spPRIME),
+            asset         : 200e6,
+            shares        : 100e6,
+            savingsShares : 0
+        });
+
+        _assertVaultState(vaultState);
+        _assertRedeemState(redeemState);
+        _assertBalances(userBalances);
+        _assertBalances(user2Balances);
+        _assertBalances(spPrimeBalances);
+
+        _assertWithdrawQueueHead(IVault.Transaction(user2, user2, 100e6, 2, 0));
+
+        vm.expectEmit(address(spPRIME));
+        emit IERC7540Redeem.RedeemRequest(user, user, 0, user, 100e6);
+        vm.expectEmit(address(spPRIME));
+        emit IQueue.WithdrawQueueValuation(200e6);
+
+        vm.prank(user);
+        spPRIME.requestRedeem(100e6, user, user);
+
+        // Liquidity is free, but the request still queues behind the existing entry (FIFO)
+        redeemState.pendingRedeemRequest  = 100e6;
+        redeemState.totalPendingWithdraws = 200e6;
+        redeemState.withdrawQueueLength   = 2;
+        redeemState.requestNonce          = 2;
+
+        userBalances.shares = 0;
+
+        spPrimeBalances.shares = 200e6;
+
+        _assertVaultState(vaultState);
+        _assertRedeemState(redeemState);
+        _assertBalances(userBalances);
+        _assertBalances(user2Balances);
+        _assertBalances(spPrimeBalances);
+
+        _assertWithdrawQueueHead(IVault.Transaction(user2, user2, 100e6, 2, 0));
+    }
+
+    function test_requestRedeem_afterInterestAccrual() external {
+        uint256 depositTimestamp = block.timestamp;
+
+        _deposit(user, 100e6);  // 100e6 shares at index 1
+
+        skip(365 days);
+
+        uint256 expectedIndex  = spPRIME.previewIndex();
+        uint256 expectedAssets = 100e6 * expectedIndex / RAY;
+
+        // 10% APY over one year
+        assertApproxEqRel(expectedIndex, 1.1e27, 0.0001e18);
+        assertEq(expectedAssets, 109.999999e6);
+
+        // Liquidity returns with yield, so the full accrued value fills instantly
+        deal(address(usdc), address(spPRIME), 110e6);
+
+        AssertVaultStateParams memory vaultState = AssertVaultStateParams({
+            totalSupply           : 100e6,
+            totalAssets           : expectedAssets,
+            availableCapacity     : VAULT_CAPACITY - 100e6,
+            availableLiquidAssets : int256(110e6),
+            index                 : RAY,
+            lastAccrual           : depositTimestamp
+        });
+
+        AssertRedeemStateParams memory redeemState = AssertRedeemStateParams({
+            controller             : user,
+            claimableRedeemRequest : 0,
+            maxRedeem              : 0,
+            maxWithdraw            : 0,
+            claimableWithdrawTotal : 0,
+            pendingRedeemRequest   : 0,
+            totalPendingWithdraws  : 0,
+            withdrawQueueLength    : 0,
+            requestNonce           : 1
+        });
+
+        AssertBalancesParams memory userBalances = AssertBalancesParams({
+            account       : user,
+            asset         : 0,
+            shares        : 100e6,
+            savingsShares : 0
+        });
+
+        AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
+            account       : address(spPRIME),
+            asset         : 110e6,
+            shares        : 0,
+            savingsShares : 0
+        });
+
+        _assertVaultState(vaultState);
+        _assertRedeemState(redeemState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
+
+        vm.expectEmit(address(spPRIME));
+        emit IVault.AccruedInterest(expectedIndex, block.timestamp);
+        vm.expectEmit(address(spPRIME));
+        emit IERC7540Redeem.RedeemRequest(user, user, 0, user, 100e6);
+        vm.expectEmit(address(spPRIME));
+        emit IQueue.ClaimableWithdraw(user, expectedAssets);
+        vm.expectEmit(address(spPRIME));
+        emit IQueue.TotalClaimableWithdraws(expectedAssets);
+
+        vm.prank(user);
+        spPRIME.requestRedeem(100e6, user, user);
+
+        // Assets owed are fixed at the accrued index, so more assets than shares
+        vaultState.totalSupply           = 0;
+        vaultState.totalAssets           = 0;
+        vaultState.availableCapacity     = VAULT_CAPACITY;
+        vaultState.availableLiquidAssets = int256(110e6 - expectedAssets);
+        vaultState.index                 = expectedIndex;
+        vaultState.lastAccrual           = block.timestamp;
+
+        redeemState.claimableRedeemRequest = 100e6;
+        redeemState.maxRedeem              = 100e6;
+        redeemState.maxWithdraw            = expectedAssets;
+        redeemState.claimableWithdrawTotal = expectedAssets;
+        redeemState.requestNonce           = 2;
+
+        userBalances.shares = 0;
+
+        _assertVaultState(vaultState);
+        _assertRedeemState(redeemState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
+    }
+
+    function test_requestRedeem_withWithdrawFee() external {
+        vm.prank(RISK_MANAGER);
+        spPRIME.updateWithdrawFee(100);  // 1%
+
+        _deposit(user, 100e6);  // 100e6 shares at index 1
+
+        assertEq(spPRIME.withdrawFee(), 100);
+
+        AssertVaultStateParams memory vaultState = AssertVaultStateParams({
+            totalSupply           : 100e6,
+            totalAssets           : 100e6,
+            availableCapacity     : VAULT_CAPACITY - 100e6,
+            availableLiquidAssets : int256(100e6),
+            index                 : RAY,
+            lastAccrual           : block.timestamp
+        });
+
+        AssertRedeemStateParams memory redeemState = AssertRedeemStateParams({
+            controller             : user,
+            claimableRedeemRequest : 0,
+            maxRedeem              : 0,
+            maxWithdraw            : 0,
+            claimableWithdrawTotal : 0,
+            pendingRedeemRequest   : 0,
+            totalPendingWithdraws  : 0,
+            withdrawQueueLength    : 0,
+            requestNonce           : 1
+        });
+
+        AssertBalancesParams memory userBalances = AssertBalancesParams({
+            account       : user,
+            asset         : 0,
+            shares        : 100e6,
+            savingsShares : 0
+        });
+
+        AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
+            account       : address(spPRIME),
+            asset         : 100e6,
+            shares        : 0,
+            savingsShares : 0
+        });
+
+        _assertVaultState(vaultState);
+        _assertRedeemState(redeemState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
+
+        vm.expectEmit(address(spPRIME));
+        emit IERC7540Redeem.RedeemRequest(user, user, 0, user, 100e6);
+        vm.expectEmit(address(spPRIME));
+        emit IQueue.ClaimableWithdraw(user, 99e6);
+        vm.expectEmit(address(spPRIME));
+        emit IQueue.TotalClaimableWithdraws(99e6);
+
+        vm.prank(user);
+        spPRIME.requestRedeem(100e6, user, user);
+
+        // All shares are burned, the 1e6 fee stays in the vault as free liquidity
+        vaultState.totalSupply           = 0;
+        vaultState.totalAssets           = 0;
+        vaultState.availableCapacity     = VAULT_CAPACITY;
+        vaultState.availableLiquidAssets = int256(1e6);
+
+        redeemState.claimableRedeemRequest = 100e6;
+        redeemState.maxRedeem              = 100e6;
+        redeemState.maxWithdraw            = 99e6;
+        redeemState.claimableWithdrawTotal = 99e6;
+        redeemState.requestNonce           = 2;
+
+        userBalances.shares = 0;
+
+        _assertVaultState(vaultState);
+        _assertRedeemState(redeemState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
+    }
+
+    function test_requestRedeem_differentController() external {
+        _deposit(user, 100e6);  // 100e6 shares at index 1
+
+        AssertVaultStateParams memory vaultState = AssertVaultStateParams({
+            totalSupply           : 100e6,
+            totalAssets           : 100e6,
+            availableCapacity     : VAULT_CAPACITY - 100e6,
+            availableLiquidAssets : int256(100e6),
+            index                 : RAY,
+            lastAccrual           : block.timestamp
+        });
+
+        AssertRedeemStateParams memory user2RedeemState = AssertRedeemStateParams({
+            controller             : user2,
+            claimableRedeemRequest : 0,
+            maxRedeem              : 0,
+            maxWithdraw            : 0,
+            claimableWithdrawTotal : 0,
+            pendingRedeemRequest   : 0,
+            totalPendingWithdraws  : 0,
+            withdrawQueueLength    : 0,
+            requestNonce           : 0
+        });
+
+        AssertRedeemStateParams memory userRedeemState = AssertRedeemStateParams({
+            controller             : user,
+            claimableRedeemRequest : 0,
+            maxRedeem              : 0,
+            maxWithdraw            : 0,
+            claimableWithdrawTotal : 0,
+            pendingRedeemRequest   : 0,
+            totalPendingWithdraws  : 0,
+            withdrawQueueLength    : 0,
+            requestNonce           : 1
+        });
+
+        AssertBalancesParams memory userBalances = AssertBalancesParams({
+            account       : user,
+            asset         : 0,
+            shares        : 100e6,
+            savingsShares : 0
+        });
+
+        AssertBalancesParams memory user2Balances = AssertBalancesParams({
+            account       : user2,
+            asset         : 0,
+            shares        : 0,
+            savingsShares : 0
+        });
+
+        AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
+            account       : address(spPRIME),
+            asset         : 100e6,
+            shares        : 0,
+            savingsShares : 0
+        });
+
+        _assertVaultState(vaultState);
+        _assertRedeemState(user2RedeemState);
+        _assertRedeemState(userRedeemState);
+        _assertBalances(userBalances);
+        _assertBalances(user2Balances);
+        _assertBalances(spPrimeBalances);
+
+        vm.expectEmit(address(spPRIME));
+        emit IERC7540Redeem.RedeemRequest(user2, user, 0, user, 100e6);
+        vm.expectEmit(address(spPRIME));
+        emit IQueue.ClaimableWithdraw(user2, 100e6);
+        vm.expectEmit(address(spPRIME));
+        emit IQueue.TotalClaimableWithdraws(100e6);
+
+        vm.prank(user);
+        spPRIME.requestRedeem(100e6, user2, user);
+
+        // Shares come from the owner, the claim and nonce belong to the controller
+        vaultState.totalSupply           = 0;
+        vaultState.totalAssets           = 0;
+        vaultState.availableCapacity     = VAULT_CAPACITY;
+        vaultState.availableLiquidAssets = 0;
+
+        user2RedeemState.claimableRedeemRequest = 100e6;
+        user2RedeemState.maxRedeem              = 100e6;
+        user2RedeemState.maxWithdraw            = 100e6;
+        user2RedeemState.claimableWithdrawTotal = 100e6;
+        user2RedeemState.requestNonce           = 1;
+
+        userRedeemState.claimableWithdrawTotal = 100e6;
+
+        userBalances.shares = 0;
+
+        _assertVaultState(vaultState);
+        _assertRedeemState(user2RedeemState);
+        _assertRedeemState(userRedeemState);
+        _assertBalances(userBalances);
+        _assertBalances(user2Balances);
+        _assertBalances(spPrimeBalances);
+    }
+
+}
+
+contract RedeemTests is ForkTestBase {
+    // TODO : Add failure tests
+
+    // Success tests
+
+    function test_redeem_fullClaim() external {
+    }
+
+    function test_redeem_partialClaim() external {
+    }
+
+    function test_redeem_multiplePartialClaims() external {
+    }
+
+    function test_redeem_operatorAndDifferentReceiver() external {}
+
+    function test_redeem_afterTimeSkip_noInterestAccrual() external {}
 
 }

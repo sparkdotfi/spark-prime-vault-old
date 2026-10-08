@@ -71,6 +71,18 @@ abstract contract ForkTestBase is Test {
         uint256 savingsShares; // spUSDC shares held
     }
 
+    struct AssertRedeemStateParams {
+        address controller;             // controller being checked
+        uint256 claimableRedeemRequest; // controller spPrime shares claimable
+        uint256 maxRedeem;              // controller spPrime shares claimable
+        uint256 maxWithdraw;            // controller USDC ready to claim
+        uint256 claimableWithdrawTotal; // all USDC ready to claim
+        uint256 pendingRedeemRequest;   // controller spPrime shares in queue
+        uint256 totalPendingWithdraws;  // all spPrime shares in queue
+        uint256 withdrawQueueLength;    // requests in queue
+        uint256 requestNonce;           // controller last request nonce
+    }
+
     address internal constant ADMIN             = Ethereum.SPARK_PROXY;
     address internal constant VAULT_MANAGER     = address(1); // TODO : Replace with actual addresses
     address internal constant LIQUIDITY_MANAGER = address(2); // TODO : Replace with actual addresses
@@ -138,6 +150,18 @@ abstract contract ForkTestBase is Test {
         vm.stopPrank();
     }
 
+    function _deposit(address account, uint256 amount) internal {
+        _requestDeposit(account, amount);
+
+        vm.prank(account);
+        spPRIME.deposit(amount, account, account);
+    }
+
+    function _requestRedeem(address account, uint256 shares) internal {
+        vm.prank(account);
+        spPRIME.requestRedeem(shares, account, account);
+    }
+
     function _assertBalances(AssertBalancesParams memory balances) internal view {
         assertEq(usdc.balanceOf(balances.account),    balances.asset);
         assertEq(spPRIME.balanceOf(balances.account), balances.shares);
@@ -164,6 +188,17 @@ abstract contract ForkTestBase is Test {
         assertEq(spPRIME.requestNonce(state.controller),               state.requestNonce);
     }
 
+    function _assertRedeemState(AssertRedeemStateParams memory state) internal view {
+        assertEq(spPRIME.claimableRedeemRequest(0, state.controller), state.claimableRedeemRequest);
+        assertEq(spPRIME.maxRedeem(state.controller),                 state.maxRedeem);
+        assertEq(spPRIME.maxWithdraw(state.controller),               state.maxWithdraw);
+        assertEq(spPRIME.claimableWithdrawTotal(),                    state.claimableWithdrawTotal);
+        assertEq(spPRIME.pendingRedeemRequest(0, state.controller),   state.pendingRedeemRequest);
+        assertEq(spPRIME.totalPendingWithdraws(),                     state.totalPendingWithdraws);
+        assertEq(spPRIME.withdrawQueueLength(),                       state.withdrawQueueLength);
+        assertEq(spPRIME.requestNonce(state.controller),              state.requestNonce);
+    }
+
     function _assertQueuedDepositRequest(
         address                   controller,
         uint256                   nonce,
@@ -178,6 +213,16 @@ abstract contract ForkTestBase is Test {
         assertEq(queued.amount,     expected.amount);
         assertEq(queued.nonce,      expected.nonce);
         assertEq(queued.fee,        expected.fee);
+    }
+
+    function _assertWithdrawQueueHead(IVault.Transaction memory expected) internal view {
+        IVault.Transaction memory head = spPRIME.withdrawQueueHead();
+
+        assertEq(head.controller, expected.controller);
+        assertEq(head.owner,      expected.owner);
+        assertEq(head.amount,     expected.amount);
+        assertEq(head.nonce,      expected.nonce);
+        assertEq(head.fee,        expected.fee);
     }
 
 }
