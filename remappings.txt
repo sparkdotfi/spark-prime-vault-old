@@ -7,3 +7,6 @@ openzeppelin-contracts/=lib/openzeppelin-contracts/
 src/=src/
 openzeppelin-contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/
 spark-vaults-v2/=lib/spark-vaults-v2/src/
+token-tests/=lib/spark-vaults-v2/lib/token-tests/src/
+dss-test/=lib/spark-vaults-v2/lib/token-tests/lib/dss-test/src/
+dss-interfaces/=lib/spark-vaults-v2/lib/token-tests/lib/dss-test/lib/dss-interfaces/src/

@@ -377,6 +377,7 @@ contract SparkPrimeVault is AccessControlEnumerableUpgradeable, UUPSUpgradeable 
 
     function transferFrom(address from, address to, uint256 value) external returns (bool) {
         require(to != address(0) && to != address(this), "SparkPrimeVault/invalid-address");
+        require(balanceOf[from] >= value,                "SparkPrimeVault/insufficient-balance");
 
         if (from != msg.sender) {
             uint256 allowed = allowance[from][msg.sender];
