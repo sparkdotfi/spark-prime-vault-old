@@ -262,7 +262,6 @@ contract SparkPrimeVaultDripTests is SparkPrimeVaultTestBase {
         vm.startPrank(user1);
         asset.approve(address(vault), 1_000_000e6);
         vault.requestDeposit(1_000_000e6, user1, user1);
-        vault.mint(1_000_000e6, user1);
         vm.stopPrank();
     }
 
@@ -323,6 +322,160 @@ contract SparkPrimeVaultDripTests is SparkPrimeVaultTestBase {
 
 }
 
+contract SparkPrimeVaultViewFunctionTests is SparkPrimeVaultTestBase {
+
+    // NOTE: This cannot be part of SparkPrimeVaultTestBase, because that is used in a contract where
+    // DssTest is also used (and that also defines RAY).
+    uint256 constant internal RAY = 1e27;
+
+    address user1 = makeAddr("user1");
+    address user2 = makeAddr("user2");
+    address user3 = makeAddr("user3");
+
+    function setUp() public override {
+        super.setUp();
+
+        vm.startPrank(admin);
+        vault.setMaxWithdrawFee(0.01e18);
+        vault.setVsrBounds(1e27, FIVE_PCT_VSR);
+        vm.stopPrank();
+
+        vm.prank(riskManager);
+        vault.setWithdrawFee(0.005e18);
+
+        deal(address(asset), user1, 1000e6);
+        deal(address(asset), user2, 1000e6);
+        deal(address(asset), user3, 1000e6);
+
+        // user1 holds 800e6 shares after an instant redeem of 200e6 shares
+        vm.startPrank(user1);
+        asset.approve(address(vault), 1000e6);
+        vault.requestDeposit(1000e6, user1, user1);
+        vault.requestRedeem(200e6, user1, user1);
+        vm.stopPrank();
+
+        // user2 holds 500e6 shares
+        vm.startPrank(user2);
+        asset.approve(address(vault), 1000e6);
+        vault.requestDeposit(500e6, user2, user2);
+        vm.stopPrank();
+    }
+
+    function test_convertToAssets() public {
+        assertEq(vault.convertToAssets(0),      0);
+        assertEq(vault.convertToAssets(1),      1);
+        assertEq(vault.convertToAssets(1000e6), 1000e6);
+
+        vm.prank(setter);
+        vault.setVsr(FIVE_PCT_VSR);
+
+        skip(365 days);
+
+        assertEq(vault.nowChi(), 1.049999999999999999961070145e27);
+
+        // Rounds down
+        assertEq(vault.convertToAssets(0),      0);
+        assertEq(vault.convertToAssets(1),      1);
+        assertEq(vault.convertToAssets(1000e6), 1049.999999e6);
+    }
+
+    function test_totalAssets() public {
+        // Supply is user1's 800e6 plus user2's 500e6, the 200e6 redeem was burned
+        assertEq(vault.totalSupply(),             1300e6);
+        assertEq(vault.balanceOf(user1),          800e6);
+        assertEq(vault.balanceOf(user2),          500e6);
+        assertEq(vault.balanceOf(address(vault)), 0);
+        assertEq(vault.totalAssets(),             1300e6);
+
+        vm.prank(setter);
+        vault.setVsr(FIVE_PCT_VSR);
+
+        skip(365 days);
+
+        assertEq(vault.totalAssets(), 1364.999999e6);
+        assertEq(vault.totalAssets(), vault.convertToAssets(vault.totalSupply()));
+
+        // The USDC paid to user1 left the vault, the fee stayed
+        assertEq(asset.balanceOf(user1),          199e6);
+        assertEq(asset.balanceOf(address(vault)), 1301e6);
+    }
+
+    function test_totalAssets_includesEscrowedRedeems() public {
+        // Drain the liquidity so the next redeem is queued in escrow
+        vm.prank(taker);
+        vault.take(1301e6);
+
+        vm.prank(user2);
+        vault.requestRedeem(500e6, user2, user2);
+
+        assertEq(vault.balanceOf(user2),          0);
+        assertEq(vault.balanceOf(address(vault)), 500e6);
+        assertEq(vault.totalSupply(),             1300e6);
+        assertEq(vault.totalAssets(),             1300e6);
+
+        vm.prank(setter);
+        vault.setVsr(FIVE_PCT_VSR);
+
+        skip(365 days);
+
+        // Escrowed shares keep earning until they are processed
+        assertEq(vault.totalAssets(), 1364.999999e6);
+    }
+
+    function test_pendingRequestViews() public {
+        assertEq(vault.pendingDepositRequest(user1), 0);
+        assertEq(vault.pendingDepositRequest(user2), 0);
+        assertEq(vault.pendingRedeemRequest(user1),  0);
+        assertEq(vault.pendingRedeemRequest(user2),  0);
+
+        // Fill the capacity and drain the liquidity to force queueing
+        vm.prank(admin);
+        vault.setCapacity(1300e6);
+
+        vm.prank(taker);
+        vault.take(1301e6);
+
+        vm.startPrank(user3);
+        asset.approve(address(vault), 1000e6);
+        vault.requestDeposit(100e6, user3, user3);
+        vm.stopPrank();
+
+        vm.prank(user1);
+        vault.requestRedeem(100e6, user1, user1);
+
+        assertEq(vault.pendingDepositShares(user3),  100e6);
+        assertEq(vault.pendingDepositRequest(user3), 100e6);
+        assertEq(vault.pendingRedeemShares(user1),   100e6);
+        assertEq(vault.pendingRedeemRequest(user1),  100e6);
+
+        // A pending deposit is denominated in spUSDC shares and reported in assets
+        vm.prank(setter);
+        spUsdc.setVsr(FIVE_PCT_VSR);
+
+        skip(365 days);
+
+        assertEq(vault.pendingDepositShares(user3),  100e6);
+        assertEq(vault.pendingDepositRequest(user3), 104.999999e6);
+        assertEq(vault.pendingRedeemShares(user1),   100e6);
+        assertEq(vault.pendingRedeemRequest(user1),  100e6);
+    }
+
+    function test_supportsInterface() public view {
+        assertTrue(vault.supportsInterface(0x01ffc9a7));  // ERC165
+        assertTrue(vault.supportsInterface(0x7965db0b));  // IAccessControl
+        assertTrue(vault.supportsInterface(0x5a05180f));  // IAccessControlEnumerable
+
+        // Not an ERC4626 or ERC7540 vault, there are no claims or operators
+        assertFalse(vault.supportsInterface(0x87dfe5a0));  // ERC4626
+        assertFalse(vault.supportsInterface(0xe3bc4e65));  // ERC7540 operator
+        assertFalse(vault.supportsInterface(0xce3bbe50));  // ERC7540 async deposit
+        assertFalse(vault.supportsInterface(0x620ee8e4));  // ERC7540 async redeem
+        assertFalse(vault.supportsInterface(0x2f0a18c5));  // ERC7575
+        assertFalse(vault.supportsInterface(0xffffffff));
+    }
+
+}
+
 contract SparkPrimeVaultConvenienceViewFunctionTests is SparkPrimeVaultTestBase {
 
     // NOTE: This cannot be part of SparkPrimeVaultTestBase, because that is used in a contract where
@@ -339,7 +492,6 @@ contract SparkPrimeVaultConvenienceViewFunctionTests is SparkPrimeVaultTestBase 
         vm.startPrank(user1);
         asset.approve(address(vault), 1_000_000e6);
         vault.requestDeposit(1_000_000e6, user1, user1);
-        vault.mint(1_000_000e6, user1);
         vm.stopPrank();
 
         assertEq(vault.assetsOf(user1),         1_000_000e6);
@@ -394,9 +546,8 @@ contract SparkPrimeVaultConvenienceViewFunctionTests is SparkPrimeVaultTestBase 
         vault.requestDeposit(1000e6, user1, user1);
         vm.stopPrank();
 
-        // Escrowed (unclaimed) shares count towards the supply
         assertEq(vault.totalSupply(),       1000e6);
-        assertEq(vault.balanceOf(user1),    0);
+        assertEq(vault.balanceOf(user1),    1000e6);
         assertEq(vault.availableCapacity(), 1_000_000e6 - 1000e6);
 
         vm.prank(admin);
@@ -413,14 +564,6 @@ contract SparkPrimeVaultConvenienceViewFunctionTests is SparkPrimeVaultTestBase 
         vault.setCapacity(1000e6 + 1);
 
         assertEq(vault.availableCapacity(), 1);
-
-        // Claiming doesn't change the supply, so the capacity is unchanged
-        vm.prank(user1);
-        vault.mint(1000e6, user1);
-
-        assertEq(vault.totalSupply(),       1000e6);
-        assertEq(vault.balanceOf(user1),    1000e6);
-        assertEq(vault.availableCapacity(), 1);
     }
 
     function test_availableLiquidAssets_idleAndSleeve() public {
@@ -429,7 +572,6 @@ contract SparkPrimeVaultConvenienceViewFunctionTests is SparkPrimeVaultTestBase 
         vm.startPrank(user1);
         asset.approve(address(vault), 1000e6);
         vault.requestDeposit(1000e6, user1, user1);
-        vault.mint(1000e6, user1);
         vm.stopPrank();
 
         assertEq(vault.availableLiquidAssets(), 1000e6);
@@ -448,13 +590,13 @@ contract SparkPrimeVaultConvenienceViewFunctionTests is SparkPrimeVaultTestBase 
 
         assertEq(vault.availableLiquidAssets(), 900e6);
 
-        // Ring-fenced cash does not
+        // Paid out redeems leave the vault
         vm.prank(user1);
         vault.requestRedeem(200e6, user1, user1);
 
-        assertEq(asset.balanceOf(address(vault)),    300e6);
-        assertEq(vault.totalClaimableRedeemAssets(), 200e6);
-        assertEq(vault.availableLiquidAssets(),      700e6);
+        assertEq(asset.balanceOf(address(vault)), 100e6);
+        assertEq(asset.balanceOf(user1),          200e6);
+        assertEq(vault.availableLiquidAssets(),   700e6);
 
         // Savings yield grows the sleeve
         vm.prank(setter);
@@ -474,7 +616,6 @@ contract SparkPrimeVaultConvenienceViewFunctionTests is SparkPrimeVaultTestBase 
         vm.startPrank(user1);
         asset.approve(address(vault), 1000e6);
         vault.requestDeposit(1000e6, user1, user1);
-        vault.mint(1000e6, user1);
         vm.stopPrank();
 
         vm.prank(rebalancer);
@@ -505,7 +646,6 @@ contract SparkPrimeVaultConvenienceViewFunctionTests is SparkPrimeVaultTestBase 
         vm.startPrank(user1);
         asset.approve(address(vault), 1000e6);
         vault.requestDeposit(1000e6, user1, user1);
-        vault.mint(1000e6, user1);
         vm.stopPrank();
 
         vm.prank(taker);
@@ -526,25 +666,6 @@ contract SparkPrimeVaultConvenienceViewFunctionTests is SparkPrimeVaultTestBase 
         assertEq(spUsdc.balanceOf(address(vault)),  400e6);
         assertEq(vault.totalQueuedDepositShares(),  400e6);
         assertEq(vault.availableLiquidAssets(),     0);
-    }
-
-    function test_availableLiquidAssets_negative() public {
-        deal(address(asset), user1, 1000e6);
-
-        vm.startPrank(user1);
-        asset.approve(address(vault), 1000e6);
-        vault.requestDeposit(1000e6, user1, user1);
-        vault.mint(1000e6, user1);
-        vault.requestRedeem(200e6, user1, user1);
-        vm.stopPrank();
-
-        assertEq(vault.totalClaimableRedeemAssets(), 200e6);
-        assertEq(vault.availableLiquidAssets(),      800e6);
-
-        // Unreachable through the interface, forced here to show the sign (e.g. USDC seized)
-        deal(address(asset), address(vault), 200e6 - 1);
-
-        assertEq(vault.availableLiquidAssets(), -1);
     }
 
     function test_getImplementation() public {

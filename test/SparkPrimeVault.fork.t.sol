@@ -27,23 +27,17 @@ contract SparkPrimeVaultForkTest is Test {
 
     struct VaultState {
         uint256 totalSupply;
-        uint256 usdc;                    // USDC held by the vault
-        uint256 spUsdc;                  // spUSDC shares held by the vault
-        uint256 claimableDepositShares;  // spPRIME escrowed for approved deposits
-        uint256 claimableRedeemAssets;   // USDC ring-fenced for approved redeems
-        uint256 queuedDepositShares;     // spUSDC held for queued deposits
-        uint256 queuedRedeemShares;      // spPRIME escrowed for queued redeems
+        uint256 usdc;                 // USDC held by the vault
+        uint256 spUsdc;               // spUSDC shares held by the vault
+        uint256 queuedDepositShares;  // spUSDC held for queued deposits
+        uint256 queuedRedeemShares;   // spPRIME escrowed for queued redeems
     }
 
     struct UserState {
         uint256 usdc;
-        uint256 shares;                  // spPRIME held
-        uint256 claimableDepositAssets;
-        uint256 claimableDepositShares;
-        uint256 pendingDepositShares;    // spUSDC shares
+        uint256 shares;                // spPRIME held
+        uint256 pendingDepositShares;  // spUSDC shares
         uint256 pendingRedeemShares;
-        uint256 claimableRedeemShares;
-        uint256 claimableRedeemAssets;
     }
 
     uint256 constant RAY = 1e27;
@@ -68,11 +62,10 @@ contract SparkPrimeVaultForkTest is Test {
     address taker       = makeAddr("taker");  // The PAU
     address unpauser    = makeAddr("unpauser");
 
-    address alice    = makeAddr("alice");
-    address bob      = makeAddr("bob");
-    address carol    = makeAddr("carol");
-    address dave     = makeAddr("dave");
-    address operator = makeAddr("operator");
+    address alice = makeAddr("alice");
+    address bob   = makeAddr("bob");
+    address carol = makeAddr("carol");
+    address dave  = makeAddr("dave");
 
     SparkPrimeVault vault;
 
@@ -128,52 +121,36 @@ contract SparkPrimeVaultForkTest is Test {
     function test_e2e() external {
         _check();
 
-        /*** 1. Instant deposit within capacity, price locked at chi = RAY ***/
+        /*** 1. Instant deposit within capacity, minted straight to alice at chi = RAY ***/
 
         _requestDeposit(alice, 4_000e6);
 
-        v.totalSupply            = 4_000e6;
-        v.usdc                   = 4_000e6;
-        v.claimableDepositShares = 4_000e6;
+        v.totalSupply = 4_000e6;
+        v.usdc        = 4_000e6;
 
-        u[alice].claimableDepositAssets = 4_000e6;
-        u[alice].claimableDepositShares = 4_000e6;
+        u[alice].shares = 4_000e6;
         _check();
 
-        /*** 2. Claim via mint (the PAU's maxMint + mint path) ***/
-
-        vm.prank(alice);
-        assertEq(vault.mint(4_000e6, alice), 4_000e6);
-
-        v.claimableDepositShares = 0;
-
-        u[alice].shares                 = 4_000e6;
-        u[alice].claimableDepositAssets = 0;
-        u[alice].claimableDepositShares = 0;
-        _check();
-
-        /*** 3. Deposit overflowing capacity: 6,000 instant, 1,000 queued in spUSDC ***/
+        /*** 2. Deposit overflowing capacity: 6,000 minted, 1,000 queued in spUSDC ***/
 
         uint256 bobQueued = spUsdc.convertToShares(1_000e6);
 
         _requestDeposit(bob, 7_000e6);
 
-        v.totalSupply            = 10_000e6;
-        v.usdc                   = 10_000e6;
-        v.spUsdc                 = bobQueued;
-        v.claimableDepositShares = 6_000e6;
-        v.queuedDepositShares    = bobQueued;
+        v.totalSupply         = 10_000e6;
+        v.usdc                = 10_000e6;
+        v.spUsdc              = bobQueued;
+        v.queuedDepositShares = bobQueued;
 
-        u[bob].claimableDepositAssets = 6_000e6;
-        u[bob].claimableDepositShares = 6_000e6;
-        u[bob].pendingDepositShares   = bobQueued;
+        u[bob].shares               = 6_000e6;
+        u[bob].pendingDepositShares = bobQueued;
         _check();
 
         assertEq(vault.availableCapacity(), 0);
-        assertEq(vault.pendingDepositRequest(0, bob), spUsdc.convertToAssets(bobQueued));
-        assertApproxEqAbs(vault.pendingDepositRequest(0, bob), 1_000e6, 2);
+        assertEq(vault.pendingDepositRequest(bob), spUsdc.convertToAssets(bobQueued));
+        assertApproxEqAbs(vault.pendingDepositRequest(bob), 1_000e6, 2);
 
-        /*** 4. Fully queued deposits (queue non-empty): carol keeps hers, dave's is cancelled ***/
+        /*** 3. Fully queued deposits (queue non-empty): carol keeps hers, dave's is cancelled ***/
 
         uint256 carolQueued = spUsdc.convertToShares(2_000e6);
         uint256 daveQueued  = spUsdc.convertToShares(500e6);
@@ -188,7 +165,7 @@ contract SparkPrimeVaultForkTest is Test {
         u[dave].pendingDepositShares  = daveQueued;
         _check();
 
-        /*** 5. 30 days pass: spPRIME accrues 5% APY, queued spUSDC accrues spUSDC's rate ***/
+        /*** 4. 30 days pass: spPRIME accrues 5% APY, queued spUSDC accrues spUSDC's rate ***/
 
         skip(30 days);
 
@@ -197,7 +174,7 @@ contract SparkPrimeVaultForkTest is Test {
         assertEq(vault.totalAssets(),    10_000e6 * chi / RAY);
         assertEq(vault.assetsOf(alice),  4_000e6  * chi / RAY);
 
-        /*** 6. Compliance cancel of dave's queued deposit: refund incl. spUSDC yield to owner ***/
+        /*** 5. Compliance cancel of dave's queued deposit: refund incl. spUSDC yield to owner ***/
 
         vm.prank(alice);
         vm.expectRevert("SparkPrimeVault/not-authorized");
@@ -216,7 +193,7 @@ contract SparkPrimeVaultForkTest is Test {
         u[dave].pendingDepositShares = 0;
         _check();
 
-        /*** 7. Raise capacity and process the deposit queue: partial, then full ***/
+        /*** 6. Raise capacity and process the deposit queue: partial, then full ***/
 
         vm.prank(ADMIN);
         vault.setCapacity(20_000e6);
@@ -228,13 +205,11 @@ contract SparkPrimeVaultForkTest is Test {
             vm.prank(rebalancer);
             vault.processDepositQueue(500e6);
 
-            v.totalSupply            += minted;
-            v.claimableDepositShares += minted;
-            v.queuedDepositShares    -= accepted;  // Reclassified as free sleeve, not redeemed
+            v.totalSupply         += minted;
+            v.queuedDepositShares -= accepted;  // Reclassified as free sleeve, not redeemed
 
-            u[bob].claimableDepositAssets += 500e6;
-            u[bob].claimableDepositShares += minted;
-            u[bob].pendingDepositShares   -= accepted;
+            u[bob].shares               += minted;
+            u[bob].pendingDepositShares -= accepted;
             _check();
 
             assertEq(vault.depositHead(), 0);  // Partially filled head stays in place
@@ -248,23 +223,20 @@ contract SparkPrimeVaultForkTest is Test {
             vm.prank(rebalancer);
             vault.processDepositQueue(type(uint256).max);
 
-            v.totalSupply            += bobMinted + carolMinted;
-            v.claimableDepositShares += bobMinted + carolMinted;
-            v.queuedDepositShares     = 0;
+            v.totalSupply         += bobMinted + carolMinted;
+            v.queuedDepositShares  = 0;
 
-            u[bob].claimableDepositAssets   += bobRest;
-            u[bob].claimableDepositShares   += bobMinted;
-            u[bob].pendingDepositShares      = 0;
-            u[carol].claimableDepositAssets  = carolValue;
-            u[carol].claimableDepositShares  = carolMinted;
-            u[carol].pendingDepositShares    = 0;
+            u[bob].shares               += bobMinted;
+            u[bob].pendingDepositShares  = 0;
+            u[carol].shares              = carolMinted;
+            u[carol].pendingDepositShares = 0;
             _check();
 
             assertEq(vault.depositHead(), 3);  // Skipped dave's cancelled entry
             assertEq(spUsdc.balanceOf(address(vault)), bobQueued + carolQueued);  // Nothing redeemed
         }
 
-        /*** 8. PAU flow: withdrawFromSavings -> take; plain USDC transfer back -> depositToSavings ***/
+        /*** 7. PAU flow: withdrawFromSavings -> take; plain USDC transfer back -> depositToSavings ***/
 
         {
             uint256 burned = spUsdc.previewWithdraw(1_000e6);
@@ -293,52 +265,34 @@ contract SparkPrimeVaultForkTest is Test {
             _check();
         }
 
-        /*** 9. Instant requestRedeem, shortfall over idle USDC pulled from spUSDC ***/
+        /*** 8. Instant requestRedeem, paid from idle USDC with the shortfall pulled from spUSDC ***/
 
         uint256 aliceNet;
         {
             uint256 gross = 1_500e6 * chi / RAY;
             aliceNet = gross - _divup(gross * FEE, WAD);
 
-            assertGe(vault.availableLiquidAssets(), int256(aliceNet));
+            assertGe(vault.availableLiquidAssets(), aliceNet);
 
             uint256 burned = spUsdc.previewWithdraw(aliceNet - 500e6);
 
             vm.prank(alice);
-            vault.requestRedeem(1_500e6, alice, alice);
+            assertEq(vault.requestRedeem(1_500e6, alice, alice), 0);
 
-            v.totalSupply           -= 1_500e6;
-            v.usdc                   = aliceNet;  // Exactly ring-fenced
-            v.spUsdc                -= burned;
-            v.claimableRedeemAssets  = aliceNet;
+            v.totalSupply -= 1_500e6;
+            v.usdc         = 0;  // All idle USDC went to alice, the rest came from spUSDC
+            v.spUsdc      -= burned;
 
-            u[alice].shares                = 2_500e6;
-            u[alice].claimableRedeemShares = 1_500e6;
-            u[alice].claimableRedeemAssets = aliceNet;
+            u[alice].usdc   = aliceNet;
+            u[alice].shares = 2_500e6;
             _check();
 
             assertEq(vault.withdrawHead(), 1);
         }
 
-        /*** 10. Queued redeem with locked fee, processed after the fee is raised ***/
+        /*** 9. Queued redeem with locked fee, processed by anyone after the fee is raised ***/
 
-        // bob claims all his spPRIME via deposit (instant + both queue fills, mixed prices)
-        {
-            uint256 claimAssets = u[bob].claimableDepositAssets;
-            uint256 claimShares = u[bob].claimableDepositShares;
-
-            vm.prank(bob);
-            assertEq(vault.deposit(claimAssets, bob), claimShares);
-
-            v.claimableDepositShares -= claimShares;
-
-            u[bob].shares                 = claimShares;
-            u[bob].claimableDepositAssets = 0;
-            u[bob].claimableDepositShares = 0;
-            _check();
-        }
-
-        // Drain liquidity: sleeve to USDC, idle USDC taken. alice's ring-fence is untouchable.
+        // Drain liquidity: sleeve to USDC, then all idle USDC taken
         uint256 taken = 10_500e6 - 300e6;
         {
             uint256 sleeve = spUsdc.convertToAssets(v.spUsdc);
@@ -362,7 +316,7 @@ contract SparkPrimeVaultForkTest is Test {
         }
 
         vm.prank(bob);
-        vault.requestRedeem(2_000e6, bob, bob);
+        assertEq(vault.requestRedeem(2_000e6, bob, bob), 1);
 
         v.queuedRedeemShares = 2_000e6;
 
@@ -371,10 +325,11 @@ contract SparkPrimeVaultForkTest is Test {
         _check();
 
         {
-            ( address controller,, uint256 amount, uint256 fee ) = vault.withdrawQueue(1);
-            assertEq(controller, bob);
-            assertEq(amount,     2_000e6);
-            assertEq(fee,        FEE);
+            ( address owner, address receiver, uint256 amount, uint256 fee ) = vault.withdrawQueue(1);
+            assertEq(owner,    bob);
+            assertEq(receiver, bob);
+            assertEq(amount,   2_000e6);
+            assertEq(fee,      FEE);
         }
 
         vm.prank(riskManager);
@@ -386,49 +341,50 @@ contract SparkPrimeVaultForkTest is Test {
         taken  -= 2_100e6;
         v.usdc += 2_100e6;
 
-        uint256 bobNet;
         {
-            uint256 gross = 2_000e6 * chi / RAY;
-            bobNet = gross - _divup(gross * FEE, WAD);  // Locked 0.5%, not the new 1%
+            uint256 gross  = 2_000e6 * chi / RAY;
+            uint256 bobNet = gross - _divup(gross * FEE, WAD);  // Locked 0.5%, not the new 1%
 
-            vm.prank(rebalancer);
-            vault.processWithdrawQueue(type(uint256).max);
+            vault.processWithdrawQueue(type(uint256).max);  // Permissionless
 
-            v.totalSupply           -= 2_000e6;
-            v.queuedRedeemShares     = 0;
-            v.claimableRedeemAssets += bobNet;
+            v.totalSupply        -= 2_000e6;
+            v.usdc               -= bobNet;
+            v.queuedRedeemShares  = 0;
 
-            u[bob].pendingRedeemShares   = 0;
-            u[bob].claimableRedeemShares = 2_000e6;
-            u[bob].claimableRedeemAssets = bobNet;
+            u[bob].usdc                = bobNet;
+            u[bob].pendingRedeemShares = 0;
             _check();
 
             assertEq(vault.withdrawHead(), 2);
-            // The fee stays in the vault as idle USDC
-            assertEq(usdc.balanceOf(address(vault)) - vault.totalClaimableRedeemAssets(), 2_100e6 - bobNet);
+            assertEq(usdc.balanceOf(address(vault)), 2_100e6 - bobNet);  // The fee stays in the vault
         }
 
-        /*** 11. Operator claims via withdraw for the controller (receiver must be the controller) ***/
+        /*** 10. Redeem paid to a different receiver ***/
 
-        vm.prank(alice);
-        vault.setOperator(operator, true);
+        vm.prank(taker);
+        assertTrue(usdc.transfer(address(vault), 1_000e6));
 
-        vm.prank(operator);
-        vm.expectRevert("SparkPrimeVault/not-authorized");
-        vault.withdraw(aliceNet, operator, alice);
+        taken  -= 1_000e6;
+        v.usdc += 1_000e6;
 
-        vm.prank(operator);
-        assertEq(vault.withdraw(aliceNet, alice, alice), 1_500e6);
+        {
+            uint256 gross    = 500e6 * chi / RAY;
+            uint256 carolNet = gross - _divup(gross * MAX_FEE, WAD);  // The new 1% fee
 
-        v.usdc                  -= aliceNet;
-        v.claimableRedeemAssets -= aliceNet;
+            vm.prank(carol);
+            assertEq(vault.requestRedeem(500e6, dave, carol), 2);
 
-        u[alice].usdc                  = aliceNet;
-        u[alice].claimableRedeemShares = 0;
-        u[alice].claimableRedeemAssets = 0;
-        _check();
+            v.totalSupply -= 500e6;
+            v.usdc        -= carolNet;
 
-        /*** 12. Pause, setChi loss, claims still work, requests and processing revert ***/
+            u[carol].shares -= 500e6;
+            u[dave].usdc    += carolNet;
+            _check();
+
+            assertEq(vault.withdrawHead(), 3);
+        }
+
+        /*** 11. Pause, setChi loss, transfers still work, requests and processing revert ***/
 
         vm.prank(riskManager);
         vm.expectRevert("SparkPrimeVault/not-paused");
@@ -442,37 +398,16 @@ contract SparkPrimeVaultForkTest is Test {
         vm.prank(riskManager);
         vault.setChi(lossChi);
 
-        assertEq(vault.chi(),         lossChi);
-        assertEq(vault.totalAssets(), v.totalSupply * lossChi / RAY);
+        assertEq(vault.chi(),           lossChi);
+        assertEq(vault.totalAssets(),   v.totalSupply * lossChi / RAY);
+        assertEq(vault.assetsOf(carol), u[carol].shares * lossChi / RAY);
 
-        // Approved redeems are fixed in USDC: the loss does not touch them
-        vm.prank(bob);
-        assertEq(vault.redeem(2_000e6, bob, bob), bobNet);
+        vm.prank(alice);
+        vault.transfer(bob, 500e6);
 
-        v.usdc                  -= bobNet;
-        v.claimableRedeemAssets  = 0;
-
-        u[bob].usdc                  = bobNet;
-        u[bob].claimableRedeemShares = 0;
-        u[bob].claimableRedeemAssets = 0;
+        u[alice].shares -= 500e6;
+        u[bob].shares   += 500e6;
         _check();
-
-        // Escrowed deposit shares absorb the loss
-        {
-            uint256 carolShares = u[carol].claimableDepositShares;
-
-            vm.prank(carol);
-            assertEq(vault.mint(carolShares, carol), u[carol].claimableDepositAssets);
-
-            v.claimableDepositShares -= carolShares;
-
-            u[carol].shares                 = carolShares;
-            u[carol].claimableDepositAssets = 0;
-            u[carol].claimableDepositShares = 0;
-            _check();
-
-            assertEq(vault.assetsOf(carol), carolShares * lossChi / RAY);
-        }
 
         vm.startPrank(alice);
         vm.expectRevert("SparkPrimeVault/paused");
@@ -481,14 +416,14 @@ contract SparkPrimeVaultForkTest is Test {
         vault.requestRedeem(100e6, alice, alice);
         vm.stopPrank();
 
-        vm.startPrank(rebalancer);
+        vm.prank(rebalancer);
         vm.expectRevert("SparkPrimeVault/paused");
         vault.processDepositQueue(type(uint256).max);
+
         vm.expectRevert("SparkPrimeVault/paused");
         vault.processWithdrawQueue(type(uint256).max);
-        vm.stopPrank();
 
-        /*** 13. Unpause: deposits reopen at the post-loss price ***/
+        /*** 12. Unpause: deposits reopen at the post-loss price ***/
 
         vm.prank(unpauser);
         vault.unpause();
@@ -497,12 +432,10 @@ contract SparkPrimeVaultForkTest is Test {
 
         uint256 daveShares = 100e6 * RAY / lossChi;
 
-        v.totalSupply            += daveShares;
-        v.usdc                   += 100e6;
-        v.claimableDepositShares += daveShares;
+        v.totalSupply += daveShares;
+        v.usdc        += 100e6;
 
-        u[dave].claimableDepositAssets = 100e6;
-        u[dave].claimableDepositShares = daveShares;
+        u[dave].shares = daveShares;
         _check();
 
         assertEq(usdc.balanceOf(taker), taken);
@@ -523,21 +456,15 @@ contract SparkPrimeVaultForkTest is Test {
 
     function _check() internal view {
         // Expected state
-        assertEq(vault.totalSupply(),                    v.totalSupply,            "totalSupply");
-        assertEq(usdc.balanceOf(address(vault)),         v.usdc,                   "vault usdc");
-        assertEq(spUsdc.balanceOf(address(vault)),       v.spUsdc,                 "vault spUsdc");
-        assertEq(vault.totalClaimableRedeemAssets(),     v.claimableRedeemAssets,  "claimableRedeemAssets");
-        assertEq(vault.totalQueuedDepositShares(),       v.queuedDepositShares,    "queuedDepositShares");
-        assertEq(vault.totalQueuedRedeemShares(),        v.queuedRedeemShares,     "queuedRedeemShares");
+        assertEq(vault.totalSupply(),              v.totalSupply,         "totalSupply");
+        assertEq(usdc.balanceOf(address(vault)),   v.usdc,                "vault usdc");
+        assertEq(spUsdc.balanceOf(address(vault)), v.spUsdc,              "vault spUsdc");
+        assertEq(vault.totalQueuedDepositShares(), v.queuedDepositShares, "queuedDepositShares");
+        assertEq(vault.totalQueuedRedeemShares(),  v.queuedRedeemShares,  "queuedRedeemShares");
 
         // Bucket invariants
-        assertGe(usdc.balanceOf(address(vault)),   vault.totalClaimableRedeemAssets(), "ring-fence");
-        assertGe(spUsdc.balanceOf(address(vault)), vault.totalQueuedDepositShares(),   "queued spUSDC");
-        assertEq(
-            vault.balanceOf(address(vault)),
-            v.claimableDepositShares + v.queuedRedeemShares,
-            "escrow"
-        );
+        assertGe(spUsdc.balanceOf(address(vault)), vault.totalQueuedDepositShares(), "queued spUSDC");
+        assertEq(vault.balanceOf(address(vault)),  v.queuedRedeemShares,             "escrow");
 
         _checkUser(alice);
         _checkUser(bob);
@@ -548,14 +475,10 @@ contract SparkPrimeVaultForkTest is Test {
     function _checkUser(address user) internal view {
         UserState memory s = u[user];
 
-        assertEq(usdc.balanceOf(user),                s.usdc,                   "usdc");
-        assertEq(vault.balanceOf(user),               s.shares,                 "shares");
-        assertEq(vault.maxDeposit(user),              s.claimableDepositAssets, "claimableDepositAssets");
-        assertEq(vault.maxMint(user),                 s.claimableDepositShares, "claimableDepositShares");
-        assertEq(vault.pendingDepositShares(user),    s.pendingDepositShares,   "pendingDepositShares");
-        assertEq(vault.pendingRedeemShares(user),     s.pendingRedeemShares,    "pendingRedeemShares");
-        assertEq(vault.maxRedeem(user),               s.claimableRedeemShares,  "claimableRedeemShares");
-        assertEq(vault.maxWithdraw(user),             s.claimableRedeemAssets,  "claimableRedeemAssets");
+        assertEq(usdc.balanceOf(user),             s.usdc,                 "usdc");
+        assertEq(vault.balanceOf(user),            s.shares,               "shares");
+        assertEq(vault.pendingDepositShares(user), s.pendingDepositShares, "pendingDepositShares");
+        assertEq(vault.pendingRedeemShares(user),  s.pendingRedeemShares,  "pendingRedeemShares");
     }
 
     function _divup(uint256 x, uint256 y) internal pure returns (uint256) {

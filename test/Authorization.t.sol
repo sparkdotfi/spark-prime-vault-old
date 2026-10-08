@@ -62,7 +62,7 @@ contract SparkPrimeVaultSetCapacitySuccessTests is SparkPrimeVaultTestBase {
         vault.requestDeposit(1, randomUser, randomUser);
         vm.stopPrank();
 
-        assertEq(vault.maxDeposit(randomUser),           0);
+        assertEq(vault.balanceOf(randomUser),            0);
         assertEq(vault.pendingDepositShares(randomUser), 1);
     }
 
@@ -192,7 +192,6 @@ contract SparkPrimeVaultSetMinimumsSuccessTests is SparkPrimeVaultTestBase {
         vault.requestDeposit(100e6 - 1, randomUser, randomUser);
 
         vault.requestDeposit(100e6, randomUser, randomUser);
-        vault.mint(100e6, randomUser);
 
         vm.expectRevert("SparkPrimeVault/below-minimum");
         vault.requestRedeem(50e6 - 1, randomUser, randomUser);
@@ -378,19 +377,18 @@ contract SparkPrimeVaultTakeFailureTests is SparkPrimeVaultTestBase {
         vault.take(1_000_000e6);
     }
 
-    function test_take_ringFencedLiquidityBoundary() public {
+    function test_take_afterRedeemPaidOutBoundary() public {
         address user1 = makeAddr("user1");
         deal(address(asset), user1, 1000e6);
 
         vm.startPrank(user1);
         asset.approve(address(vault), 1000e6);
         vault.requestDeposit(1000e6, user1, user1);
-        vault.mint(1000e6, user1);
-        vault.requestRedeem(200e6, user1, user1);  // Approved instantly, 200e6 is ring-fenced
+        vault.requestRedeem(200e6, user1, user1);  // Paid out instantly, 200e6 leaves the vault
         vm.stopPrank();
 
-        assertEq(asset.balanceOf(address(vault)),  1000e6);
-        assertEq(vault.totalClaimableRedeemAssets(), 200e6);
+        assertEq(asset.balanceOf(address(vault)), 800e6);
+        assertEq(asset.balanceOf(user1),          200e6);
 
         vm.startPrank(taker);
         vm.expectRevert("SparkPrimeVault/insufficient-liquidity");
@@ -427,7 +425,6 @@ contract SparkPrimeVaultTakeSuccessTests is SparkPrimeVaultTestBase {
         vm.startPrank(user1);
         asset.approve(address(vault), 1000e6);
         vault.requestDeposit(1000e6, user1, user1);
-        vault.mint(1000e6, user1);
         vm.stopPrank();
 
         assertEq(vault.totalSupply(),             1000e6);
@@ -468,27 +465,6 @@ contract SparkPrimeVaultDepositToSavingsFailureTests is SparkPrimeVaultTestBase 
         vault.depositToSavings(1_000_000e6 + 1);
 
         vault.depositToSavings(1_000_000e6);
-    }
-
-    function test_depositToSavings_ringFencedLiquidityBoundary() public {
-        address user1 = makeAddr("user1");
-        deal(address(asset), user1, 1000e6);
-
-        vm.startPrank(user1);
-        asset.approve(address(vault), 1000e6);
-        vault.requestDeposit(1000e6, user1, user1);
-        vault.mint(1000e6, user1);
-        vault.requestRedeem(200e6, user1, user1);  // Approved instantly, 200e6 is ring-fenced
-        vm.stopPrank();
-
-        assertEq(asset.balanceOf(address(vault)),  1000e6);
-        assertEq(vault.totalClaimableRedeemAssets(), 200e6);
-
-        vm.startPrank(rebalancer);
-        vm.expectRevert("SparkPrimeVault/insufficient-liquidity");
-        vault.depositToSavings(800e6 + 1);
-
-        vault.depositToSavings(800e6);
     }
 
     function test_depositToSavings_savingsDepositCapExceededBoundary() public {
@@ -550,7 +526,6 @@ contract SparkPrimeVaultWithdrawFromSavingsFailureTests is SparkPrimeVaultTestBa
         vm.startPrank(user1);
         asset.approve(address(vault), 1000e6);
         vault.requestDeposit(1000e6, user1, user1);
-        vault.mint(1000e6, user1);
         vm.stopPrank();
 
         // 600e6 of free sleeve
@@ -816,7 +791,6 @@ contract SparkPrimeVaultSetChiSuccessTests is SparkPrimeVaultTestBase {
         vm.startPrank(user1);
         asset.approve(address(vault), 1_000_000e6);
         vault.requestDeposit(1_000_000e6, user1, user1);
-        vault.mint(1_000_000e6, user1);
         vm.stopPrank();
 
         skip(1 days);
@@ -888,7 +862,6 @@ contract SparkPrimeVaultPauseSuccessTests is SparkPrimeVaultTestBase {
         vm.startPrank(user1);
         asset.approve(address(vault), 2000e6);
         vault.requestDeposit(1000e6, user1, user1);
-        vault.mint(1000e6, user1);
         vm.stopPrank();
     }
 
@@ -911,13 +884,12 @@ contract SparkPrimeVaultPauseSuccessTests is SparkPrimeVaultTestBase {
         vault.requestRedeem(100e6, user1, user1);
         vm.stopPrank();
 
-        vm.startPrank(rebalancer);
+        vm.prank(rebalancer);
         vm.expectRevert("SparkPrimeVault/paused");
         vault.processDepositQueue(type(uint256).max);
 
         vm.expectRevert("SparkPrimeVault/paused");
         vault.processWithdrawQueue(type(uint256).max);
-        vm.stopPrank();
 
         // Pausing an already paused vault is a no-op
         vm.prank(guardian);
@@ -928,26 +900,14 @@ contract SparkPrimeVaultPauseSuccessTests is SparkPrimeVaultTestBase {
         assertTrue(vault.paused());
     }
 
-    function test_pause_doesNotBlockClaimsTransfersOrLiquidityManagement() public {
-        vm.startPrank(user1);
-        vault.requestDeposit(500e6, user1, user1);  // Instantly approved, claim later
-        vault.requestRedeem(200e6, user1, user1);   // Instantly approved, claim later
-        vm.stopPrank();
-
+    function test_pause_doesNotBlockTransfersOrLiquidityManagement() public {
         vm.prank(guardian);
         vault.pause();
 
-        assertEq(vault.maxMint(user1),   500e6);
-        assertEq(vault.maxRedeem(user1), 200e6);
-
-        vm.startPrank(user1);
-        vault.mint(500e6, user1);
-        vault.redeem(200e6, user1, user1);
+        vm.prank(user1);
         vault.transfer(makeAddr("user2"), 100e6);
-        vm.stopPrank();
 
-        assertEq(vault.maxMint(user1),   0);
-        assertEq(vault.maxRedeem(user1), 0);
+        assertEq(vault.balanceOf(user1), 900e6);
 
         vm.prank(taker);
         vault.take(100e6);
@@ -1018,7 +978,7 @@ contract SparkPrimeVaultUnpauseSuccessTests is SparkPrimeVaultTestBase {
         vm.prank(user1);
         vault.requestDeposit(1000e6, user1, user1);
 
-        assertEq(vault.maxMint(user1), 1000e6);
+        assertEq(vault.balanceOf(user1), 1000e6);
 
         // Unpausing an already unpaused vault is a no-op
         vm.prank(unpauser);

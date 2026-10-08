@@ -83,8 +83,7 @@ contract SparkPrimeVaultUpgradeTest is SparkPrimeVaultTestBase {
         vm.startPrank(user1);
         asset.approve(address(vault), 1_000_000e6);
         vault.requestDeposit(1_000_000e6, user1, user1);
-        vault.mint(1_000_000e6, user1);
-        vault.requestRedeem(100_000e6, user1, user1);  // Approved instantly, not claimed
+        vault.requestRedeem(100_000e6, user1, user1);  // Paid out instantly, less the 0.5% fee
         vm.stopPrank();
 
         // Capacity is full, user2's deposit is queued
@@ -152,12 +151,13 @@ contract SparkPrimeVaultUpgradeTest is SparkPrimeVaultTestBase {
         assertEq(vault.totalSupply(),    900_000e6);
         assertEq(vault.balanceOf(user1), 900_000e6);
 
-        assertEq(vault.totalClaimableRedeemAssets(), 99_500e6);
-        assertEq(vault.totalQueuedDepositShares(),   1000e6);
-        assertEq(vault.totalQueuedRedeemShares(),    0);
+        assertEq(vault.totalQueuedDepositShares(), 1000e6);
+        assertEq(vault.totalQueuedRedeemShares(),  0);
 
-        assertEq(vault.maxRedeem(user1),            100_000e6);
-        assertEq(vault.maxWithdraw(user1),          99_500e6);
+        assertEq(asset.balanceOf(user1),          99_500e6);
+        assertEq(asset.balanceOf(address(vault)), 900_500e6);  // 1M in, 99.5k out, 1k queued in spUSDC
+        assertEq(spUsdc.balanceOf(address(vault)), 1000e6);
+
         assertEq(vault.pendingDepositShares(user2), 1000e6);
 
         assertEq(vault.depositHead(),  0);
@@ -221,12 +221,13 @@ contract SparkPrimeVaultUpgradeTest is SparkPrimeVaultTestBase {
         assertEq(vault.totalSupply(),    900_000e6);
         assertEq(vault.balanceOf(user1), 900_000e6);
 
-        assertEq(vault.totalClaimableRedeemAssets(), 99_500e6);
-        assertEq(vault.totalQueuedDepositShares(),   1000e6);
-        assertEq(vault.totalQueuedRedeemShares(),    0);
+        assertEq(vault.totalQueuedDepositShares(), 1000e6);
+        assertEq(vault.totalQueuedRedeemShares(),  0);
 
-        assertEq(vault.maxRedeem(user1),            100_000e6);
-        assertEq(vault.maxWithdraw(user1),          99_500e6);
+        assertEq(asset.balanceOf(user1),          99_500e6);
+        assertEq(asset.balanceOf(address(vault)), 900_500e6);  // 1M in, 99.5k out, 1k queued in spUSDC
+        assertEq(spUsdc.balanceOf(address(vault)), 1000e6);
+
         assertEq(vault.pendingDepositShares(user2), 1000e6);
 
         assertEq(vault.depositHead(),  0);

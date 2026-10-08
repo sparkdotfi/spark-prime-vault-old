@@ -21,10 +21,7 @@ contract ValueAccrualE2ETest is SparkPrimeVaultTestBase {
         uint256 vaultUser2Assets;
         uint256 vaultUser2Balance;
 
-        uint256 vaultEscrowBalance;          // spPRIME held by the vault for queued redeems and claimable deposits
-        uint256 vaultClaimableRedeemAssets;  // USDC ring-fenced for approved redeems
-        uint256 vaultUser1MaxWithdraw;
-        uint256 vaultUser2MaxWithdraw;
+        uint256 vaultEscrowBalance;  // spPRIME held by the vault for queued redeems
     }
 
     function setUp() public override {
@@ -61,11 +58,10 @@ contract ValueAccrualE2ETest is SparkPrimeVaultTestBase {
 
         _assertTestState(state);
 
-        // Step 1: User 1 deposits 1M assets, approved instantly, and claims the shares
+        // Step 1: User 1 deposits 1M assets, minted instantly
 
         vm.startPrank(user1);
         vault.requestDeposit(1_000_000e6, user1, user1);
-        vault.mint(1_000_000e6, user1);
         vm.stopPrank();
 
         state.assetUser1Balance = 0;
@@ -107,7 +103,7 @@ contract ValueAccrualE2ETest is SparkPrimeVaultTestBase {
 
         _assertTestState(state);
 
-        // Step 5: User 2 deposits 1M assets, approved instantly, and claims the shares
+        // Step 5: User 2 deposits 1M assets, minted instantly
 
         state.vaultUser2Balance = 1_000_000e6 * uint256(1_000_000e6) / (1_040_000e6 - 1) - 1;
 
@@ -115,7 +111,6 @@ contract ValueAccrualE2ETest is SparkPrimeVaultTestBase {
 
         vm.startPrank(user2);
         vault.requestDeposit(1_000_000e6, user2, user2);
-        vault.mint(state.vaultUser2Balance, user2);
         vm.stopPrank();
 
         state.assetUser2Balance = 0;
@@ -171,36 +166,21 @@ contract ValueAccrualE2ETest is SparkPrimeVaultTestBase {
 
         _assertTestState(state);
 
-        // Step 10: User 1 requests to redeem the full position, approved instantly
+        // Step 10: User 1 redeems the full position, paid instantly
 
         vm.startPrank(user1);
         vault.requestRedeem(vault.balanceOf(user1), user1, user1);
         vm.stopPrank();
 
-        // The shares are burned and the net USDC is fixed: gross 1_050_400e6 - 1, fee rounds up
-        // to 5_252e6
+        // Gross 1_050_400e6 - 1, the fee rounds up to 5_252e6
+        state.assetUser1Balance += 1_045_148e6 - 1;
+        state.assetVaultBalance -= 1_045_148e6 - 1;
+
         state.vaultUser1Balance = 0;
         state.vaultUser1Assets  = 0;
 
         state.vaultTotalAssets -= 1_050_400e6;
         state.vaultTotalSupply -= 1_000_000e6;
-
-        state.vaultClaimableRedeemAssets = 1_045_148e6 - 1;
-        state.vaultUser1MaxWithdraw      = 1_045_148e6 - 1;
-
-        _assertTestState(state);
-
-        // User 1 claims the USDC
-
-        vm.startPrank(user1);
-        vault.redeem(vault.maxRedeem(user1), user1, user1);
-        vm.stopPrank();
-
-        state.assetUser1Balance += 1_045_148e6 - 1;
-        state.assetVaultBalance -= 1_045_148e6 - 1;
-
-        state.vaultClaimableRedeemAssets = 0;
-        state.vaultUser1MaxWithdraw      = 0;
 
         _assertTestState(state);
 
@@ -213,42 +193,26 @@ contract ValueAccrualE2ETest is SparkPrimeVaultTestBase {
         vault.requestRedeem(vault.balanceOf(user2), user2, user2);
         vm.stopPrank();
 
-        // The largest share amount whose net fits the liquidity is approved, the rest is queued in
-        // escrow
-        assertEq(vault.maxRedeem(user2),               148_162.748242e6);
-        assertEq(vault.pendingRedeemRequest(0, user2), 813_375.713296e6);
-        assertEq(vault.availableLiquidAssets(),        2);
-
-        state.vaultUser2Balance = 0;
-        state.vaultUser2Assets  = 0;
-
-        state.vaultTotalSupply = 813_375.713296e6;
-        state.vaultTotalAssets = 854_369.849246e6;  // The escrowed shares keep earning until processed
-
-        state.vaultEscrowBalance         = 813_375.713296e6;
-        state.vaultClaimableRedeemAssets = 154_852e6 - 1;
-        state.vaultUser2MaxWithdraw      = 154_852e6 - 1;
-
-        _assertTestState(state);
-
-        // User 2 claims the approved part
-
-        vm.startPrank(user2);
-        vault.redeem(vault.maxRedeem(user2), user2, user2);
-        vm.stopPrank();
+        // The largest share amount whose net fits the liquidity is paid, the rest is queued in
+        // escrow and keeps earning until it is processed
+        assertEq(vault.pendingRedeemRequest(user2), 813_375.713296e6);
+        assertEq(vault.availableLiquidAssets(),     2);
 
         state.assetUser2Balance += 154_852e6 - 1;
         state.assetVaultBalance -= 154_852e6 - 1;
 
-        state.vaultClaimableRedeemAssets = 0;
-        state.vaultUser2MaxWithdraw      = 0;
+        state.vaultUser2Balance = 0;
+        state.vaultUser2Assets  = 0;
+
+        state.vaultTotalSupply   = 813_375.713296e6;
+        state.vaultTotalAssets   = 854_369.849246e6;
+        state.vaultEscrowBalance = 813_375.713296e6;
 
         assertEq(state.assetVaultBalance, 2);
 
         _assertTestState(state);
 
-        // Step 12: Taker adds remaining funds back, the rebalancer processes the queue and User 2
-        //          claims the rest
+        // Step 12: Taker adds remaining funds back and anyone processes the queue
 
         uint256 outstandingCash = vault.totalAssets() - asset.balanceOf(address(vault));
 
@@ -258,35 +222,23 @@ contract ValueAccrualE2ETest is SparkPrimeVaultTestBase {
         vm.prank(taker);
         asset.transfer(address(vault), outstandingCash);
 
-        vm.prank(rebalancer);
         vault.processWithdrawQueue(type(uint256).max);
 
-        // Gross 854_369.849246e6, fee rounds up to 4_271.849247e6
-        assertEq(vault.maxRedeem(user2),             813_375.713296e6);
-        assertEq(vault.maxWithdraw(user2),           850_098e6 - 1);
-        assertEq(vault.totalClaimableRedeemAssets(), 850_098e6 - 1);
-
-        vm.startPrank(user2);
-        vault.redeem(vault.maxRedeem(user2), user2, user2);
-        vm.stopPrank();
-
-        // Final state: the fees stay in the vault as Spark's liquidity
+        // Final state: gross 854_369.849246e6 less a 4_271.849247e6 fee, the fees stay in the
+        // vault as Spark's liquidity
         _assertTestState({
             state: TestState({
-                assetUser1Balance : 1_045_148e6 - 1,       // 4% APY on 1M, 1% APY on 1.04M, less 0.5%
-                assetUser2Balance : 1_004_950e6 - 2,       // 1% APY on 1M, less 0.5%, split over two fills
-                assetVaultBalance : 4_271.849247e6,        // User 2's fee on the second fill
-                assetTakerBalance : 0,
-                vaultTotalAssets  : 0,
-                vaultTotalSupply  : 0,
-                vaultUser1Assets  : 0,
-                vaultUser1Balance : 0,
-                vaultUser2Assets  : 0,
-                vaultUser2Balance : 0,
-                vaultEscrowBalance         : 0,
-                vaultClaimableRedeemAssets : 0,
-                vaultUser1MaxWithdraw      : 0,
-                vaultUser2MaxWithdraw      : 0
+                assetUser1Balance  : 1_045_148e6 - 1,  // 4% APY on 1M, 1% APY on 1.04M, less 0.5%
+                assetUser2Balance  : 1_004_950e6 - 2,  // 1% APY on 1M, less 0.5%, split over two fills
+                assetVaultBalance  : 4_271.849247e6,   // User 2's fee on the second fill
+                assetTakerBalance  : 0,
+                vaultTotalAssets   : 0,
+                vaultTotalSupply   : 0,
+                vaultUser1Assets   : 0,
+                vaultUser1Balance  : 0,
+                vaultUser2Assets   : 0,
+                vaultUser2Balance  : 0,
+                vaultEscrowBalance : 0
             }),
             tolerance: 0
         });
@@ -316,11 +268,10 @@ contract ValueAccrualE2ETest is SparkPrimeVaultTestBase {
 
         _assertTestState(state, 0);
 
-        // Step 1: User 1 deposits assets, approved instantly, and claims the shares
+        // Step 1: User 1 deposits assets, minted instantly
 
         vm.startPrank(user1);
         vault.requestDeposit(user1Deposit, user1, user1);
-        vault.mint(user1Deposit, user1);
         vm.stopPrank();
 
         state.assetUser1Balance = 0;
@@ -364,7 +315,7 @@ contract ValueAccrualE2ETest is SparkPrimeVaultTestBase {
 
         _assertTestState(state, 1);
 
-        // Step 5: User 2 deposits assets, approved instantly, and claims the shares
+        // Step 5: User 2 deposits assets, minted instantly
 
         uint256 expectedUser2Balance = user2Deposit * uint256(user1Deposit) / (state.vaultTotalAssets);
 
@@ -374,7 +325,6 @@ contract ValueAccrualE2ETest is SparkPrimeVaultTestBase {
 
         vm.startPrank(user2);
         vault.requestDeposit(user2Deposit, user2, user2);
-        vault.mint(state.vaultUser2Balance, user2);
         vm.stopPrank();
 
         state.assetUser2Balance = 0;
@@ -433,11 +383,10 @@ contract ValueAccrualE2ETest is SparkPrimeVaultTestBase {
 
         _assertTestState(state, 3);
 
-        // Step 10: User 1 redeems the full position, approved instantly with no fee, and claims
+        // Step 10: User 1 redeems the full position, paid instantly with no fee
 
         vm.startPrank(user1);
         vault.requestRedeem(vault.balanceOf(user1), user1, user1);
-        vault.redeem(vault.maxRedeem(user1), user1, user1);
         vm.stopPrank();
 
         state.assetUser1Balance += state.vaultUser1Assets;
@@ -451,30 +400,26 @@ contract ValueAccrualE2ETest is SparkPrimeVaultTestBase {
 
         _assertTestState(state, 3);
 
-        // Step 11: User 2 redeems the full position, approved instantly with no fee, and claims
+        // Step 11: User 2 redeems the full position, paid instantly with no fee
 
         vm.startPrank(user2);
         vault.requestRedeem(vault.balanceOf(user2), user2, user2);
-        vault.redeem(vault.maxRedeem(user2), user2, user2);
         vm.stopPrank();
 
         // Final state
         _assertTestState({
             state: TestState({
-                assetUser1Balance : (user1Deposit * 1.04e27 / 1e27) * 1.01e27 / 1e27, // 4% APY on 1M, 1% APY on 1.04M
-                assetUser2Balance : user2Deposit * 1.01e27 / 1e27, // 1% APY on 1M
-                assetVaultBalance : 0,
-                assetTakerBalance : 0,
-                vaultTotalAssets  : 0,
-                vaultTotalSupply  : 0,
-                vaultUser1Assets  : 0,
-                vaultUser1Balance : 0,
-                vaultUser2Assets  : 0,
-                vaultUser2Balance : 0,
-                vaultEscrowBalance         : 0,
-                vaultClaimableRedeemAssets : 0,
-                vaultUser1MaxWithdraw      : 0,
-                vaultUser2MaxWithdraw      : 0
+                assetUser1Balance  : (user1Deposit * 1.04e27 / 1e27) * 1.01e27 / 1e27, // 4% APY on 1M, 1% APY on 1.04M
+                assetUser2Balance  : user2Deposit * 1.01e27 / 1e27, // 1% APY on 1M
+                assetVaultBalance  : 0,
+                assetTakerBalance  : 0,
+                vaultTotalAssets   : 0,
+                vaultTotalSupply   : 0,
+                vaultUser1Assets   : 0,
+                vaultUser1Balance  : 0,
+                vaultUser2Assets   : 0,
+                vaultUser2Balance  : 0,
+                vaultEscrowBalance : 0
             }),
             tolerance: 2
         });
@@ -497,10 +442,7 @@ contract ValueAccrualE2ETest is SparkPrimeVaultTestBase {
         assertApproxEqAbs(vault.assetsOf(user2),  state.vaultUser2Assets,  tolerance, "vaultUser2Assets");
         assertApproxEqAbs(vault.balanceOf(user2), state.vaultUser2Balance, tolerance, "vaultUser2Balance");
 
-        assertApproxEqAbs(vault.balanceOf(address(vault)),    state.vaultEscrowBalance,         tolerance, "vaultEscrowBalance");
-        assertApproxEqAbs(vault.totalClaimableRedeemAssets(), state.vaultClaimableRedeemAssets, tolerance, "vaultClaimableRedeemAssets");
-        assertApproxEqAbs(vault.maxWithdraw(user1),           state.vaultUser1MaxWithdraw,      tolerance, "vaultUser1MaxWithdraw");
-        assertApproxEqAbs(vault.maxWithdraw(user2),           state.vaultUser2MaxWithdraw,      tolerance, "vaultUser2MaxWithdraw");
+        assertApproxEqAbs(vault.balanceOf(address(vault)), state.vaultEscrowBalance, tolerance, "vaultEscrowBalance");
     }
 
     function _assertTestState(TestState memory state) internal view {
