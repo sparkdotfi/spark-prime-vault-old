@@ -16,6 +16,25 @@ interface IERC1271 {
     function isValidSignature(bytes32, bytes memory) external view returns (bytes4);
 }
 
+// TODO: Remove spUSDC and make generic
+// TODO: _processDepositQueue and _processWithdrawQueue should take in a variable that allows netting withdrawals against deposits (there should be a third function)
+// TODO: Remove USDC custodying altogether, just use take() to get spUSDC
+// TODO: Clean up roles
+// TODO: Add more validation to setters
+// TODO: Change Request structs to be bespoke (remove fee)
+// TODO: Should processDepositQueue and processWithdrawQueue both be permissioned, if so, should we make all withdrawals async?
+// TODO: Refactor setChi to use nominal
+// TODO: requestDepositWithPemrit?
+// TODO: Cancel should take in a receiver and only the owner should be able to call
+// TODO: Take only up to spUSDC.balanceOf(address(this)) - totalQueuedDepositShares in take()
+// TODO: Get pendingOfReceiver() and getPendingOfOwner()
+// TODO: depositFromSavings withdrawFromSavings() should be gone
+// TODO: Ask Sam if we need to add capability for reducing deposit/withdraw request amounts
+// TODO: Ask Sam if we need to add capability for updating receiver in deposit/withdraw requests
+// TODO: Prevent access to totalQueuedDepositShares in _withdrawFromSavings() (remove?)
+// TODO: Separate role based functions into dedicated sections?
+// TODO: Remove functions in Liquidity internal helper functions?
+
 /// @dev If the inheritance is updated, the functions in `initialize` must be updated as well.
 ///      Last updated for: `Initializable, UUPSUpgradeable, AccessControlEnumerableUpgradeable`.
 contract SparkPrimeVault is AccessControlEnumerableUpgradeable, UUPSUpgradeable {
@@ -322,116 +341,6 @@ contract SparkPrimeVault is AccessControlEnumerableUpgradeable, UUPSUpgradeable 
     }
 
     /**********************************************************************************************/
-    /*** Rate accumulation                                                                      ***/
-    /**********************************************************************************************/
-
-    function drip() public returns (uint256 nChi) {
-        (uint256 chi_, uint256 rho_) = (chi, rho);
-        uint256 diff;
-        if (block.timestamp > rho_) {
-            nChi = _rpow(vsr, block.timestamp - rho_) * chi_ / RAY;
-            uint256 totalSupply_ = totalSupply;
-            diff = totalSupply_ * nChi / RAY - totalSupply_ * chi_ / RAY;
-
-            // Safe as nChi is limited to maxUint256/RAY (which is < maxUint192)
-            chi = uint192(nChi);
-            rho = uint64(block.timestamp);
-        } else {
-            nChi = chi_;
-        }
-        emit Drip(nChi, diff);
-    }
-
-    /**********************************************************************************************/
-    /*** ERC20 external mutating functions                                                      ***/
-    /**********************************************************************************************/
-
-    function approve(address spender, uint256 value) external returns (bool) {
-        allowance[msg.sender][spender] = value;
-
-        emit Approval(msg.sender, spender, value);
-
-        return true;
-    }
-
-    function transfer(address to, uint256 value) external returns (bool) {
-        require(to != address(0) && to != address(this), "SparkPrimeVault/invalid-address");
-
-        _transfer(msg.sender, to, value);
-
-        return true;
-    }
-
-    function transferFrom(address from, address to, uint256 value) external returns (bool) {
-        require(to != address(0) && to != address(this), "SparkPrimeVault/invalid-address");
-        require(balanceOf[from] >= value,                "SparkPrimeVault/insufficient-balance");
-
-        if (from != msg.sender) {
-            uint256 allowed = allowance[from][msg.sender];
-            if (allowed != type(uint256).max) {
-                require(allowed >= value, "SparkPrimeVault/insufficient-allowance");
-
-                unchecked {
-                    allowance[from][msg.sender] = allowed - value;
-                }
-            }
-        }
-
-        _transfer(from, to, value);
-
-        return true;
-    }
-
-    /**********************************************************************************************/
-    /*** EIP712 external mutating functions                                                     ***/
-    /**********************************************************************************************/
-
-    function permit(
-        address owner,
-        address spender,
-        uint256 value,
-        uint256 deadline,
-        bytes memory signature
-    ) public {
-        require(block.timestamp <= deadline, "SparkPrimeVault/permit-expired");
-        require(owner != address(0),         "SparkPrimeVault/invalid-owner");
-
-        uint256 nonce;
-        unchecked { nonce = nonces[owner]++; }
-
-        bytes32 digest =
-            keccak256(abi.encodePacked(
-                "\x19\x01",
-                _calculateDomainSeparator(block.chainid),
-                keccak256(abi.encode(
-                    PERMIT_TYPEHASH,
-                    owner,
-                    spender,
-                    value,
-                    nonce,
-                    deadline
-                ))
-            ));
-
-        require(_isValidSignature(owner, digest, signature), "SparkPrimeVault/invalid-permit");
-
-        allowance[owner][spender] = value;
-        emit Approval(owner, spender, value);
-    }
-
-    function permit(
-        address owner,
-        address spender,
-        uint256 value,
-        uint256 deadline,
-        uint8 v,
-        bytes32 r,
-        bytes32 s
-    ) external {
-        permit(owner, spender, value, deadline, abi.encodePacked(r, s, v));
-    }
-
-    /**********************************************************************************************/
     /*** Request functions                                                                      ***/
     /**********************************************************************************************/
 
@@ -526,6 +435,116 @@ contract SparkPrimeVault is AccessControlEnumerableUpgradeable, UUPSUpgradeable 
 
         // Fill this request from available liquidity, only while nobody is queued ahead
         if (instant) _processWithdrawQueue(type(uint256).max, chi_);
+    }
+
+    /**********************************************************************************************/
+    /*** ERC20 external mutating functions                                                      ***/
+    /**********************************************************************************************/
+
+    function approve(address spender, uint256 value) external returns (bool) {
+        allowance[msg.sender][spender] = value;
+
+        emit Approval(msg.sender, spender, value);
+
+        return true;
+    }
+
+    function transfer(address to, uint256 value) external returns (bool) {
+        require(to != address(0) && to != address(this), "SparkPrimeVault/invalid-address");
+
+        _transfer(msg.sender, to, value);
+
+        return true;
+    }
+
+    function transferFrom(address from, address to, uint256 value) external returns (bool) {
+        require(to != address(0) && to != address(this), "SparkPrimeVault/invalid-address");
+        require(balanceOf[from] >= value,                "SparkPrimeVault/insufficient-balance");
+
+        if (from != msg.sender) {
+            uint256 allowed = allowance[from][msg.sender];
+            if (allowed != type(uint256).max) {
+                require(allowed >= value, "SparkPrimeVault/insufficient-allowance");
+
+                unchecked {
+                    allowance[from][msg.sender] = allowed - value;
+                }
+            }
+        }
+
+        _transfer(from, to, value);
+
+        return true;
+    }
+
+    /**********************************************************************************************/
+    /*** EIP712 external mutating functions                                                     ***/
+    /**********************************************************************************************/
+
+    function permit(
+        address owner,
+        address spender,
+        uint256 value,
+        uint256 deadline,
+        bytes memory signature
+    ) public {
+        require(block.timestamp <= deadline, "SparkPrimeVault/permit-expired");
+        require(owner != address(0),         "SparkPrimeVault/invalid-owner");
+
+        uint256 nonce;
+        unchecked { nonce = nonces[owner]++; }
+
+        bytes32 digest =
+            keccak256(abi.encodePacked(
+                "\x19\x01",
+                _calculateDomainSeparator(block.chainid),
+                keccak256(abi.encode(
+                    PERMIT_TYPEHASH,
+                    owner,
+                    spender,
+                    value,
+                    nonce,
+                    deadline
+                ))
+            ));
+
+        require(_isValidSignature(owner, digest, signature), "SparkPrimeVault/invalid-permit");
+
+        allowance[owner][spender] = value;
+        emit Approval(owner, spender, value);
+    }
+
+    function permit(
+        address owner,
+        address spender,
+        uint256 value,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external {
+        permit(owner, spender, value, deadline, abi.encodePacked(r, s, v));
+    }
+
+    /**********************************************************************************************/
+    /*** Rate accumulation                                                                      ***/
+    /**********************************************************************************************/
+
+    function drip() public returns (uint256 nChi) {
+        (uint256 chi_, uint256 rho_) = (chi, rho);
+        uint256 diff;
+        if (block.timestamp > rho_) {
+            nChi = _rpow(vsr, block.timestamp - rho_) * chi_ / RAY;
+            uint256 totalSupply_ = totalSupply;
+            diff = totalSupply_ * nChi / RAY - totalSupply_ * chi_ / RAY;
+
+            // Safe as nChi is limited to maxUint256/RAY (which is < maxUint192)
+            chi = uint192(nChi);
+            rho = uint64(block.timestamp);
+        } else {
+            nChi = chi_;
+        }
+        emit Drip(nChi, diff);
     }
 
     /**********************************************************************************************/
