@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import { IERC7540Deposit }  from "../../src/interfaces/IERC7540.sol";
-import { IQueue }           from "../../src/interfaces/IQueue.sol";
-import { ISparkPrimeVault } from "../../src/interfaces/ISparkPrimeVault.sol";
-import { IVault }           from "../../src/interfaces/IVault.sol";
+import { IAccessControl } from "../../lib/openzeppelin-contracts/contracts/access/IAccessControl.sol";
+
+import { IERC7540Deposit }      from "../../src/interfaces/IERC7540.sol";
+import { ILiquidityManagement } from "../../src/interfaces/ILiquidityManagement.sol";
+import { IQueue }               from "../../src/interfaces/IQueue.sol";
+import { IRebalancer }          from "../../src/interfaces/IRebalancer.sol";
+import { ISparkPrimeVault }     from "../../src/interfaces/ISparkPrimeVault.sol";
+import { IVault }               from "../../src/interfaces/IVault.sol";
 
 import { ForkTestBase, IERC4626Like } from "./ForkTestBase.t.sol";
 
@@ -1329,6 +1333,272 @@ contract DepositTests is ForkTestBase {
         _assertVaultState(vaultState);
         _assertDepositState(depositState);
         _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
+    }
+
+}
+
+contract RebalancerTests is ForkTestBase {
+
+    bytes32 internal constant REBALANCER_ROLE = keccak256("REBALANCER_ROLE");
+
+    function _requestDepositAndDeposit(address account, uint256 amount) internal {
+        _requestDeposit(account, amount);
+
+        vm.prank(account);
+        spPRIME.deposit(amount, account, account);
+    }
+
+    // Failure tests
+
+    function test_depositToSavings_notRebalancer() external {
+        _requestDepositAndDeposit(user, 1_000e6);
+
+        vm.expectRevert(abi.encodeWithSelector(
+            IAccessControl.AccessControlUnauthorizedAccount.selector,
+            user,
+            REBALANCER_ROLE
+        ));
+        vm.prank(user);
+        spPRIME.depositToSavings(1_000e6);
+    }
+
+    function test_depositToSavings_exceedsAvailableLiquidity() external {
+        _requestDepositAndDeposit(user, 1_000e6);
+
+        vm.expectRevert(abi.encodeWithSelector(
+            ILiquidityManagement.ExceedsAvailableLiquidity.selector,
+            1_000e6 + 1,
+            int256(1_000e6)
+        ));
+        vm.prank(REBALANCER);
+        spPRIME.depositToSavings(1_000e6 + 1);
+    }
+
+    function test_withdrawFromSavings_notRebalancer() external {
+        _requestDepositAndDeposit(user, 1_000e6);
+
+        vm.prank(REBALANCER);
+        uint256 shares = spPRIME.depositToSavings(1_000e6);
+
+        vm.expectRevert(abi.encodeWithSelector(
+            IAccessControl.AccessControlUnauthorizedAccount.selector,
+            user,
+            REBALANCER_ROLE
+        ));
+        vm.prank(user);
+        spPRIME.withdrawFromSavings(shares);
+    }
+
+    function test_withdrawFromSavings_exceedsFreeSavingsShares() external {
+        _requestDepositAndDeposit(user, 1_000e6);
+
+        vm.prank(REBALANCER);
+        uint256 freeShares = spPRIME.depositToSavings(1_000e6);
+
+        assertEq(freeShares, 964.403314e6);
+
+        vm.expectRevert(abi.encodeWithSelector(
+            IRebalancer.ExceedsFreeSavingsShares.selector,
+            freeShares + 1,
+            freeShares
+        ));
+        vm.prank(REBALANCER);
+        spPRIME.withdrawFromSavings(freeShares + 1);
+    }
+
+    function test_withdrawFromSavings_queuedDepositSharesLocked() external {
+        _requestDeposit(user2, VAULT_CAPACITY);  // Consume all vault capacity
+        _requestDeposit(user,  100e6);           // Queue a deposit, backed by spUSDC shares held by the vault
+
+        uint256 queuedShares = spPRIME.totalPendingDeposits();
+
+        assertEq(queuedShares, 96.440331e6);
+
+        assertEq(spUSDC.balanceOf(address(spPRIME)), queuedShares);
+
+        // Every spUSDC share the vault holds belongs to the queued deposit
+        vm.expectRevert(abi.encodeWithSelector(
+            IRebalancer.ExceedsFreeSavingsShares.selector,
+            1,
+            0
+        ));
+        vm.prank(REBALANCER);
+        spPRIME.withdrawFromSavings(1);
+    }
+
+    // Success tests
+
+    function test_depositToSavings() external {
+        _requestDepositAndDeposit(user, 1_000e6);
+
+        uint256 expectedShares = spUSDC.previewDeposit(1_000e6);
+
+        assertEq(expectedShares, 964.403314e6);
+
+        AssertVaultStateParams memory vaultState = AssertVaultStateParams({
+            totalSupply           : 1_000e6,
+            totalAssets           : 1_000e6,
+            availableCapacity     : VAULT_CAPACITY - 1_000e6,
+            availableLiquidAssets : int256(1_000e6),
+            index                 : RAY,
+            lastAccrual           : block.timestamp
+        });
+
+        AssertBalancesParams memory userBalances = AssertBalancesParams({
+            account       : user,
+            asset         : 0,
+            shares        : 1_000e6,
+            savingsShares : 0
+        });
+
+        AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
+            account       : address(spPRIME),
+            asset         : 1_000e6,
+            shares        : 0,
+            savingsShares : 0
+        });
+
+        _assertVaultState(vaultState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
+
+        assertEq(spPRIME.convertToAssets(1e6), 1e6);
+
+        vm.expectEmit(address(spPRIME));
+        emit IRebalancer.SavingsDeposit(1_000e6, expectedShares);
+
+        vm.prank(REBALANCER);
+        uint256 shares = spPRIME.depositToSavings(1_000e6);
+
+        assertEq(shares, expectedShares);
+
+        vaultState.availableLiquidAssets = 0;
+
+        spPrimeBalances.asset         = 0;
+        spPrimeBalances.savingsShares = expectedShares;
+
+        _assertVaultState(vaultState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
+
+        assertEq(spPRIME.convertToAssets(1e6), 1e6);
+    }
+
+    function test_withdrawFromSavings() external {
+        uint256 requestTimestamp = block.timestamp;
+
+        _requestDepositAndDeposit(user, 1_000e6);
+
+        vm.prank(REBALANCER);
+        uint256 shares = spPRIME.depositToSavings(1_000e6);
+
+        skip(30 days);  // spUSDC earns yield while deployed
+
+        uint256 expectedAssets = spUSDC.convertToAssets(shares);
+        uint256 expectedIndex  = spPRIME.previewIndex();
+
+        assertEq(expectedAssets, 1002.911117e6);
+        assertEq(expectedIndex,  1.007864477220618840969938023e27);
+
+        AssertVaultStateParams memory vaultState = AssertVaultStateParams({
+            totalSupply           : 1_000e6,
+            totalAssets           : 1_000e6 * expectedIndex / RAY,
+            availableCapacity     : VAULT_CAPACITY - 1_000e6,
+            availableLiquidAssets : 0,
+            index                 : RAY,
+            lastAccrual           : requestTimestamp
+        });
+
+        AssertBalancesParams memory userBalances = AssertBalancesParams({
+            account       : user,
+            asset         : 0,
+            shares        : 1_000e6,
+            savingsShares : 0
+        });
+
+        AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
+            account       : address(spPRIME),
+            asset         : 0,
+            shares        : 0,
+            savingsShares : shares
+        });
+
+        _assertVaultState(vaultState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
+
+        uint256 sharePrice = spPRIME.convertToAssets(1e6);
+
+        vm.expectEmit(address(spPRIME));
+        emit IRebalancer.SavingsWithdraw(shares, expectedAssets);
+
+        vm.prank(REBALANCER);
+        uint256 assets = spPRIME.withdrawFromSavings(shares);
+
+        assertEq(assets, expectedAssets);
+
+        vaultState.availableLiquidAssets = int256(expectedAssets);
+
+        spPrimeBalances.asset         = expectedAssets;
+        spPrimeBalances.savingsShares = 0;
+
+        _assertVaultState(vaultState);
+        _assertBalances(userBalances);
+        _assertBalances(spPrimeBalances);
+
+        assertEq(spPRIME.convertToAssets(1e6), sharePrice);
+    }
+
+    function test_withdrawFromSavings_onlyFreeShares() external {
+        _requestDeposit(user2, VAULT_CAPACITY);  // Consume all vault capacity
+        _requestDeposit(user,  100e6);           // Queue a deposit, backed by spUSDC shares held by the vault
+
+        uint256 queuedShares = spPRIME.totalPendingDeposits();
+
+        AssertDepositStateParams memory depositState = AssertDepositStateParams({
+            controller              : user,
+            claimableDepositRequest : 0,
+            maxDeposit              : 0,
+            maxMint                 : 0,
+            claimableDepositTotal   : VAULT_CAPACITY,
+            pendingDepositRequest   : spUSDC.convertToAssets(queuedShares),
+            totalPendingDeposits    : queuedShares,
+            depositQueueLength      : 1,
+            requestNonce            : 1
+        });
+
+        AssertBalancesParams memory spPrimeBalances = AssertBalancesParams({
+            account       : address(spPRIME),
+            asset         : VAULT_CAPACITY,
+            shares        : VAULT_CAPACITY,
+            savingsShares : queuedShares
+        });
+
+        _assertDepositState(depositState);
+        _assertBalances(spPrimeBalances);
+
+        vm.prank(REBALANCER);
+        uint256 freeShares = spPRIME.depositToSavings(1_000e6);
+
+        assertEq(freeShares, 964.403314e6);
+
+        spPrimeBalances.asset         = VAULT_CAPACITY - 1_000e6;
+        spPrimeBalances.savingsShares = queuedShares + freeShares;
+
+        _assertDepositState(depositState);
+        _assertBalances(spPrimeBalances);
+
+        vm.prank(REBALANCER);
+        uint256 assets = spPRIME.withdrawFromSavings(freeShares);
+
+        assertEq(assets, 1000e6 - 1);  // Rounding
+
+        // Shares backing the queued deposit stay in spUSDC
+        spPrimeBalances.asset         = VAULT_CAPACITY - 1_000e6 + assets;
+        spPrimeBalances.savingsShares = queuedShares;
+
+        _assertDepositState(depositState);
         _assertBalances(spPrimeBalances);
     }
 
